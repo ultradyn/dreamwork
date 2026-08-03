@@ -5218,3 +5218,193 @@ disagreed with the story — neither looked wrong on its own.
   the code I remembered instead of reading one tick line, and shipped a false warning to my future
   self in a script comment.** The delegation number I steer by was never at risk; my note about it was.
   (2026-08-03, coordinator)
+
+## A tool built from one instance checks that instance's axis, not the class it was named for (2026-08-03, #1141/#1147, mine, measured)
+
+I dispatched `#1141` and it stopped on a premise I had written from recollection:
+the brief said `#1138` had landed; it was still queued for my gate. I built
+`preflight_landed.sh` in response, red-proofed it, wired it into the dispatch
+template, and wrote in its own header that it existed so this would be "method,
+not memory."
+
+The next round of the same task stopped on a premise I had written from
+recollection.
+
+Round 2's brief cited `#755` as *"reap already decided NOT to refuse on untracked
+paths"*. `#755` is about `status.json`'s `queued_dispatches` rotting. The
+preflight ran on that brief and reported **`0 landing claim(s) by id`** —
+truthfully, because `#755`'s *state* was never in question. I had built a checker
+for claims of the form *"#N is landed"* and named it after the class *"premises I
+assert from memory."* Those are not the same set; the first is one axis of the
+second.
+
+Why this is worth writing down rather than filing as a gap: `#755`'s STATE was
+fine and its CONTENT was wrong, and a state-checker cannot see content by
+construction — it never reads the body. Naming a tool after the class makes the
+uncovered part of the class *invisible*, because the tool's clean exit now stands
+where the missing check should be. `0 questionable` is exactly what a brief with
+no landing claims produces, and exactly what a brief whose every citation is
+misattributed produces.
+
+The lane's own finding states the damage best: the code behaviour I described was
+**true** — untracked paths really do not refuse — but the authority I cited said
+nothing about reap. A true claim resting on a citation that does not support it
+is worse than a false one, because the lane that checks the code finds agreement
+and the lane that checks the citation finds contradiction, and it cannot tell
+which of us is confused.
+
+It is systematic. Auditing my own briefs found `#868` used repeatedly for
+*"asserting a guard exists proves nothing; construct the refusal."* `#868` is the
+fleet probe's false zero; that lesson is `#651`, which I cite correctly two lines
+away in the same briefs. It propagated because I copy the "Lessons that bear on
+this" block between briefs, so one wrong row reproduces on every dispatch.
+
+`preflight_citations.sh` now prints each attributed citation beside the cited
+entry's real title, and caught `#755` on round 2's brief in one line. **It is
+deliberately weak in a way worth naming:** it compares TITLES, and a title is not
+the entry — it flagged `#1137`, whose title is about a lint ERROR while its body
+names the breadcrumb reader eleven times. It prompts a read; it does not decide.
+Filed `#1147`, where the honest possibility is recorded that the mechanism which
+actually worked both times was **the lane**, not any tool of mine.
+
+## A gate refusal caused by the branch's own deliverable still has to be told apart from the defect it resembles (2026-08-03, #1024, coordinator's, measured)
+
+`cx-1024blk3` adds a lint check. Its gate refused at `phase=lint-precheck: WARN
+row set changed from the pre-merge baseline`. A check that adds WARN rows changes
+the WARN row set, so the refusal was the gate working — and the temptation is to
+authorise on that reasoning alone.
+
+The row it added read `blocker citations  DID NOT EXAMINE open tasks; ## Open
+unavailable (denominator unknown)`. **At the gate that is indistinguishable from
+a guard that never fires** (`#651`): the gitignored ledger cannot travel into a
+gate worktree, so the check has no data there and honestly says so. "Correctly
+reports it examined nothing" and "examines nothing anywhere" print the same row.
+
+What separated them was running the branch's own `lint.py` against the MAIN
+checkout, where the store is present:
+
+    OK    blocker citations  examined 244 open task(s), 2 carrying a citation
+    WARN  blocker citations  #630 cites blocker #591: ANSWERED — the note is stale
+
+It examines 244 tasks and found a real defect on master on its first run against
+live data — `#630`'s head text still forbids starting work its own later note
+records as unblocked. The gate could not have told me that, and no reasoning
+about the diff would have either; only running it where the data exists could.
+
+Landed with `--expect-warn-add`/`--expect-warn-remove` (`#1040`) — set equality in
+both directions, so an undeclared row still refuses: an authorised pass, not a
+silenced one, with denominators printed that distinguish the two. I copied the
+declared rows verbatim out of the gate's own diff output rather than retyping
+them; a 300-character row retyped by hand is where a transcription slip becomes a
+refusal I would misread as a genuine row-set change.
+
+## A ledger check can raise a WARN that no ledger verb is able to clear (2026-08-03, #1146, coordinator's, measured)
+
+`#1024`'s new check flagged `#630` for citing an answered blocker. `#630`'s
+`blocked_on` COLUMN is `NULL` — the citation lives in the task's **body prose**.
+`ledger.py`'s mutation verbs are `note`, `retitle`, `block`, `unblock`,
+`reprioritise`, `fold`, `next-up`; **none amends a body**. So the only available
+response is to append a note saying the sentence above is wrong, which leaves the
+sentence in place and the WARN raised.
+
+I had written into `#1141`'s brief that *"a refusal that can never be cleared is
+its own incident"*, as a direction-2 trap for a lane to avoid — and then met the
+same shape in a check I was in the middle of authorising. A WARN whose named
+condition the operator cannot act on trains the reader to skip it, and a skipped
+row is the same as no row. It also grows: 244 open tasks examined, 2 carrying
+citations today, and every future task whose prose cites a question later
+answered adds another permanent row.
+
+## The owner of a VALUE and the owner of the DECLARATION that ships it are usually different files, and a Lane-owns drawn around one makes the demanded outcome unreachable (2026-08-03, #1139/#1060, mine, measured twice in one day)
+
+Two lanes stopped today with zero commits, for the same reason, and I wrote the
+lesson down after the first one and then repeated it inside an hour.
+
+`#1139` was "the tool derives 1 owed injection from an EMPTY diff". I owned
+`dev/land_lane.py`, which owns the NUMBER. The false sentence explaining the
+number — `binding paths: (none — every changed path is inert documentation)` —
+was hardcoded in `dev/redproof.py`, which I had explicitly told the lane it did
+not own. It measured the premise, found the number and the sentence had different
+owners, and stopped rather than shipping a partial fix that would leave the tool
+lying in a new way. Correct, and it cost a round.
+
+`#1060` was "make all companions manifest inputs". I owned `client_dist.py`,
+which DISCOVERS companions. `watch.py:681`'s `DATA_SIBLINGS` is a literal tuple
+that DECLARES what deploy ships, and `watch.py:658-679` says plainly that a
+manifest input missing from it makes the deployed instance report stale forever.
+The lane built the whole change locally, ran the named test, got an exact
+missing-path list, restored every edit, regenerated the original dist, and
+stopped. Also correct.
+
+THE SHAPE: when a task is "the system says or ships something wrong", ask which
+file holds the VALUE and which file holds the DECLARATION or the SENTENCE. In a
+codebase with a manifest, a deploy list, a message table, or any registry, those
+are routinely different files — and the registry is often a deliberate literal,
+because the whole point of a literal is that adding to it is a conscious act.
+Owning the producer and not the registry hands the lane a scope in which the
+demanded outcome cannot be reached, and the honest lane spends a full round
+proving that to me.
+
+Both lanes' dogfood notes said the same thing, and #1060's said it best: *"future
+redispatch should widen ownership explicitly rather than asking the lane to infer
+that generated outputs and deployment declarations override Lane-owns."*
+
+The cheap check before dispatch: for each thing the brief demands, name the file
+that will have to CHANGE for a deployed/committed artifact to reflect it — not
+the file that computes it. If those differ and only one is in `Lane-owns`, the
+brief is already broken.
+
+## A guard that reports "0 findings" because it never ran is the failure it was built to catch (2026-08-03, mine, measured)
+
+Two instances within twenty minutes, both in my own dispatch tooling.
+
+`preflight_citations.sh` handed a relative path from the wrong cwd printed two
+`grep: no such file` lines and then its normal summary: **`printed 0 attributed
+id citation(s)`**. That is byte-identical to what a brief with no citations
+produces. The tool exists specifically because a clean-looking zero stood where a
+missing check should be — and it had the same defect in its own reporting.
+
+`dispatch_template.sh` computed its helper directory as `$(dirname "$0")` AFTER
+`cd`-ing to the repo, so `$0` was bare and the path resolved to the repo root.
+All THREE preflights — paths, landed, citations — printed "No such file or
+directory" and **the dispatch proceeded anyway**. #1148 went out with none of the
+checks I built to stop exactly that. The only signal was three lines of bash noise
+in a log I skim for the word REFUSE.
+
+Both are the same rule, and it is `#136` applied to tooling rather than to data:
+**did-not-examine is not a clean result.** An advisory check may decline to block
+on what it FINDS — that is what advisory means — but it must never be silent
+about not having RUN. Fixed both: the preflight now exits 2 with
+`REFUSE — no such brief ... (did NOT examine; this is not a clean result)`, and
+the template resolves `HERE` from `BASH_SOURCE` before any `cd` and refuses to
+dispatch when a preflight file is missing.
+
+The general form for anything I build: separate "ran and found nothing" from
+"could not run" in the EXIT STATUS, not only in the prose above the summary line.
+The summary line is the part that gets read.
+
+## A task fully superseded by its own children is indistinguishable, in the list, from one never started (2026-08-03, #1023, mine, measured)
+
+I selected `#1023` off the open-and-unblocked list as free non-colliding work and
+was writing its brief when I read the last line of the entry. An IGC run at his
+request on 2026-08-02 had already decomposed it: the survivor was filed as
+`#1024` and the runner-up as `#1025`. **Both landed today.** Its own
+recommendation was "(2) first, then (1)" — the standing prose check, then the
+typed field — and that is exactly the order they landed in. Nothing was owed.
+
+Nothing visible said so. The list shows title, priority, state; the title still
+reads as a live defect ("a task's blocker is prose, so a cleared blocker never
+goes stale loudly") and the first thirty lines of the body are the original
+problem statement. `sweep` cannot help either — `#1023` was never itself a
+landing, so it sits outside the sweep's population by construction. The entry
+that existed to make stale blockers loud was itself sitting stale.
+
+Cost: about one brief's worth of reading, and only because I happened to read to
+the end before writing. Had I briefed from the title and the top of the body —
+which is how I start most briefs — it would have been a full redundant lane.
+
+The structural fix is that a decomposition which files survivors should record
+the parent's DISPOSITION on the parent, in a field a lister can read. "Superseded
+by #1024, #1025" belongs beside the state, not in the last paragraph of a long
+note. Until then: before briefing any task whose entry is long, read the END of
+the entry first — the continuation lines are where its later history lives.
