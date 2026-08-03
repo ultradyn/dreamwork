@@ -2,6 +2,34 @@
 
 ## Open
 
+- **P1 · 2026-08-03 — there is a real Syncthing conflict copy inside `.git/` and something reads it.
+  May I delete it, or do you want to look first? (#1166/#1162)**
+  **This one blocks a landing, so it is the most time-sensitive thing on this list.** The file is
+  `.git/wt/cache/ci-status/master.sync-conflict-20260729-032627-QJRKU52.json`.
+  - `#1166`'s round-3 review established that it is **not inert**. Worktrunk's read-only
+    `wt config state get` enumerates *every* `.json` in that directory, and on the live repo it
+    rendered both `master.json` and the conflict sibling as **two separate `master` records**.
+  - I measured the pair before touching anything. Both 107 bytes; `master.json` is mtime
+    2026-07-29 **14:32** (sha `730cd8f8…`), the conflict copy is 2026-07-29 **03:19** (sha
+    `9da2cc90…`). **The conflict copy is the OLDER one**, so `#1162`'s hazard — *"had the remote copy
+    been NEWER, the live ledger could have been replaced by a stale one, which is silent and total"* —
+    does not apply to this particular file.
+  - **Why it blocks:** `#1166` round 4 must remove the blanket `.git/wt/cache/` exemption, because a
+    directory-wide carve-out also blesses the next unknown conflict copy. But the moment that path can
+    ERROR, `python3 lint.py` goes ERROR on this repo, every merge gate refuses at lint-precheck, and
+    **nothing can land — including `#1166`'s own branch.**
+  - **My recommendation: let me delete the conflict copy.** It is a reconstructible CI-status cache
+    (Worktrunk documents it as 30–60s and re-fetches it), it is the older of the two, and its only
+    effect today is to make one branch's CI status appear twice.
+  - **What I have done instead of acting:** nothing to the file. `#1166` round 4 is briefed to design a
+    *per-file triaged acknowledgement* rather than a directory carve-out, and to prove `lint.py` still
+    exits 0 against the live target. That keeps the gate open either way, so this is a cleanup decision
+    rather than a hard blocker — but the acknowledgement mechanism is extra machinery that exists only
+    because the file is still there.
+  - Say the word and I will delete it; say nothing and I will leave it and keep the acknowledgement
+    path. I am asking because it is inside `.git/`, it is your repo state, and "never auto-resolve a
+    sync conflict" is `#1166`'s own hard contract — a rule I would rather not be the first to bend.
+
 - **P1 · 2026-08-03 — the React port's remaining surfaces each need a hand-added `watch.py` deploy
   row. Do I keep paying that per increment, or derive it first? (#1165)**
   **This is the measured reason `/question` did not flip in one increment, and it is not about
