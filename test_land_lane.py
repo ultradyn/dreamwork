@@ -1821,7 +1821,9 @@ def test_an_unreadable_diff_is_not_the_empty_diff(tmp_path, capsys):
     assert empty is not None
     assert empty.changed == ()
     assert empty.required_injections == 0
-    assert unreadable is None
+    assert unreadable is None, (
+        "unreadable diff was silently converted to an empty Diff"
+    )
     assert "fatal:" in capsys.readouterr().err
 
 

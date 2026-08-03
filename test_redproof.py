@@ -3467,8 +3467,12 @@ class TestHandoffDerivesRequirement:
 
         assert exit == 0, out + err
         assert "0 injection(s) owed; 0 changed path(s)" in out, out
-        assert "binding paths: (none — diff has no changed paths)" in out, out
-        assert "every changed path is inert documentation" not in out, out
+        assert "binding paths: (none — diff has no changed paths)" in out, (
+            "empty handoff did not name its empty diff"
+        )
+        assert "every changed path is inert documentation" not in out, (
+            "empty handoff claimed every changed path was inert documentation"
+        )
 
     def test_an_unreadable_diff_faults_instead_of_inheriting_empty_zero(
             self, repo, capsys):
