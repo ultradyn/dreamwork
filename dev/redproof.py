@@ -1592,6 +1592,17 @@ def _reach_report(restored: list[dict]) -> tuple[str, list[str], bool]:
     )
 
 
+def _emit_success_root_qualification(audited_root: Path) -> None:
+    """Qualify a successful audit when it proves a different Git root."""
+    invoking_root = _ls.worktree_root()
+    if audited_root == invoking_root:
+        return
+    print(
+        f"root qualification: audited root {audited_root}; this successful "
+        f"result is proof about that root and not proof for the invoking lane "
+        f"rooted at {invoking_root}.")
+
+
 def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
           lane: str | None = None, carry_forward: bool = False) -> int:
     """Hand-off gate: refuse if a registered injection survives in tree OR history.
@@ -1789,6 +1800,7 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
                     f"an all-clear.{hint}")
             print(reach_line)
             print(identity_scope)
+            _emit_success_root_qualification(root)
             return 0
         # require > 0: a required injection cannot be verified when no registry
         # can be located. Stays FAULT (#671/#895) in BOTH modes (#1038 F3).
@@ -1857,6 +1869,7 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
                   f"injection(s); {_reach_examined_fragment(0, 0)}; "
                   "population is zero, not a clean reach sweep.")
             print(identity_scope)
+            _emit_success_root_qualification(root)
             return 0
         # Retired-only: there is no restoration to certify, but there ARE
         # recorded bytes to look for in history. Fall through to the scan.
@@ -2028,6 +2041,7 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
               f"absent from this branch's commits. Restoration was not "
               f"evaluated, because no live injection is registered.")
         print(identity_scope)
+        _emit_success_root_qualification(root)
         return 0
     kinds = [_target_kind(e) for e in restored]
     test_like = kinds.count("test-like")
@@ -2064,7 +2078,10 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
     if listed:
         print(listed)
     print(identity_scope)
-    return 0 if reach_ok or require == 0 else 1
+    success = reach_ok or require == 0
+    if success:
+        _emit_success_root_qualification(root)
+    return 0 if success else 1
 
 
 # --------------------------------------------------------------------------- #
