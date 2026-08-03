@@ -6627,3 +6627,44 @@ this tool running *for me*".
 
 The general shape, which is this session's recurring one: **the probe found something true, and I read
 it as the thing I was looking for.**
+
+## Telling a lane that the right answer would look suspicious is how a brief manufactures a defect (2026-08-04, #1174/#1180)
+
+Twice today a lane came back and told me my brief was wrong. Both times it was right, and both times
+the same clause is why.
+
+**#1180.** I wrote that `reap.py` "refuses on tracked dirt, non-disposable ignored files, and any `+`
+commit", and told the lane not to widen that gate. I had taken it from the task's own notes, which took
+it from the tool's output. The lane read `dev/reap.py:239` — `unsafe = bool(tracked or commits)` — and
+stopped with zero commits, because every design it could offer rested on a refusal that does not exist.
+I was running a sweep on that same false premise while it worked.
+
+**#1174.** I wrote: *"Expect these numbers to MOVE — `#1049` added tests to `test_watch.py`. Quote the
+new ones; a count that did not change would itself be suspicious."* Master had changed two existing
+assertions and added zero test functions there. The correct count was the unchanged one.
+
+The second is the more dangerous shape and it is worth naming precisely: **I told a lane in advance
+that the correct observation would look like a problem.** A lane that trusted me over the tree had two
+ways to comply, and both are bad — go hunting for a defect that is not there, or make a change so the
+number moves. Neither is dishonest; both are what "the coordinator says this should have changed" makes
+reasonable. The brief would have manufactured the finding it predicted.
+
+What saved both rounds is a section I put in every brief:
+
+    ## If a premise here is false, STOP
+
+That clause is not politeness. It is the only thing in the brief that gives a lane standing to
+disbelieve the rest of it, and it has now paid for itself twice in one session — once producing a P1
+task (`#1189`), once preventing invented work. **A brief without it is a brief whose every claim is an
+instruction.**
+
+Two habits follow.
+
+**Quote the predicate, not the prose.** `#1180`'s dogfood said it better than I would have: *"the brief
+should quote the actual `unsafe` predicate beside any claimed refusal population; otherwise detailed
+reporting text can masquerade as enforcement."* Three separate documents described that gate as
+refusing, and all three were written from its output. Output is evidence about what a tool *prints*.
+
+**State expectations as observations, not as verdicts.** "Round 3 measured 589" is checkable. "A count
+that did not change would be suspicious" pre-commits the lane to a conclusion about a measurement
+neither of us has made yet. The first invites a correction; the second punishes one.
