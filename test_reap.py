@@ -3,6 +3,8 @@
 
 import importlib.machinery
 import importlib.util
+import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -37,6 +39,20 @@ def _git(root: Path, *args: str) -> str:
         stderr=subprocess.DEVNULL,
         text=True,
     ).strip()
+
+
+def _write_gate_breadcrumb(root: Path, worktree: Path, pid: int) -> Path:
+    breadcrumb = root / ".dreamwork" / "gate-in-flight.json"
+    breadcrumb.parent.mkdir()
+    breadcrumb.write_text(
+        json.dumps({
+            "gate_worktree": str(worktree.resolve()),
+            "phase": "named-tests",
+            "pid": pid,
+        }) + "\n",
+        encoding="utf-8",
+    )
+    return breadcrumb
 
 
 @pytest.fixture
@@ -172,7 +188,7 @@ def test_untracked_deliverable_is_named_and_distinguishable_from_cache_only(lane
 
     result = _run("--check", worktree)
 
-    assert result.returncode == 0, result.stderr  # still passes (#755)
+    assert result.returncode == 0, result.stderr  # untracked paths stay report-only
     assert "untracked=2" in result.stdout
     assert "ignored=0" in result.stdout
     # The deliverable path is named: a count alone cannot say WHICH file, and
@@ -187,7 +203,7 @@ def test_expected_scratch_and_ignored_read_identically_under_split(lane):
 
     The scratch+cache lane must read with the SAME counters as before the fix
     (untracked=1 ignored=1), and no NOTE lines, so a coordinator's healthy
-    baseline is preserved (#755).
+    baseline is preserved.
     """
     _, worktree = lane
     (worktree / "BRIEF.md").write_text("lane-local brief\n", encoding="utf-8")
@@ -294,6 +310,40 @@ def test_clean_worktree_is_removed_after_reported_check(lane):
     assert "removed" in result.stdout
     assert not worktree.exists()
     assert str(worktree.resolve()) not in _git(root, "worktree", "list", "--porcelain")
+
+
+@pytest.mark.parametrize("force", [False, True])
+def test_live_gate_scratch_is_refused_even_with_force(lane, force):
+    root, worktree = lane
+    breadcrumb = _write_gate_breadcrumb(root, worktree, os.getpid())
+
+    result = _run(*(("--force",) if force else ()), worktree)
+
+    assert result.returncode == 1
+    assert f"active landing gate breadcrumb {breadcrumb}" in result.stderr
+    assert "refusing to reap in-flight gate scratch" in result.stderr
+    assert worktree.exists()
+    assert str(worktree.resolve()) in _git(root, "worktree", "list", "--porcelain")
+
+
+def test_dead_gate_breadcrumb_leaves_abandoned_scratch_reapable(lane, tmp_path):
+    root, _ = lane
+    abandoned = tmp_path / ".gate-abandoned"
+    _git(
+        root, "worktree", "add", "-q", "-b", "wt/abandoned",
+        str(abandoned), "master",
+    )
+    dead_pid = 2**30
+    with pytest.raises(ProcessLookupError):
+        os.kill(dead_pid, 0)
+    _write_gate_breadcrumb(root, abandoned, dead_pid)
+
+    result = _run(abandoned)
+
+    assert result.returncode == 0, result.stderr
+    assert "removed" in result.stdout
+    assert not abandoned.exists()
+    assert str(abandoned.resolve()) not in _git(root, "worktree", "list", "--porcelain")
 
 
 def test_real_lane_scratch_is_removed_without_force(lane):
