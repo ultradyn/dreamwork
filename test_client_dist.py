@@ -29,11 +29,13 @@ pass for the wrong reason:
 """
 
 import json
+import http.server
 import os
 import pathlib
 import re
 import shutil
 import subprocess
+import threading
 import types
 
 import pytest
@@ -411,6 +413,103 @@ def test_every_design_wrapper_has_one_complete_companion_triad_and_vice_versa():
         "QaCard fixture props do not exercise a real question")
     assert fixture["k"].startswith("o"), (
         "QaCard fixture does not exercise the open-card path")
+
+
+def test_reviews_fixture_covers_loading_empty_and_distinct_multi_row_states():
+    fixture = json.loads((ROOT / client_dist.DS_SOURCE_DIR /
+                          "Reviews.fixture.json").read_text(encoding="utf-8"))
+    assert set(fixture) == {"loading", "empty", "multi"}
+    assert fixture["loading"]["data"] is None
+    assert fixture["empty"]["data"]["reviews"] == []
+    rows = fixture["multi"]["data"]["reviews"]
+    assert len(rows) > 1, "Reviews multi fixture cannot exercise join with one row"
+    assert len({row["decision"] for row in rows}) == len(rows), (
+        "Reviews multi fixture rows need distinct decisions")
+    assert len({row["question_title"] for row in rows}) == len(rows), (
+        "Reviews multi fixture rows need distinct question links")
+
+
+def test_reviews_wrapper_dom_strictly_equals_live_builder_for_every_state():
+    """Both sides pass through one real DOM parser/serializer before equality."""
+    server = http.server.ThreadingHTTPServer(
+        ("127.0.0.1", 0),
+        watch.make_handler(str(ROOT), journal_shadow=False))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = "http://127.0.0.1:%d" % server.server_address[1]
+    script = r"""
+import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { readFileSync } from 'node:fs';
+const [base, designPath, nativePath, fixturePath] = process.argv.slice(1);
+const cases = JSON.parse(readFileSync(fixturePath, 'utf8'));
+const browser = await chromium.launch();
+const page = await browser.newPage();
+try {
+  await page.goto(base + '/reviews', { waitUntil: 'networkidle' });
+  await page.addScriptTag({ content: readFileSync(nativePath, 'utf8') });
+  await page.evaluate(() => {
+    delete document.getElementById('cmdpalette').dataset.composerMount;
+  });
+  await page.addScriptTag({ content: readFileSync(designPath, 'utf8') });
+  const readings = [];
+  for (const [state, props] of Object.entries(cases)) {
+    const result = await page.evaluate(async ({ state, props }) => {
+      const builder = buildReviews(props.data);
+      const root = document.createElement('div');
+      dwNative.ReactDOM.createRoot(root).render(
+        dwNative.React.createElement(DreamworkDesign.Reviews, props));
+      let mounted = null;
+      for (let i = 0; i < 100; i++) {
+        const host = root.querySelector('[data-dw-delegate="buildReviews"]');
+        if (host) { mounted = host.innerHTML; break; }
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      const serialize = raw => {
+        const template = document.createElement('template');
+        template.innerHTML = raw;
+        const host = document.createElement('div');
+        host.append(template.content.cloneNode(true));
+        return host.innerHTML;
+      };
+      const expected = serialize(builder);
+      const actual = serialize(mounted === null ? '' : mounted);
+      let at = 0;
+      while (expected[at] === actual[at] &&
+             at < expected.length && at < actual.length) at++;
+      return { state, expected, actual, at };
+    }, { state, props });
+    readings.push(result);
+  }
+  console.log(JSON.stringify(readings));
+} finally {
+  await browser.close();
+}
+"""
+    try:
+        result = subprocess.run(
+            ["node", "--input-type=module", "-e", script, base,
+             str(ROOT / client_dist.DS_DIR / "index.js"),
+             str(ROOT / client_dist.NATIVE_REL),
+             str(ROOT / client_dist.DS_SOURCE_DIR / "Reviews.fixture.json")],
+            text=True, capture_output=True, timeout=60)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+    assert result.returncode == 0, (
+        "Reviews wrapper equality browser failed before comparison:\n%s\n%s" %
+        (result.stdout, result.stderr))
+    readings = json.loads(result.stdout.strip().splitlines()[-1])
+    assert {r["state"] for r in readings} == {"loading", "empty", "multi"}
+    mismatches = [
+        "%s differs at %d: builder=%r wrapper=%r" %
+        (r["state"], r["at"],
+         r["expected"][r["at"]:r["at"] + 100],
+         r["actual"][r["at"]:r["at"] + 100])
+        for r in readings if r["expected"] != r["actual"]]
+    assert not mismatches, (
+        "Reviews wrapper serialization differs from live buildReviews after "
+        "the same DOM parser/serializer: " + " | ".join(mismatches))
 
 
 # ── #630 P2: the native runtime ──────────────────────────────────────────
