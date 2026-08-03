@@ -30,6 +30,7 @@ from dev.citation_audit import (  # noqa: E402
     classify,
     corpus_coverage,
     extract_citations,
+    find_unsupported_citation_forms,
     format_report,
 )
 from dev import citation_audit  # noqa: E402
@@ -186,6 +187,37 @@ def test_extract_finds_colon_citation():
     assert len(cits) == 1
     assert cits[0].task_id == 200
     assert "guard" in cits[0].wording
+
+
+def test_extract_finds_house_bold_citation():
+    text = "- **#140** — a check that could not run must not look like one that ran."
+    cits = extract_citations(text, "test")
+    assert [(cit.task_id, cit.wording) for cit in cits] == [
+        (140, "a check that could not run must not look like one that ran")
+    ], "house bold form **#140** — gloss was not extracted"
+
+
+def test_unsupported_citation_forms_are_reported_not_silently_ignored():
+    forms = {
+        "parenthesized": "(#140)",
+        "possessive": "#140's",
+        "bracketed": "[#140]",
+        "line-wrapped": "#140\n— one gloss after a line wrap.",
+        "shared-gloss": "#140/#141 — one gloss shared by two citations.",
+    }
+    text = "\n".join(forms.values())
+
+    # These remain outside the extractor's deliberately narrow grammar.  The
+    # audit must name that blind population instead of presenting it as clean.
+    assert {cit.task_id for cit in extract_citations(text, "test")} == {141}
+    unsupported = find_unsupported_citation_forms(text, "test")
+    assert {item.form for item in unsupported} == set(forms)
+
+
+def test_citation_detection_does_not_widen_to_plain_issue_or_cli_numbers():
+    text = "Issue #1152 is open; run check --require 1 before reporting."
+    assert extract_citations(text, "test") == []
+    assert find_unsupported_citation_forms(text, "test") == []
 
 
 def test_extract_ignores_bare_reference():
