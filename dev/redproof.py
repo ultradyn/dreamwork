@@ -1960,6 +1960,97 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
 
 
 # --------------------------------------------------------------------------- #
+# handoff: derive the requirement, then check (#1086)                         #
+# --------------------------------------------------------------------------- #
+
+def _derived_requirement(root: Path, base_oid: str, head: str) -> dict:
+    """The injection requirement the MERGE GATE derives for this branch's diff.
+
+    Lanes report a red-proof count they did not measure (#1086): a lane with
+    only RETIRED registrations wrote *"no injection was owed"* over a diff that
+    derives ``required_injections=1``; another wrote *"CAUGHT 3 of 3"* over two
+    registrations. Each lane knew what it had DONE; none asked the tool what it
+    HAD. ``handoff`` closes that gap by deriving the requirement from the SAME
+    function the gate uses — ``land_lane._classify_diff`` — so the lane's
+    hand-off verb and the coordinator's gate are ONE computation and cannot
+    disagree about what was owed.
+
+    Importing ``_classify_diff`` rather than re-implementing the inert-doc rule
+    is the point: a second copy would drift, and a lane whose hand-off disagrees
+    with the gate is the exact defect this verb exists to prevent. The import is
+    lazy (inside this function) so the cost stays off every other verb; there is
+    no import cycle (``land_lane`` does not import ``redproof``).
+    """
+    parent = str(Path(__file__).resolve().parent)
+    if parent not in sys.path:
+        sys.path.insert(0, parent)
+    try:
+        import land_lane as _ll  # noqa: E402  (lazy: see docstring)
+    except Exception as exc:  # pragma: no cover - land_lane is a sibling module
+        raise RedproofError(
+            f"cannot import land_lane to derive the diff requirement: {exc}; "
+            f"the hand-off verb mirrors land_lane._classify_diff and cannot "
+            f"run without it") from exc
+    diff = _ll._classify_diff(root, base_oid, head)
+    if diff is None:
+        raise RedproofError(
+            f"land_lane._classify_diff could not read the diff "
+            f"{base_oid[:12]}..{head[:12]} — a diff the gate cannot read is a "
+            f"refusal, never an exemption")
+    return {
+        "require": diff.required_injections,
+        "binding": diff.redproof_binding,
+        "inert": diff.inert,
+        "changed": diff.changed,
+    }
+
+
+def handoff(cwd: Path | None, *, base: str | None = None,
+            lane: str | None = None) -> int:
+    """Derive the diff's injection requirement, then run the hand-off check.
+
+    The requirement is DERIVED from the branch diff (#868) — never from the
+    registered count — so the three failure modes #1086 measured cannot recur as
+    a calm report:
+
+    - A lane with only RETIRED registrations and a binding diff is REFUSED
+      (require 1, 0 live), not reported *"no injection owed"*.
+    - A lane whose registration names an absent path FAULTS (exit 2), because
+      ``check`` cannot evaluate it — not reported *"clean"*.
+    - A lane with fewer live registrations than the diff requires is REFUSED,
+      not reported *"CAUGHT N of N"* from its own recollection.
+
+    Prints a report-ready block naming the derived requirement and the binding
+    paths, then delegates to :func:`check` with that requirement. The block is
+    what the lane quotes verbatim as its last act before reporting (#1086):
+    when a tool can report the number, the report carries the tool's number,
+    not the lane's recollection of its own actions.
+    """
+    root = _ls.worktree_root(cwd)
+    try:
+        base_oid, base_ref = _resolve_base(root, base)
+        head = _git(root, "rev-parse", "HEAD")
+        derived = _derived_requirement(root, base_oid, head)
+    except RedproofError as exc:
+        sys.stderr.write(f"handoff: FAULT — {exc}\n")
+        return 2
+    require = derived["require"]
+    binding = derived["binding"]
+    print("=== redproof handoff — derive the requirement, then check ===")
+    print(f"derived requirement: {require} injection(s) owed; "
+          f"{len(derived['changed'])} changed path(s), "
+          f"{len(binding)} binding, {len(derived['inert'])} inert doc.")
+    if binding:
+        print(f"binding paths: {' '.join(binding)}")
+    else:
+        print("binding paths: (none — every changed path is inert documentation)")
+    print(f"this is the number to quote: {require} injection(s) owed, derived "
+          f"from the diff — not the registered count.")
+    print("--- check below (quote this block verbatim in your report) ---")
+    return check(cwd, require=require, base=base, lane=lane)
+
+
+# --------------------------------------------------------------------------- #
 # CLI                                                                          #
 # --------------------------------------------------------------------------- #
 
@@ -1968,12 +2059,13 @@ def _parser() -> argparse.ArgumentParser:
         prog="redproof.py",
         description="Red-proof injection registry + hand-off gate (#683). "
                     "Turns the red-proof restore discipline into a check.")
-    ap.add_argument("verb", choices=["begin", "observe", "restore", "forget", "check"],
+    ap.add_argument("verb", choices=["begin", "observe", "restore", "forget", "check", "handoff"],
                     help="begin PATH = snapshot original; "
                          "observe PATH = run and persist the injected-red check; "
                          "restore PATH = record injected + restore original; "
                          "forget PATH = drop an entry; "
-                         "check = hand-off gate")
+                         "check = hand-off gate; "
+                         "handoff = derive the diff's requirement then check (#1086)")
     ap.add_argument("path", nargs="?", help="repo-relative path confined to the resolved "
                     "worktree (for begin/restore/forget)")
     ap.add_argument("--expectation", action="append", default=[], metavar="PATH",
@@ -2059,6 +2151,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.verb == "check":
             return check(cwd, require=args.require, base=args.base, lane=args.lane)
+        if args.verb == "handoff":
+            return handoff(cwd, base=args.base, lane=args.lane)
         if args.path is None:
             ap.error(f"{args.verb} requires a path argument")
         if args.verb == "begin":
