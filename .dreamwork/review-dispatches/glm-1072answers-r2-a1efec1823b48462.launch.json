@@ -1,0 +1,15 @@
+{
+  "attempt_id": "glm-1072answers-review-r2-a1efec1823b48462",
+  "branch": "glm-1072answers",
+  "permission_mode": "plan",
+  "pinned_sha": "a5ffb2dce176d14464807fcec3bd480914426bb8",
+  "prompt": "/home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/review-dispatches/glm-1072answers-r2-a1efec1823b48462.prompt.md",
+  "prompt_bytes": 13245,
+  "prompt_sha256": "a1efec1823b4846281fa103de1095e4ac15ccb17ae656d22c08104e892d7ef5b",
+  "review_lane": "glm-1072answers-review-r2",
+  "round": 2,
+  "runner_exit": null,
+  "runs": 1,
+  "state": "spawned: reviewer present in review worktree (cwd-containment); runner exit not observed",
+  "worktree": "/home/xertrov/.llm-general/skills/.worktrees/glm-1072answers-review-r2"
+}

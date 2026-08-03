@@ -1,0 +1,15 @@
+{
+  "attempt_id": "cx-1179revproof-review-r1-d1efb5f46367facb",
+  "branch": "cx-1179revproof",
+  "permission_mode": "plan",
+  "pinned_sha": "0cb73e53bd12f75ba7cdf2f171160fc42d33b86b",
+  "prompt": "/home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/review-dispatches/cx-1179revproof-r1-d1efb5f46367facb.prompt.md",
+  "prompt_bytes": 9985,
+  "prompt_sha256": "d1efb5f46367facb686c34665df9a495e9b4f09b445177f94c276fa192ecf49b",
+  "review_lane": "cx-1179revproof-review-r1",
+  "round": 1,
+  "runner_exit": null,
+  "runs": 1,
+  "state": "spawned: reviewer present in review worktree (cwd-containment); runner exit not observed",
+  "worktree": "/home/xertrov/.llm-general/skills/.worktrees/cx-1179revproof-review-r1"
+}

@@ -1,0 +1,15 @@
+{
+  "attempt_id": "glm-1206shelleval-review-r1-96431651558d366e",
+  "branch": "glm-1206shelleval",
+  "permission_mode": "plan",
+  "pinned_sha": "05bc31580e1f58302e740998db8d0ee09aac7fb0",
+  "prompt": "/home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/review-dispatches/glm-1206shelleval-r1-96431651558d366e.prompt.md",
+  "prompt_bytes": 10813,
+  "prompt_sha256": "96431651558d366ed3dea60c718eb8dfb69c12b4e35a057ef377e9e67707bb92",
+  "review_lane": "glm-1206shelleval-review-r1",
+  "round": 1,
+  "runner_exit": null,
+  "runs": 1,
+  "state": "spawned: reviewer present in review worktree (cwd-containment); runner exit not observed",
+  "worktree": "/home/xertrov/.llm-general/skills/.worktrees/glm-1206shelleval-review-r1"
+}

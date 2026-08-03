@@ -1,0 +1,15 @@
+{
+  "attempt_id": "glm-1207revdead-review-r1-8d0bef21340b2ed7",
+  "branch": "glm-1207revdead",
+  "permission_mode": "plan",
+  "pinned_sha": "064f699a1251060910ccc3af5862b2f485e4cd3d",
+  "prompt": "/home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/review-dispatches/glm-1207revdead-r1-8d0bef21340b2ed7.prompt.md",
+  "prompt_bytes": 11365,
+  "prompt_sha256": "8d0bef21340b2ed7eb188a4f6311e34265543c8ef8db4074b1aedac95329151f",
+  "review_lane": "glm-1207revdead-review-r1",
+  "round": 1,
+  "runner_exit": null,
+  "runs": 1,
+  "state": "spawned: reviewer present in review worktree (cwd-containment); runner exit not observed",
+  "worktree": "/home/xertrov/.llm-general/skills/.worktrees/glm-1207revdead-review-r1"
+}

@@ -1,0 +1,15 @@
+{
+  "attempt_id": "cx-1166r9parse-review-r9-a3cd714196847107",
+  "branch": "cx-1166r9parse",
+  "permission_mode": "plan",
+  "pinned_sha": "2a1323bfabe1d8f9865ae389f26f30fce6c87349",
+  "prompt": "/home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/review-dispatches/cx-1166r9parse-r9-a3cd714196847107.prompt.md",
+  "prompt_bytes": 12220,
+  "prompt_sha256": "a3cd714196847107822f146b8a0c0ea878d588d81bef0dd655402c4ff78382ca",
+  "review_lane": "cx-1166r9parse-review-r9",
+  "round": 9,
+  "runner_exit": null,
+  "runs": 1,
+  "state": "spawned: reviewer present in review worktree (cwd-containment); runner exit not observed",
+  "worktree": "/home/xertrov/.llm-general/skills/.worktrees/cx-1166r9parse-review-r9"
+}

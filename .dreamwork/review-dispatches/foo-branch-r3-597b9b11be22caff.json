@@ -1,0 +1,7 @@
+{
+  "branch": "foo-branch",
+  "frame_sha256": "599a2b3c942983ff011ed34123fcff250e7862a817084fc5b65928eada12fabd",
+  "prompt_bytes": 4594,
+  "prompt_sha256": "597b9b11be22caff156d92219ad27bb3bcb6c4a06d9c1801210ba17df5f78f2d",
+  "round": 3
+}

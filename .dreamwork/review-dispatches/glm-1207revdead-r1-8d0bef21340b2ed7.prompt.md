@@ -1,0 +1,183 @@
+# Review `glm-1207revdead` — a liveness consumer for a record nothing consumed
+
+Head `064f699a`, rebased onto master `6a7acec0`. 2 commits. Adds
+`classify_review_dispatch(record, coordinator_root)` to `dev/dispatch_lane.py` — a **read-only**
+consumer that re-probes the same cwd-containment channel `launch_review` trusted at spawn
+(`_review_lane_live`, resolving `/proc/<pid>/cwd`, never argv) — plus a `--review-status` surface and
+a `file-formats.md` row update. It never writes `runner_exit`.
+
+Three categories: live runner → `in-progress`; runner gone while `runner_exit` is still null →
+`runner-absent` (the alarm); examined-0 → `unknown` (never an all-clear).
+
+## The finding I most want you to construct — I HAVE A LIVE COUNTEREXAMPLE
+
+The lane names this limitation itself, honestly: the classifier *"cannot distinguish a review that
+finished successfully (verdict landed elsewhere, runner gone) from a dead one — both report
+`runner-absent`."*
+
+**That is not hypothetical. It happened this morning, on this repo, while this lane was running.**
+The `glm-1072answers` round-2 review ran to completion, spent 252,251 tokens, and produced three P1
+findings — and it presented with **exactly** the dead-review signature: no inbox heading, `ledger
+reviews list` → `(no review decisions)`, review worktree clean, `runner_exit` null. Its verdict
+existed only in the launcher's stdout, which I happened to have redirected to a file. I preserved it
+by hand at `.dreamwork/review-dispatches/glm-1072answers-r2-a1efec1823b48462.verdict.md` and filed
+the delivery defect as `#1214`.
+
+**So: run `--review-status` against the real dispatch records in
+`.dreamwork/review-dispatches/` and tell me what it says about that r2 review.** If it reports
+`runner-absent` for a review that in fact succeeded, quote it — that is the false alarm the
+limitation predicts, now measured rather than conceded, and it tells me how much `#1214` is worth.
+If it says something better, name what distinguished it.
+
+Then judge the scoping call: is `runner-absent` **honest but low-value** (it fires on both outcomes,
+so a coordinator must still check by hand), or is it a real improvement over today (where both
+outcomes read as benign and *nothing* prompts a check)? The lane argues the latter. I am inclined to
+agree, but I want it argued against the live instance above, not in the abstract.
+
+## Also construct
+
+- **Does it false-positive on a slow reviewer?** The lane ships both halves as unit tests
+  (`test_classify_dead_review_is_runner_absent_the_alarm`,
+  `test_classify_slow_review_is_in_progress_not_an_alarm`) under an injectable-reader harness. Verify
+  the slow half genuinely exercises a *live* runner and not just a stubbed boolean — a 20-minute
+  reviewer must not be declared dead, and that is the one regression that would make this worse than
+  the hole.
+- **The probe's own honesty.** `#729` and `#868` are cited: it must resolve `/proc/<pid>/cwd` rather
+  than matching argv (an argv match hits the coordinator's own process and every lane whose brief
+  *forbids* the tool), and examined-0 must be `unknown`, never an all-clear. Check both in the code,
+  not the docstring.
+- **PID reuse.** A pid recorded at spawn can belong to an unrelated process minutes later. Does
+  cwd-containment plus anything else make that safe, or can a recycled pid whose cwd happens to sit
+  in the worktree report `in-progress` forever? Say plainly which.
+- **The `file-formats.md` row.** It previously said "no production reader currently consumes it";
+  it now names the consumer and the three categories. Confirm it is accurate and that the row still
+  parses — the test extracts fields between the `JSON fields:` and `Meanings:` anchors, and the lane
+  reported that cell is dense enough to make the edit fiddly.
+
+## What is already established — do not re-derive
+
+Premise verification is sound: `dev/dispatch_lane.py` writes `runner_exit: null` and never touches it
+again, and no production code reads that record post-launch (the lane grepped every
+`.launch.json`/`runner_exit` reader). The IGC grid is recorded with four rivals and the reasons the
+other three lose (age threshold false-positives on slow reviews; launcher-side wait serialises
+dispatch; a reviewer-written terminal marker still needs liveness to tell slow from dead AND needs a
+`briefs/review-frame.md` change outside this lane's owns).
+
+Red-proof direction 1 sabotaged the `runner-absent` return to `in-progress` with the call site
+textually intact; the dead test went red on `assert 'in-progress' == 'runner-absent'` and the slow
+test stayed green; restore `cmp` identical; `check --require 1` unpiped `EXIT=0`, reach caught 1 of 1.
+Verification: `68 tests collected`, `68 passed in 17.79s`; repo-wide guards `5 passed`; `lint.py`
+exit 0 with the WARN row set unchanged and the lesson-citation FP count derived by the lane itself.
+Take all of that as given.
+
+## Scope
+
+**`dev/dispatch_lane.py` and `test_dispatch_lane.py` only.** Gate-side enforcement of the mandatory
+review is deliberately NOT here — the lane recommended it and I filed it as `#1215`. The
+`--permission-mode plan` mismatch it also reported is `#1216`. Do not mark the lane down for either;
+do tell me if this diff makes either harder.
+
+Review sha (pinned at dispatch, #1056): 064f699a1251060910ccc3af5862b2f485e4cd3d — review THIS commit; state the sha you actually reviewed in your verdict, and report (do not silently resolve) any mismatch with the branch tip.
+
+# Review frame — standing rules for every review dispatch
+
+Concatenate this into every review prompt, the way `frame.md` is emitted into every lane brief.
+It exists because the alternative — remembering to hand-write these rules per dispatch — measurably
+fails: two false findings in one night (`#1109`), and a third the following review.
+
+Review dispatch is governed by construction. `dev/brief.py --review BRANCH` appends this file
+verbatim and persists a receipt under `.dreamwork/review-dispatches/`; `dev/dispatch_lane.py
+--review-prompt` is the persist-only check and correctly refuses a runner. To launch, use the
+distinct supported path:
+
+    python3 dev/dispatch_lane.py --launch-review PROMPT --review-branch BRANCH --review-round ROUND -- ccc --permission-mode plan @cx-reviewer
+
+That path pins the reviewed commit, creates an **attached review branch** and its own worktree,
+records the launch attempt, launches with that worktree as cwd, and sets the reviewer role. Plan
+mode is load-bearing: a reviewer reads and reports; it does not receive write permission.
+
+---
+
+## You are working in an attached review worktree. Three things are invisible or misleading here.
+
+The supported launcher creates a review branch at the pinned commit and checks it out under the
+sibling `.worktrees/` root. **The branch line is deliberate and load-bearing**: lane containment and
+safe reaping can classify the checkout, while the separate cwd lets a review and a gate overlap.
+Never replace it with `git worktree add --detach`.
+
+The review worktree still does not make every live coordinator fact visible. Each of the following
+has already produced a confidently-wrong finding:
+
+1. **Your reviewer red-proof state is not the author's state.** The registry lives at
+   `~/.cache/ud-dreamwork/lane-scratch/ud-dreamwork/<lane>/lane-<lane>-<id>/redproof/registry.json`,
+   keyed by lane identity and role. The launcher sets `DREAMWORK_LANE_ROLE=reviewer`, so a bare
+   `redproof check` examines the reviewer's registry, not the author's. **Do not report that result
+   as the author's red-proof verdict** — use `dev/lane_scratch.py --author-evidence` when the review
+   needs the author's persisted evidence, and let the merge gate judge the author's registry.
+
+2. **A sibling branch is not in your checked-out tree.** A search returning nothing proves the
+   symbol is absent from **this tip**, and nothing more. Inspect a named sibling with `git show
+   BRANCH:PATH`; do not treat the working-tree search as evidence about another branch.
+
+3. **`python3 lint.py` is not necessarily clean in a review worktree, and some ERRORs are
+   checkout-state artifacts** — the
+   tracked `tasks.md` is a migration notice, the gitignored ledger store does not travel, and
+   worktree-drain state is stale. Compare **WARN row SETS** against local `master`. Never report
+   absolute warning counts, and label any review-worktree-state ERROR as such rather than as a
+   branch defect.
+
+**Report, do not suppress.** The instruction is to mark these **unverifiable-from-here with the
+reason** — not to stay silent. A reviewer that reports nothing is worse than one that reports a
+false FAULT. If something looks clone-shaped but you have direct evidence it is a real defect, say
+both: what you saw, and why you believe it is not an artifact.
+
+**Hash spaces are a related trap.** `redproof` pins `sha1(content)`. Git names a blob
+`sha1("blob <len>\0" + content)`. They are different spaces; comparing one to the other proves
+nothing, and `git cat-file -t <content-sha1>` failing is the expected result, not evidence of
+corruption.
+
+---
+
+## Naming conventions that make a true search read as a phantom
+
+In this repo a **PascalCase** name is a React wrapper under `dev/build/`, and its **camelCase**
+counterpart is the builder under `client/`. `dev/build/wrapper-exports.js` states the mapping
+outright (`QaCard.dwBuilder = 'qaCard'`). Searching one case in the other directory returns a true
+"not found" that reads as "this symbol is fictional". Check the convention before concluding a
+symbol is absent.
+
+---
+
+## Staleness is not a finding
+
+The branch may sit on an older master than today's tip. Rebasing is the merge gate's job. **Judge
+the diff**, not how far behind it is.
+
+---
+
+## What a finding must contain
+
+Concrete, located, checkable. For each: the file and line, what is wrong, the evidence you actually
+ran, and what would fix it. Distinguish **P1** (must fix before merge) from **P2** (should fix) from
+**Standards** (nit). If you cannot substantiate something, say so plainly rather than softening it
+into a claim.
+
+End with one verdict: **MERGE**, **MERGE WITH FIXES**, or **ANOTHER ROUND**.
+
+---
+
+## Hard rules
+
+- **Do NOT use `attn`.** Only the coordinator contacts the human.
+- Do not write anything under `.dreamwork/`.
+- **THE LEDGER HAS A SINGLE WRITER — THE COORDINATOR. Run no mutating `dev/ledger.py` verb**, including
+  `file`, `note`, `fold`, `block`, `retitle` and `reprioritise`. This is the rule above restated as a
+  verb, because that is how it gets broken: the store is `.dreamwork/ledger.sqlite3`, so filing a task
+  *is* writing under `.dreamwork/` — but it does not feel like writing to a path, it feels like filing
+  a follow-up, and a reviewer who would never touch that directory will run `ledger.py file` without
+  noticing the rule applies. `#1071`'s round-2 review filed `#1186` exactly this way. Read-only verbs
+  (`get`, `list`, `counts`) are fine.
+- **Follow-ups belong in your report, not in the ledger.** Write the title and the body you would have
+  filed; the coordinator files it. Nothing is lost by this and the concurrent-writer hazard goes away —
+  the coordinator is writing that same sqlite store while you run.
+- Do not commit, merge, or push. Your report is your stdout; the coordinator reads it.
