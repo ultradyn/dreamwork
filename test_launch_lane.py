@@ -244,7 +244,10 @@ def test_space_separated_lane_owns_is_refused_before_worktree_creation(
 
     result = _run(launch_repo, head)
 
-    assert result.returncode == 1, result.stderr
+    assert result.returncode == 1, (
+        "space-separated Lane-owns resolved zero files but dispatch was accepted: "
+        f"stderr={result.stderr!r}"
+    )
     assert "REFUSE phase=brief-generation: 1 violation(s)" in result.stderr
     assert "scope derivation FAULT: resolved 0 existing files" in result.stderr
     assert "check comma separation and path spelling" in result.stderr
