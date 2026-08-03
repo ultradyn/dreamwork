@@ -3584,6 +3584,18 @@ var DreamworkDesign = (() => {
     const value = el.type === "number" ? Number(el.value) : el.value;
     saveSetting(el, value);
   });
+  function buildQuestion(title, d) {
+    if (!d) return '<div class="dim">loading…</div>';
+    if (title) {
+      const oi = (d.questions_open || []).findIndex((x) => x.title === title);
+      if (oi >= 0)
+        return `<div id="qfocus" class="qdual">` + qaCard(d.questions_open[oi], "o" + oi, "focus") + `</div>`;
+      const ai = d.answered_entries.findIndex((x) => x.title === title);
+      if (ai >= 0)
+        return `<div id="qfocus" class="qdual">` + qaCard(d.answered_entries[ai], "a" + ai, "focus") + `</div>`;
+    }
+    return `<div id="qfocus"><div class="qmissing"><div class="qmisshead">not found</div><div class="qmissbody">this link names a question the list no longer has — it was most likely re-titled or removed while you watched. No other question has been substituted for it.</div><div class="qmissback"><a href="/questions">&larr; back to questions</a></div></div></div>`;
+  }
   var RSPLIT_KEY = "dw.review.split";
   var RSPLIT_MIN = 30;
   var RSPLIT_MAX = 82;
@@ -4017,6 +4029,7 @@ var DreamworkDesign = (() => {
     return sp >= 0 ? { gen: raw.slice(0, sp), mtime: raw.slice(sp + 1) } : { gen: "", mtime: raw };
   };
   var view = { name: null, param: null, q: null };
+  var pendingGoalFragment = null;
   var fileCache = { param: null, fetched: void 0 };
   var taskTriageCache = { mtime: null, list: null, details: /* @__PURE__ */ new Map() };
   var TINT = { dashboard: 0, questions: 0.14, answers: 0.08, settings: -0.04, file: -0.14, review: 0.22, tasks2: 0.16, question: 0.18, research: -0.08, reviews: 0.19, goals: 0.11, chat: 0.05 };
@@ -4783,11 +4796,8 @@ var DreamworkDesign = (() => {
     data = next;
     if (window.dwPluginCommands) window.dwPluginCommands(data.plugin_commands);
     const registry = nativeRegistry();
-    const kept = registry && registry.mounted().length ? snapshotCardState() : null;
-    if (registry) {
-      registry.update(data);
-      restoreCardState(kept);
-    }
+    if (registry) registry.update(data);
+    retryPendingGoalTarget();
     return data;
   }
   async function ensureData() {
@@ -4896,6 +4906,7 @@ var DreamworkDesign = (() => {
     const d = await ensureData();
     if (isNativeRoute(view.name)) return null;
     if (view.name === "review") return buildReview(view.param, view.q, d);
+    if (view.name === "question") return buildQuestion(view.param, d);
     if (view.name === "reviews") return buildReviews(d);
     if (view.name === "settings") return buildSettings(d);
     if (!d) return '<div class="dim">loading…</div>';
@@ -5011,7 +5022,7 @@ var DreamworkDesign = (() => {
     }
     function save(logicalId, text, meta) {
       const k1 = v1Key(logicalId);
-      if (!k1) return false;
+      if (!k1) return;
       try {
         if (text) {
           const rec = { t: text };
@@ -5031,9 +5042,7 @@ var DreamworkDesign = (() => {
           const lo = legacyKey(logicalId);
           if (lo) localStorage.removeItem(lo);
         }
-        return true;
       } catch (e) {
-        return false;
       }
     }
     function restore(logicalId, el) {
@@ -5145,8 +5154,8 @@ var DreamworkDesign = (() => {
   })();
   var dwDraft = {
     save(title, value) {
-      if (!title) return false;
-      return DraftStore.save(DraftStore.id("card", title), value);
+      if (!title) return;
+      DraftStore.save(DraftStore.id("card", title), value);
     },
     restore(title, el) {
       if (!title) return;
@@ -5422,14 +5431,8 @@ var DreamworkDesign = (() => {
   }
   function restoreCardState(saved) {
     if (!saved || !saved.size) return;
-    const unmatched = /* @__PURE__ */ new Map();
-    saved.forEach((state, qid) => unmatched.set(qid, {
-      state,
-      target: "card"
-    }));
     document.querySelectorAll(".qa[data-qid]").forEach((card) => {
-      const qid = card.dataset.qid;
-      const s = saved.get(qid);
+      const s = saved.get(card.dataset.qid);
       if (!s) return;
       const dets = [...card.querySelectorAll("details")];
       (s.open || []).forEach((o, i) => {
@@ -5438,15 +5441,9 @@ var DreamworkDesign = (() => {
       putScroll(qaScroller(card), s.read);
       const comp = card.querySelector(".qcompose");
       setCardMode(comp, s.mode, true);
-      if (s.value === null) {
-        unmatched.delete(qid);
-        return;
-      }
+      if (s.value === null) return;
       const ta = comp && comp.querySelector("textarea");
-      if (!ta) {
-        unmatched.get(qid).target = "textarea";
-        return;
-      }
+      if (!ta) return;
       ta.value = s.value;
       fitText(ta, false);
       putScroll(ta, s.scroll);
@@ -5455,37 +5452,6 @@ var DreamworkDesign = (() => {
       } catch (e) {
       }
       if (s.focus) refocus(ta);
-      unmatched.delete(qid);
-    });
-    unmatched.forEach((miss, qid) => {
-      const s = miss.state;
-      let title = "";
-      try {
-        title = decodeURIComponent(qid);
-      } catch (e) {
-      }
-      const hasDraft = s.value !== null && s.value !== "";
-      const preserved = hasDraft && title ? dwDraft.save(title, s.value) : false;
-      const host = document.getElementById("qfocus") || document.getElementById("view");
-      if (!host) return;
-      const notice = document.createElement("div");
-      notice.className = "qhealth qdraftrecovery";
-      notice.setAttribute("role", "alert");
-      notice.dataset.unmatchedQid = qid;
-      const absent = miss.target === "textarea" ? "its answer box is no longer available" : "the question is no longer on this page";
-      if (preserved) {
-        notice.textContent = "Draft preserved in this browser because " + absent + ". It will return if this title returns.";
-      } else if (hasDraft) {
-        notice.textContent = "Draft could not be restored or stored because " + absent + ". Copy it now: ";
-        const copy = document.createElement("textarea");
-        copy.readOnly = true;
-        copy.value = s.value;
-        copy.setAttribute("aria-label", "unrestored question draft");
-        notice.appendChild(copy);
-      } else {
-        notice.textContent = "Question state was discarded because " + absent + ".";
-      }
-      host.appendChild(notice);
     });
   }
   function refocus(ta) {
@@ -7248,6 +7214,7 @@ var DreamworkDesign = (() => {
     if (fileMsg && !(view && view.name === name && view.param === param))
       fileMsg.clear();
     view = { name, param, q: opts.q || null, mode };
+    setPendingGoalTarget(name, opts.fragment);
     applyTitle();
     if (window.dreambg) window.dreambg.setTint(TINT[name] || 0);
     const url = name === "questions" ? "/questions" : name === "answers" ? "/answers" : name === "settings" ? "/settings" : name === "file" ? "/file?p=" + encodeURIComponent(param || "") + (mode === "source" ? "&view=source" : "") : name === "review" ? "/review?p=" + encodeURIComponent(param || "") + (opts.q ? "&q=" + encodeURIComponent(opts.q) : "") : name === "tasks2" ? "/tasks2" + (param ? "?t=" + encodeURIComponent(param) : "") : name === "question" ? "/question?qid=" + encodeURIComponent(param || "") : name === "research" ? "/research" + (param ? "?p=" + encodeURIComponent(param) : "") : name === "reviews" ? "/reviews" : name === "goals" ? goalsUrl(opts.fragment) : name === "chat" ? "/chat/" + encodeURIComponent(param || "") : "/";
@@ -7271,7 +7238,7 @@ var DreamworkDesign = (() => {
       });
     }
     if (modeSwap) restoreScrollRatio(keepRatio);
-    if (name === "goals") scrollGoalTarget(opts.fragment);
+    retryPendingGoalTarget();
   }
   function goalsUrl(fragment) {
     return "/goals" + (typeof fragment === "string" && /^#goal-\d+$/.test(fragment) ? fragment : "");
@@ -7281,6 +7248,15 @@ var DreamworkDesign = (() => {
     const target = document.getElementById(fragment.slice(1));
     if (!target) return false;
     target.scrollIntoView();
+    return true;
+  }
+  function setPendingGoalTarget(name, fragment) {
+    pendingGoalFragment = name === "goals" && goalsUrl(fragment) !== "/goals" ? fragment : null;
+  }
+  function retryPendingGoalTarget() {
+    const fragment = pendingGoalFragment;
+    if (!fragment || !view || view.name !== "goals" || !scrollGoalTarget(fragment)) return false;
+    pendingGoalFragment = null;
     return true;
   }
   function isInternal(a) {

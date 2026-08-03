@@ -38,6 +38,7 @@ const parseMtime = raw => {
                  : { gen: '', mtime: raw };
 };
 let view = { name: null, param: null, q: null };
+let pendingGoalFragment = null;
 /* #1058 r2 — the route-specific payload for native routes TRAVELS ON THE VIEW
    OBJECT, not a separate global. Each navigation assigns `view` a fresh
    object (navigate:4772), so the object's identity IS the navigation's
@@ -1388,6 +1389,7 @@ function setData(next) {
     registry.update(data);
     restoreCardState(kept);
   }
+  retryPendingGoalTarget();
   return data;
 }
 async function ensureData() {
@@ -4860,6 +4862,7 @@ async function navigate(name, param, opts) {
   if (fileMsg && !(view && view.name === name && view.param === param))
     fileMsg.clear();
   view = { name, param, q: opts.q || null, mode };
+  setPendingGoalTarget(name, opts.fragment);
   applyTitle();
   if (window.dreambg) window.dreambg.setTint(TINT[name] || 0);
   const url = name === 'questions' ? '/questions'
@@ -4908,7 +4911,7 @@ async function navigate(name, param, opts) {
   // after the new content is in layout, and only for the swap that has a
   // position worth keeping
   if (modeSwap) restoreScrollRatio(keepRatio);
-  if (name === 'goals') scrollGoalTarget(opts.fragment);
+  retryPendingGoalTarget();
 }
 /* Goal fragments are the one scoped fragment-bearing route. Keeping the
    validation here prevents an arbitrary hash from becoming router state while
@@ -4922,6 +4925,20 @@ function scrollGoalTarget(fragment) {
   const target = document.getElementById(fragment.slice(1));
   if (!target) return false;
   target.scrollIntoView();
+  return true;
+}
+/* A valid goal fragment belongs to exactly one navigation. If its row is not
+   mounted yet, setData retries after the native registry update; success or
+   any later navigation clears it, so routine polls cannot yank the reader. */
+function setPendingGoalTarget(name, fragment) {
+  pendingGoalFragment = name === 'goals' && goalsUrl(fragment) !== '/goals'
+    ? fragment : null;
+}
+function retryPendingGoalTarget() {
+  const fragment = pendingGoalFragment;
+  if (!fragment || !view || view.name !== 'goals' ||
+      !scrollGoalTarget(fragment)) return false;
+  pendingGoalFragment = null;
   return true;
 }
 /* only same-document routes are intercepted; external links, new-tab and

@@ -7634,9 +7634,10 @@ class TestGoalsRoute(unittest.TestCase):
               return ids;
             };
             let renderedIds = [];
-            let data = null;
+            let data = null, pendingGoalFragment = null;
             const registry = {update(next) { renderedIds = renderIds(next); }};
             const window = {dwNative:{registry}};
+            %s
             %s
             %s
             const nodePayload = (id, title) => ({id, title, parent_id:null,
@@ -7708,6 +7709,7 @@ class TestGoalsRoute(unittest.TestCase):
         """) % (json.dumps(goals_src),
                 _extract_js_fn(router_src, "function nativeRegistry("),
                 _extract_js_fn(router_src, "function setData("),
+                _extract_js_fn(router_src, "function retryPendingGoalTarget("),
                 _extract_js_const(components_src, "TASK_REF_SKIP"),
                 _extract_js_const(components_src, "TASK_REF_SKIP_NO_CODE"),
                 _extract_js_const(components_src, "TASK_REF_RE"),
@@ -7759,6 +7761,7 @@ class TestGoalsRoute(unittest.TestCase):
               return ids;
             };
             let renderedIds = [], data = null, events = [];
+            let view = {name:'goals'}, pendingGoalFragment = null;
             const registry = {update(next) {
               renderedIds = renderIds(next); events.push('render:' + renderedIds.join(','));
             }};
@@ -7771,10 +7774,13 @@ class TestGoalsRoute(unittest.TestCase):
             %s
             %s
             %s
+            %s
+            %s
             const node = {id:7, title:'Seven', parent_id:null, state:'open',
               state_error:null, completed_count:0, total_count:0, blockers:[],
               details:'', criteria:[], member_tasks:[], verdicts:[]};
-            if (scrollGoalTarget('#goal-7')) {
+            setPendingGoalTarget('goals', '#goal-7');
+            if (retryPendingGoalTarget()) {
               console.error('cold goal-7 unexpectedly existed before data'); process.exit(50);
             }
             setData({goals:{health:'ok', examined_count:1, expected_count:1,
@@ -7783,11 +7789,28 @@ class TestGoalsRoute(unittest.TestCase):
               console.error('delayed goal target goal-7 was never reached after late setData; events='
                 + events.join(',')); process.exit(51);
             }
+            setData({goals:{health:'ok', examined_count:1, expected_count:1,
+              current_goal_id:null, nodes:[node]}});
+            if (events.filter(event => event === 'scroll:goal-7').length !== 1) {
+              console.error('routine setData re-scrolled goal-7 after it was reached; events='
+                + events.join(',')); process.exit(52);
+            }
+            setPendingGoalTarget('goals', '#goal-7');
+            view = {name:'dashboard'};
+            setPendingGoalTarget('dashboard', null);
+            setData({goals:{health:'ok', examined_count:1, expected_count:1,
+              current_goal_id:null, nodes:[node]}});
+            if (events.filter(event => event === 'scroll:goal-7').length !== 1) {
+              console.error('stale goal-7 target survived unrelated navigation; events='
+                + events.join(',')); process.exit(53);
+            }
         """) % (json.dumps(goals_src),
                 _extract_js_fn(router_src, "function nativeRegistry("),
                 _extract_js_fn(router_src, "function setData("),
                 _extract_js_fn(router_src, "function goalsUrl("),
-                _extract_js_fn(router_src, "function scrollGoalTarget("))
+                _extract_js_fn(router_src, "function scrollGoalTarget("),
+                _extract_js_fn(router_src, "function setPendingGoalTarget("),
+                _extract_js_fn(router_src, "function retryPendingGoalTarget("))
         _node_check(["node", "-e", script])
 
     def test_page_wires_one_native_goals_authority(self):

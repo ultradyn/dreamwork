@@ -1127,6 +1127,14 @@ could plausibly have taken any of them.
   for detail that is *already summarised accurately* by what is on screen,
   never for the only copy of something.
 
+**Goal references navigate to the named row, including on cold arrival**
+(#1174). `PG-N` links to `/goals#goal-N`; the corresponding native goal row
+owns that `id`. The goals route keeps one valid fragment pending when the row
+is absent, retries only after a native data update mounts it, and forgets it
+after success or any later navigation. A routine poll therefore never
+re-scrolls a reader who has moved away, and no timeout guesses when data is
+ready.
+
 Two corollaries the page already obeys. **A fold is a promise**: the summary
 says what is inside (`questions · 2 to answer · 1 awaiting fold`), so a
 collapsed panel never hides the fact that something is in flight. And
