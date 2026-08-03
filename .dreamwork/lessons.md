@@ -6273,15 +6273,33 @@ false.** Nothing on the dashboard read as broken, because the number a glance la
 the field with the drift is the one carrying `what` — the human-readable description — so the false
 list is the one that *looks* authoritative next to a bare list of pids.
 
-The instrument was not silent. `just status-sync` printed
-`lanes reap examined 6, pruned 0, kept 6, unparseable 6` on every tick. **`unparseable 6` out of six
-entries means it could not parse a single one** — a total failure of the field — and it is phrased
-identically to a healthy population report. I read past it at least twice in one session and described
-it in my own notes as designed-honest population naming, which it is, and which is not the same as
-harmless.
+I first wrote here that the instrument had been reporting this and I read past it. **That was wrong,
+and the truth is worse.** `just status-sync` did print `lanes reap examined 6, pruned 0, kept 6,
+unparseable 6` on every tick — but that line is not about staleness. I rewrote `lanes` to the correct
+live fleet, re-ran the sync, and it printed **`unparseable 6` again, unchanged.** It reports a shape
+mismatch, and it would say the same over a perfectly fresh list.
 
-Two things to take:
+`status_sync.py:756` is `re.match(r"^[a-z]+-(\d+)", str(entry))`. Its docstring says `lanes` entries
+are author-written strings beginning with the lane name (`cx-968foldsha — #968 P2: …`). The field holds
+**dicts**. `str(dict)` starts with `{`, the regex never matches, every entry yields `None`, and
+`reap_finished_lanes` counts it unparseable and *keeps* it — correctly, because `#702`/`#136` say
+cannot-compare must never read as landed.
 
+So **`#969`'s reaper has never pruned a single entry in its existence**, and `unparseable N` has
+equalled the entry count on every run of its life. There was no instrument for the drift at all. And
+`#969`'s own docstring names the failure it was built to prevent — *"for hours it named landed
+dispatches while `dreamers` agreed (both stale in the same direction), leaving the #702 disagreement
+check silent"* — which is precisely what went on happening, with the fix in place and passing its
+tests.
+
+Three things to take:
+
+- **A fix whose tests are built from its own docstring tests the docstring.** `#969` shipped a reaper,
+  a rationale, and passing tests, and never touched a byte of real data. Whatever fixture its tests
+  used had the string shape `_lane_entry_base_id` expects; the field has the dict shape. This is the
+  session's dominant defect one level up — not a green test exercising a substitute for the production
+  path, but a green test exercising a substitute for the production *data*. The separating question is
+  the same one: **would this test go red if the field it guards were the shape it actually is?**
 - **Two records of the same fact, one derived and one hand-kept, is the defect** — not the staleness
   that follows from it. The hand-kept one always drifts; the question is only whether anything ever
   compares them. Derive what can be derived and keep authored only the part that genuinely needs an
