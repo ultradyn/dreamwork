@@ -6067,3 +6067,37 @@ The lane's behaviour is the part to keep: it read the entry, found the citation 
 and said so plainly. The instruction that produced that — *"if a citation does not say what the
 brief claims it says, that is a refuted premise; stop and report it"* — earns its place, because it
 caught the coordinator twice in an hour when nothing else did.
+
+## A new practice ran on the next thing I composed, not on the things already going out (2026-08-03, #1155/#1157/#1158, mine, measured)
+
+Earlier today I miscited twice and wrote the fix down: **audit every `#NNN` and every
+`lessons.md:<line>` in a brief against the source at DISPATCH time, not at composition time.** Then I
+dispatched three briefs. The audit ran on one — the third — and on that one it immediately found two
+defects: `lessons.md:431`, which I had cited for *"states must not collapse"*, is not a lesson head at
+all but mid-body text inside the `#136` region (the heads there are `:430`, about exemptions, and
+`:440`, about a confirmation shown for a write that did not happen — neither is the sentence I
+attributed); and `lessons.md:3491`, whose substance was right, is a `##` prose head, so a lane copying
+that numeric citation into a tracked file trips `lint.py`'s `check_lesson_citations` (`#1172`). The
+first two briefs had already launched carrying the bad pointer.
+
+**The measurement is the point: the practice found something on the very first brief it was applied
+to.** That is strong evidence it works, and equally strong evidence it was not applied. A practice
+with a 1-in-3 application rate is not a weak instrument, it is an unrun one — and its silence on the
+two unaudited briefs is indistinguishable from a clean audit, which is this session's dominant defect
+shape wearing my own clothes.
+
+The transferable rule is about WHERE a new practice lives. I recorded the fix as a resolution — a
+thing to remember — and a resolution competes for attention with everything else at the moment of
+dispatch, which is exactly the moment attention is scarcest because the brief is finished and the
+launch is one command away. **A practice that must be remembered at the busiest instant will be run
+when the instant happens to be calm.** The durable form is to bind it to the artifact rather than to
+the intention: the audit belongs in the dispatch path, so that launching a brief with an unresolvable
+citation is refused the way `launch-lane` already refuses an unresolvable scope derivation. Until that
+exists, the honest second-best is to run the audit when the brief is WRITTEN and record the result in
+the brief itself, because composition time is the only moment that is reliably calm.
+
+Note the asymmetry that made this survivable: the two live lanes are not pointed anywhere false — the
+430-446 region is all `#136` material and the rule as stated in the briefs' prose is correct, so the
+worst case is a lane that stops and reports a refuted premise, which is the behaviour a `#1166` lane
+already demonstrated and which I want. A miscitation degrades to a stopped lane, not to wrong work.
+That is the only reason a 1-in-3 audit rate has cost this loop rounds rather than correctness.
