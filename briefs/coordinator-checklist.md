@@ -112,3 +112,23 @@ text shape cannot establish contradiction, scope completeness, or world truth.
   `/.worktrees/`, so a lane cannot observe them at all; the gate's own lint runs from
   `.worktrees/.gate-*` and is equally blind. An instruction only the main checkout can
   satisfy is unsatisfiable for a lane (2026-08-04, #1184).
+
+- **Dispatch reviews with `dev/dispatch_lane.py --launch-review`, not by hand** (2026-08-04, #1163).
+  It pins the reviewed SHA, creates `<branch>-review-r<round>` as an **attached** branch worktree,
+  records `.launch.json`, launches from that worktree's cwd, and verifies runner containment.
+  Hand-rolling `git worktree add --detach` + `ccc` is what produced the lane-containment ERROR that
+  blocked an unrelated clean-MERGE landing, and left four worktrees unreapable. Note a review worktree
+  still refuses `reap` until its lane lands — its branch legitimately carries the lane's unmerged shas
+  — so that refusal is correct and is not a reason to reach for `--detach` again.
+
+- **Never quote a WARN-count or a "known false positives" number in a brief; tell the lane to pin its
+  own pre-rebase row set and compare against that** (2026-08-04, #1190 r2). The brief's "three known
+  `lesson citations` rows" became four within the hour, because a coordinator lessons commit added a
+  citation that trips `#1176`. A lane that trusts the number either reconciles to a stale figure or
+  reports a false drift; a lane that pins its own baseline is right regardless of what master does
+  underneath it.
+
+- **When a task is unblocked by another task landing, say what changed and tell the lane to re-derive,
+  not to reconcile** (2026-08-04, #1071 r4). Its blocking measurement — 165185 against a 165000 budget —
+  was taken against a tree 42 commits old and is now meaningless. Carrying a stale number into the
+  unblocking brief is how the number outlives the condition that produced it.

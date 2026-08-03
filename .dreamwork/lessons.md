@@ -6725,3 +6725,39 @@ The dispatched lane refuted it in one round for the cost of a worktree. The
 cheaper fix is the one-line check before writing the brief: **grep for the
 single most identifying string, unglobbed, and confirm the file you name
 actually contains it.**
+
+## A second-hand dogfood report is an observation with a timestamp, not a description of the tree (2026-08-04, #1168/#1187/#1180)
+
+Three dispatches in one day rested on premises that were already false when I
+wrote them, and all three were mine:
+
+- **`#1180`** — I asserted `reap.py` refused on non-disposable ignored files,
+  quoting the task's own notes, which had themselves been written from the
+  tool's OUTPUT rather than its predicate. It did not refuse. I was mid-sweep
+  with 33 candidates resting on that.
+- **`#1187`** — I named `dev/lane_status.py` as the tick-line emitter from a
+  grep that could not have found the right file.
+- **`#1168`** — filed from a `#1157` round-3 lane's dogfood, restating that
+  `begin` silently double-registers. It has REFUSED since `#870`
+  (`d6df8d98`), with tests from `#942` (`b729643d`). The dispatched lane's
+  first fixture printed `second_begin_exit=2` and a refusal message.
+
+The common move is not carelessness about facts — each premise came from a
+real report. It is **treating a dated observation as a present-tense property
+of the tree.** This repo lands work continuously; a dogfood note from three
+days ago describes a tree that no longer exists, and the report's own
+confidence survives into the brief unchanged.
+
+The tell in `#1168` was a causal story I had no evidence for: *"the tell is
+that the information already exists — `forget` explains it retrospectively."*
+That sentence explains a mechanism I never reproduced. **A confident
+explanation of WHY a defect happens is the strongest sign the defect was never
+observed**, because reproducing it would have produced a measurement instead.
+
+The cost was bounded only because every brief carries a STOP clause. That
+clause is doing more work than the briefs it appears in — but it converts a
+wrong premise into a wasted worktree, not into a caught error. **The cheap fix
+is upstream: before restating a second-hand report as fact, run the one-line
+fixture that would refute it.** `#1188` was dispatched this way — with a
+measurement taken minutes earlier by the lane that refuted `#1168` — and that
+is the shape to copy.
