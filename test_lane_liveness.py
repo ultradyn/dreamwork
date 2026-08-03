@@ -758,7 +758,7 @@ class TestLiveLaneCasesABC:
         UNKNOWN too). NOT a discriminating test for the too-narrow direction.
       - test_case_a_untracked_deliverable_is_unknown_not_wedged: same — PASSES
         under always-None. NOT discriminating for too-narrow.
-      - test_scratch_only_untracked_still_reads_wedged: PASSES (WEDGED→UNKNOWN
+      - test_scratch_only_untracked_still_reads_wedged: FAILS (WEDGED→UNKNOWN
         — it tests the too-NARROW direction; always-None gives UNKNOWN, not
         WEDGED, so it DOES fail under too-narrow). NOT discriminating for
         too-BROAD: it has ONLY scratch, so mutating the predicate to return
@@ -970,7 +970,8 @@ class TestLiveLaneCasesABC:
         verdict = inspection.live_liveness
         assert verdict[0].state == lane_liveness.LIVE_WEDGED, \
             "a lane with ONLY scratch untracked was not classified wedged " \
-            "— the exclusion list is too broad and hides the hazard: %r" % (
+            "— the exclusion list is too narrow or missing, so scratch " \
+            "looks like progress: %r" % (
                 verdict[0],)
 
     def test_case_a_dreamwork_docs_deliverable_is_unknown_not_wedged(
@@ -1120,6 +1121,35 @@ class TestLiveLivenessCwdChannel:
         assert verdict[0].state == lane_liveness.LIVE_WEDGED, \
             "cwd-only lane was not given a live-liveness verdict: %r" % (
                 verdict,)
+
+    def test_busy_runner_vetoes_wedged_in_either_proc_order(
+            self, tmp_path, monkeypatch):
+        """All cwd runners are relevant to the lane verdict. PID 701 is idle
+        while its nested PID 702 is busy; reversing /proc enumeration must
+        not change the state, and the busy runner must veto WEDGED."""
+        target, worktree, _identity = _subject(tmp_path, lane="glm-nested")
+        monkeypatch.setattr(lane_liveness, "pid_matches_lane", lambda *_a: False)
+        cpu = {701: (0.1, 600.0), 702: (25.0, 600.0)}
+
+        def state_for(order):
+            inspection = lane_liveness.inspect_lanes(
+                target, process_entries=[str(pid) for pid in order],
+                registered_worktrees=(worktree,),
+                read_cmdline=lambda _pid: b"ccc\x00-y\x00@glm52\x00",
+                read_cwd=lambda _pid: str(worktree),
+                read_cpu=lambda pid: cpu[pid],
+                wedge_probe=lambda _wt, _pid: "permission-wedge",
+                skip_pids=set())
+            assert inspection.cwd_live == ("glm-nested",)
+            assert len(inspection.live_liveness) == 1
+            return inspection.live_liveness[0].state
+
+        forward = state_for((701, 702))
+        reverse = state_for((702, 701))
+        assert forward == reverse == lane_liveness.LIVE_WORKING, \
+            "same lane with PID 701=0.1s CPU and PID 702=25.0s CPU produced " \
+            "states forward=%s reverse=%s; both runners must be consulted " \
+            "and busy PID 702 must veto WEDGED" % (forward, reverse)
 
 
 class TestLiveLivenessDenominator:
