@@ -83,13 +83,12 @@ class QuestionDualColumnSource(unittest.TestCase):
         layout cannot reach them — asserted below as the dashboard half.
         """
         src = _registered_component_src(watch.PAGE, "question")
-        # the container exists and carries the dual-column marker
-        self.assertIn('id:"qfocus"', src,
-                      "the registered /question component no longer emits "
-                      "the #qfocus container")
-        self.assertIn('className:"qdual"', src,
-                      "the registered /question component lost its qdual "
-                      "layout-split branch — #qfocus.qdual is not emitted")
+        dual_focuses = re.findall(
+            r'id\s*:\s*"qfocus"\s*,\s*className\s*:\s*"qdual"', src)
+        self.assertEqual(
+            len(dual_focuses), 2,
+            "the registered /question component must emit #qfocus.qdual "
+            "for both open and fold-following answered states")
 
     def test_dashboard_builders_do_not_emit_the_focus_container(self):
         """The dashboard and /questions listing are UNCHANGED: they never
