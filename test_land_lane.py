@@ -1451,6 +1451,39 @@ def test_failing_named_test_names_phase_and_retains_lane(landing_repo):
 
     assert result.returncode == 1
     assert "REFUSE phase=named-tests: named test selection failed" in result.stderr
+    assert "INDETERMINATE" not in result.stderr
+    _assert_base_unmoved(root, before)
+    _assert_retained(root, lane)
+
+
+def test_sigkilled_unrelated_test_under_low_memory_is_indeterminate(landing_repo):
+    root, lane = landing_repo
+    _write(
+        lane / "justfile",
+        "pytest *ARGS:\n"
+        "    @echo 'concurrent tests: no other pytest suites; 22 browser/guard "
+        "processes; mem: 4G available of 61G (low available memory — a browser "
+        "lane costs RAM a pytest lane does not) (advisory)'\n"
+        "    @echo 'self = <Popen: returncode: -9 args: [node]>'\n"
+        "    @echo 'FAILED test_named.py::test_browser - "
+        "subprocess.TimeoutExpired: timed out after 30 seconds'\n"
+        "    @exit 1\n",
+    )
+    _git(lane, "add", "justfile")
+    _git(lane, "commit", "-m", "fixture an indeterminate browser death")
+    before = _git(root, "rev-parse", "HEAD")
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 1
+    assert (
+        "REFUSE phase=named-tests: named test selection INDETERMINATE"
+        in result.stderr
+    )
+    assert "unrelated-by-4-rules=test_named.py::test_browser" in result.stderr
+    assert "low-memory-advisory=present" in result.stderr
+    assert "death=timeout+SIGKILL(returncode=-9; sender unknown)" in result.stderr
+    assert "named test selection failed" not in result.stderr
     _assert_base_unmoved(root, before)
     _assert_retained(root, lane)
 
@@ -3482,6 +3515,47 @@ def test_relevance_import_under_try_is_a_known_false_green(tmp_path):
 
     assert line.startswith("test-relevance: OK — examined 1 selected test(s) against 1 changed path(s)")
     assert "all 1 related by at least one of the 4 rules" in line
+
+
+@pytest.mark.parametrize(
+    ("death", "label"),
+    [
+        ("subprocess.TimeoutExpired: timed out after 30 seconds", "death=timeout"),
+        ("<Popen: returncode: -9 args: [node]>", "death=SIGKILL(returncode=-9"),
+    ],
+)
+def test_each_indeterminate_death_kind_is_named(death, label):
+    output = (
+        "mem: 4G available of 61G (low available memory — a browser lane "
+        "costs RAM a pytest lane does not) (advisory)\n"
+        "FAILED test_browser.py::test_route - browser did not judge\n"
+        f"{death}\n"
+    )
+    result = subprocess.CompletedProcess([], 1, stdout=output, stderr="")
+
+    reason = land_lane._indeterminate_named_test_reason(
+        result, ["test_browser.py"]
+    )
+
+    assert reason is not None
+    assert label in reason
+
+
+def test_assertion_or_related_failure_is_not_reclassified():
+    prefix = (
+        "mem: 4G available of 61G (low available memory — a browser lane "
+        "costs RAM a pytest lane does not) (advisory)\n"
+        "FAILED test_browser.py::test_route - AssertionError\n"
+    )
+    assertion = subprocess.CompletedProcess([], 1, stdout=prefix, stderr="")
+    killed = subprocess.CompletedProcess(
+        [], 1, stdout=prefix + "<Popen: returncode: -9 args: [node]>\n", stderr=""
+    )
+
+    assert land_lane._indeterminate_named_test_reason(
+        assertion, ["test_browser.py"]
+    ) is None
+    assert land_lane._indeterminate_named_test_reason(killed, []) is None
 
 
 def test_a_doc_only_lane_with_no_registry_lands_because_none_was_required(
