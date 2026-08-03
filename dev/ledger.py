@@ -107,17 +107,33 @@ class LedgerError(Exception):
     """A fold or count could not be performed safely."""
 
 
+# #1042 — the goal-reference grammar. Matches the documented `\bPG-\d+\b`
+# notation (file-formats.md) and the renderer's `PG-(\d+)` branch, so anything
+# the CLI accepts also renders as a link. int()'s permissive forms (PG--1,
+# PG-1_000, PG- 1) are rejected, not silently coerced into a wrong group id.
+_GOAL_REF_RE = re.compile(r"^(?:PG-)?(\d+)$")
+
+
 def _goal_ref(value):
     """Argparse type: accept a bare int OR a ``PG-<num>`` goal reference.
 
     #1042 — project goals are cited as ``PG-<num>`` so a goal reference never
     renders as a link to an unrelated task. Every group-id argument accepts
     both ``1`` and ``PG-1``; the value returned is the bare integer either way.
+
+    The grammar is exactly ``(?:PG-)?\\d+`` — the doc says ``\\bPG-\\d+\\b``
+    and the renderer matches ``PG-(\\d+)``, so the three agree. This rejects
+    the forms int() would silently accept (``PG--1`` → -1, ``PG-1_000`` →
+    1000, ``PG- 1`` → 1) because none of them render as a goal link and a
+    user who typos one should hear about it, not reach a wrong record.
     """
     s = str(value).strip()
-    if s.startswith("PG-"):
-        s = s[3:]
-    return int(s)
+    m = _GOAL_REF_RE.match(s)
+    if m is None:
+        raise argparse.ArgumentTypeError(
+            "expected a group id (bare integer or PG-<num>, e.g. 1 or PG-1), "
+            "got %r" % (value,))
+    return int(m.group(1))
 
 
 # ---------------------------------------------------------------------------

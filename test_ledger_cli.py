@@ -2198,6 +2198,29 @@ def test_groups_pg_ref_accepted_wherever_bare_id_is(dev_ledger, tmp_path):
     assert rc_ready == 0, "groups ready PG-1 should succeed"
 
 
+def test_goal_ref_grammar_is_strict_not_int_permissive(dev_ledger):
+    """#1042 — _goal_ref enforces exactly ``(?:PG-)?\\d+``, matching the doc's
+    ``\\bPG-\\d+\\b`` (file-formats.md:300) and the renderer's ``PG-(\\d+)``.
+
+    The old _goal_ref stripped ``PG-`` then called ``int()``, which silently
+    accepted the three forms below — each resolves to a plausible integer
+    (-1, 1000, 1) that is NOT a goal the renderer would link. A regression to
+    that int()-based shape makes each ``pytest.raises`` fail (no exception is
+    raised), so this test goes red if and only if the grammar loosens past
+    ``\\d+``. P2: the doc and the CLI now agree on one grammar.
+    """
+    import argparse
+    g = dev_ledger._goal_ref
+    # Canonical forms — bare int and PG-<num> both return the integer.
+    assert g("1") == 1
+    assert g("PG-1") == 1
+    assert g("PG-42") == 42
+    # The three forms int() accepted but PG-\d+ does not — discriminating.
+    for bad in ("PG--1", "PG-1_000", "PG- 1"):
+        with pytest.raises(argparse.ArgumentTypeError):
+            g(bad)
+
+
 def _membership_disposition(output):
     match = re.search(r"groups: task #\d+ (added|unchanged) in group #\d+", output)
     assert match is not None, f"membership disposition absent from {output!r}"
