@@ -1654,8 +1654,13 @@ def _partition_warn_rows(
     false-REDs unrelated branches. They are still printed (``_print_rows``
     already showed the full population); only the fail-decision excludes them.
     """
-    compared = tuple(r for r in rows if not _is_non_tree_warn(r))
-    excluded = tuple(r for r in rows if _is_non_tree_warn(r))
+    def is_excluded(row: str) -> bool:
+        if _is_fleet_transient_lane_warn(row):
+            return True
+        return _clock_advisory_receipt_identity(row) is not None
+
+    compared = tuple(r for r in rows if not is_excluded(r))
+    excluded = tuple(r for r in rows if is_excluded(r))
     return compared, excluded
 
 
@@ -1685,10 +1690,11 @@ def _partition_warn_row_sets(
 ) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
     """Partition two readings while comparing tracked receipt metadata.
 
-    Rule: for the same receipt path, only the two clock-derived age counts are
-    exempt; every rendered field derived from tracked acknowledgement content
-    remains in a canonical comparable row. A receipt advisory present in only
-    one reading is the due-date clock transition and remains fully excluded.
+    Rule: only a forward OK-to-expired clock transition is fully excluded.
+    Once the baseline already has a canonical receipt advisory, every unique
+    receipt row is comparable after its two clock-derived ages are erased.
+    This preserves path identity: unmatched paths become an add/remove rather
+    than being paired with one another.
     """
     baseline_compared, baseline_excluded = _partition_warn_rows(baseline)
     after_compared, after_excluded = _partition_warn_rows(after)
@@ -1704,15 +1710,17 @@ def _partition_warn_row_sets(
 
     baseline_receipts = receipt_rows(baseline_excluded)
     after_receipts = receipt_rows(after_excluded)
-    # Duplicate rows for one path are not safely identifiable as one receipt;
-    # leave them excluded here and let the existing full-population reporting
-    # expose the anomaly rather than arbitrarily pairing them.
-    for path in baseline_receipts.keys() & after_receipts.keys():
-        baseline_rows = baseline_receipts[path]
-        after_rows = after_receipts[path]
-        if len(baseline_rows) == 1 and len(after_rows) == 1:
-            baseline_compared += (baseline_rows[0],)
-            after_compared += (after_rows[0],)
+    # No baseline advisory means this is the one permitted asymmetric case:
+    # the wall clock crossed the deadline and created the first WARN.
+    if baseline_receipts:
+        # Duplicate rows for one path are not safely one receipt. Leave only
+        # those duplicates excluded rather than arbitrarily pairing them.
+        baseline_compared += tuple(
+            rows[0] for rows in baseline_receipts.values() if len(rows) == 1
+        )
+        after_compared += tuple(
+            rows[0] for rows in after_receipts.values() if len(rows) == 1
+        )
 
     return (
         baseline_compared,

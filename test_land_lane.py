@@ -821,6 +821,87 @@ def test_expired_receipt_date_change_produces_gate_refusal_delta(
         "gate's clock exemption swallowed tracked acknowledgement metadata")
 
 
+def _commit_fixture_warn_transition(root, lane, before_row, after_row, message):
+    before_lines = "old warning\n" + before_row[len("  WARN  "):] + "\n"
+    _write(root / "lint-rows.txt", before_lines)
+    _git(root, "add", "lint-rows.txt")
+    _git(root, "commit", "-m", "establish receipt warning baseline")
+    _git(lane, "rebase", "master")
+    after_lines = "old warning\n"
+    if after_row is not None:
+        after_lines += after_row[len("  WARN  "):] + "\n"
+    _write(lane / "lint-rows.txt", after_lines)
+    _git(lane, "add", "lint-rows.txt")
+    _git(lane, "commit", "-m", message)
+
+
+def test_expired_receipt_renewal_refuses_gate(landing_repo, tmp_path, monkeypatch):
+    """Expired WARN -> renewed OK is a tracked removal, not clock drift."""
+    root, lane = landing_repo
+    expired, = _capture_expired_sync_conflict_receipt_rows(
+        tmp_path, monkeypatch,
+        ("2026-08-03", "2026-08-10", "same reason"),
+    )
+    _commit_fixture_warn_transition(
+        root, lane, expired, None, "renew acknowledgement deadline")
+    before = _git(root, "rev-parse", "HEAD")
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 1, (
+        "expired receipt renewal passed without a WARN removal delta:\n" +
+        result.stdout + result.stderr)
+    assert "lint-precheck WARN row-set comparison: added=0 removed=1" in result.stdout
+    assert "REFUSE phase=lint-precheck: WARN row set changed" in result.stderr
+    _assert_base_unmoved(root, before)
+    _assert_retained(root, lane)
+
+
+def test_expired_receipt_path_rename_refuses_gate(
+        landing_repo, tmp_path, monkeypatch):
+    """Different receipt paths survive as add/remove; they are never paired."""
+    root, lane = landing_repo
+    before_row, = _capture_expired_sync_conflict_receipt_rows(
+        tmp_path, monkeypatch,
+        ("2026-08-03", "2026-08-10", "same reason"),
+    )
+    after_row = before_row.replace(
+        "identity.sync-conflict-", "renamed.sync-conflict-", 1)
+    assert after_row != before_row
+    _commit_fixture_warn_transition(
+        root, lane, before_row, after_row, "rename conflict receipt path")
+    before = _git(root, "rev-parse", "HEAD")
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 1, (
+        "receipt path rename passed without an add/remove delta:\n" +
+        result.stdout + result.stderr)
+    assert "lint-precheck WARN row-set comparison: added=1 removed=1" in result.stdout
+    assert "REFUSE phase=lint-precheck: WARN row set changed" in result.stderr
+    _assert_base_unmoved(root, before)
+    _assert_retained(root, lane)
+
+
+def test_marker_does_not_exclude_row_when_clock_normalisation_fails(
+        tmp_path, monkeypatch):
+    """The marker alone cannot earn the clock-derived exemption."""
+    row, = _capture_expired_sync_conflict_receipt_rows(
+        tmp_path, monkeypatch,
+        ("2026-08-03", "2026-08-10", "same reason"),
+    )
+    changed = row.replace(
+        "acknowledgement is 17 day(s) old", "acknowledgement age wording changed", 1)
+    assert changed != row
+
+    counts, added, removed = _comparable_warn_delta([row], [changed])
+
+    assert counts == (1, 1, 1, 0), (
+        "marker-bearing row stayed excluded although clock normalisation failed")
+    assert (len(added), len(removed)) == (1, 1), (
+        "changed age wording passed because the marker asserted an exemption")
+
+
 # ---------------------------------------------------------------------------
 # #1040: coordinator authorisation for an intended WARN row-set change.
 #
