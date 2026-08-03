@@ -5838,3 +5838,39 @@ one, because it will be run.
 Related, same brief family: the `#1049` round-4 head said *"Read the task record first"*
 and *"your FIRST act is `git cherry-pick`"*. Both cannot be literal, and the lane said
 so. Write it as *"after reading the record, your first mutation is the cherry-pick."*
+
+## The grep that finds stale references also finds the tests guaranteeing the deletion — textually identical, semantically opposite (2026-08-03, #1049, mine, measured)
+
+Yesterday's entry told me to derive an owned set with `git grep -ln <symbol>` instead of
+from memory. I did that for `#1049` round 5, printed the table in the brief, and told the
+lane to re-run it and disagree. **It disagreed, correctly, on two counts.**
+
+**First: I ran the grep against `master`.** The lane's round is a carry-forward that
+begins with `git cherry-pick`, so the tree it works in already has the deletion applied.
+On `master`, `client/views.js` still defines `buildQuestion` and `client/router.js` still
+dispatches to it; on the branch, both are gone and `router.js` matches only the plural
+`buildQuestions`. My table described a tree the lane would never see. **A tool-derived
+denominator is only as good as the tree you ran the tool against, and for a carry-forward
+round that tree is post-cherry-pick, not master.**
+
+**Second, and sharper: five hits in `test_client_dist.py` are not stale — they are the
+anti-regression assertions that exist BECAUSE the symbol was deleted:**
+
+    assert "function buildQuestion(" not in assembled
+    assert "return buildQuestion(view.param, d)" not in assembled
+    if (open.oldBuilder !== 'undefined') throw new Error('OPEN state retained the deleted buildQuestion symbol')
+
+**A test that guarantees a symbol is absent must name that symbol.** So it is textually
+indistinguishable from the stale references I was hunting, and semantically its exact
+opposite — "fixing" it would delete the guarantee that the deletion holds. `#136` again:
+*names the deleted symbol* and *is stale* are two predicates, and one grep reports them
+identically.
+
+**So the rule has a second half: grep produces CANDIDATES, and each one must be classified
+by reading it — stale reference, deliberate absence assertion, or unrelated (a plural, a
+different symbol).** Publish the classification with the set, because the lane cannot
+infer which of those a hit is, and the destructive mistake (deleting an absence assertion)
+looks exactly like the constructive one.
+
+The lane stopped rather than widening scope silently — third time this session that a
+STOP-on-refuted-premise rule paid for itself, and the second time on this same task.
