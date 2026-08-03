@@ -798,6 +798,15 @@ def _batch_blobs(root: Path, commits: list[str],
     return found
 
 
+def _history_match_is_armed(commit: str, *, boundary_survives: bool,
+                            preexisting: set[str],
+                            inherited_prefix: bool) -> bool:
+    """Classify one matching blob without trusting a rebased commit id."""
+    if boundary_survives:
+        return commit not in preexisting
+    return not inherited_prefix
+
+
 def scan_history(cwd: Path | None, entries: list[dict],
                  base: str | None = None) -> dict:
     """Which of THIS BRANCH's own commits still hold a recorded injection.
@@ -871,10 +880,11 @@ def scan_history(cwd: Path | None, entries: list[dict],
             if not matching:
                 continue
             armed_by = [e for e in matching
-                        if ((boundary_survives[id(e)]
-                             and commit not in preexisting[id(e)])
-                            or (not boundary_survives[id(e)]
-                                and not inherited_prefix[id(e)]))]
+                        if _history_match_is_armed(
+                            commit,
+                            boundary_survives=boundary_survives[id(e)],
+                            preexisting=preexisting[id(e)],
+                            inherited_prefix=inherited_prefix[id(e)])]
             subject = _git(root, "log", "-1", "--format=%s", commit)
             if armed_by:
                 hits.append({"commit": commit, "path": path,
