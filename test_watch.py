@@ -11607,9 +11607,9 @@ class TestFileViewMode(unittest.TestCase):
                       watch.PAGE)
         # every entry point into navigate carries it, or one of them silently
         # loses the mode (the deep-link bug this was red-proved against)
-        for site in ("{ push: true, q: r.q, mode: r.mode }",
-                     "{ push: false, q: r.q, mode: r.mode }",
-                     "{ push: false, transition: false, q: r.q, mode: r.mode }"):
+        for site in ("{ push: true, q: r.q, mode: r.mode, fragment: r.fragment }",
+                     "push: false, q: r.q, mode: r.mode, fragment: r.fragment",
+                     "push: false, transition: false, q: r.q, mode: r.mode,"):
             self.assertIn(site, watch.PAGE, f"navigate call missing the mode: {site}")
 
     def test_the_switch_is_links_markdown_only_and_holds_its_own_state(self):
