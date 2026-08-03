@@ -30,6 +30,7 @@ from dev.citation_audit import (  # noqa: E402
     classify,
     corpus_coverage,
     extract_citations,
+    find_unsupported_citation_forms,
     format_report,
 )
 from dev import citation_audit  # noqa: E402
@@ -188,6 +189,40 @@ def test_extract_finds_colon_citation():
     assert "guard" in cits[0].wording
 
 
+def test_extract_finds_house_bold_citation():
+    text = "- **#140** — a check that could not run must not look like one that ran."
+    cits = extract_citations(text, "test")
+    assert [(cit.task_id, cit.wording) for cit in cits] == [
+        (140, "a check that could not run must not look like one that ran")
+    ], "house bold form **#140** — gloss was not extracted"
+
+
+def test_unsupported_citation_forms_are_reported_not_silently_ignored():
+    forms = {
+        "parenthesized": "(#140)",
+        "possessive": "#140's",
+        "bracketed": "[#140]",
+        "line-wrapped": "#140 — a\n gloss split across a line wrap.",
+        "shared-gloss": "#140/#141 — one gloss shared by two citations.",
+    }
+    text = "\n".join(forms.values())
+
+    # These remain outside the extractor's deliberately narrow grammar.  The
+    # audit must name that blind population instead of presenting it as clean.
+    assert {cit.task_id for cit in extract_citations(text, "test")} == {141}
+    unsupported = find_unsupported_citation_forms(text, "test")
+    assert {item.form for item in unsupported} == set(forms)
+    from dev.citation_audit import AuditReport
+    rendered = format_report(AuditReport(unsupported_forms=unsupported), quiet=True)
+    assert "CITATION FORMS NOT COVERED: 5" in rendered
+
+
+def test_citation_detection_does_not_widen_to_plain_issue_or_cli_numbers():
+    text = "Issue #1152 is open; run check --require 1 before reporting."
+    assert extract_citations(text, "test") == []
+    assert find_unsupported_citation_forms(text, "test") == []
+
+
 def test_extract_ignores_bare_reference():
     """A bare #NNN with no descriptive text is a reference, not a citation."""
     text = "Fix #100 and also check #200."
@@ -271,6 +306,22 @@ def test_report_names_unresolvable_count():
     ])
     text = format_report(report)
     assert "UNRESOLVABLE:     1" in text
+
+
+def test_verbose_report_shows_unclassifiable_rows():
+    from dev.citation_audit import AuditReport
+    citation = Citation(
+        brief="bold-house-form",
+        task_id=140,
+        wording="a check that could not run must not look like one that ran",
+        line=7,
+        status="UNCLASSIFIABLE",
+        detail="tool cannot judge paraphrase validity",
+    )
+    text = format_report(
+        AuditReport(examined=1, unclassifiable=[citation]), quiet=False
+    )
+    assert "[UNCLASSIFIABLE] bold-house-form:7 #140" in text
 
 
 # -- audit_briefs end-to-end --------------------------------------------------
