@@ -4784,6 +4784,11 @@ var DreamworkDesign = (() => {
     data = next;
     if (window.dwPluginCommands) window.dwPluginCommands(data.plugin_commands);
     const registry = nativeRegistry();
+    if (registry && !registry.mounted) {
+      registry.update(data);
+      retryPendingGoalTarget();
+      return data;
+    }
     const kept = registry && registry.mounted().length ? snapshotCardState() : null;
     if (registry) {
       registry.update(data);

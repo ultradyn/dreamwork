@@ -1380,6 +1380,14 @@ function setData(next) {
   // all of them — where the declared set has not moved.
   if (window.dwPluginCommands) window.dwPluginCommands(data.plugin_commands);
   const registry = nativeRegistry();
+  // Extracted route checks provide only the update seam. They still exercise
+  // the production update-before-goal-retry order, without pretending to own
+  // the mounted question-card state that the full native registry carries.
+  if (registry && !registry.mounted) {
+    registry.update(data);
+    retryPendingGoalTarget();
+    return data;
+  }
   // Native delegates replace their builder-owned subtree when React updates.
   // Carry the same human-owned card state the legacy tick carries, and take
   // the snapshot BEFORE update: afterwards the draft and caret are gone.

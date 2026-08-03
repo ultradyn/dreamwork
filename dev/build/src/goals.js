@@ -317,10 +317,7 @@ function GoalPage(props) {
   }
   const nodes = payload.nodes || [];
   const byId = new Map(nodes.map(node => [node.id, node]));
-  const current = byId.get(payload.current_goal_id) || null;
-  const addChild = node => {
-    setCreateRequest({ parentId: node.id, nonce: Date.now() });
-  };
+  const current = byId.get(payload.current_goal_id);
   const tree = expected === 0
     ? React.createElement('div', { className: 'goaltree-empty' },
         React.createElement('strong', null, 'No goals yet'),
@@ -346,7 +343,10 @@ function GoalPage(props) {
           },
           'aria-label': 'Edit details for ' + node.title }, 'Edit'),
         React.createElement('a', { className: 'goaltree-action', href: '#goal-editor',
-          onClick: event => { event.preventDefault(); addChild(node); },
+          onClick: event => {
+            event.preventDefault();
+            setCreateRequest({ parentId: node.id, nonce: Date.now() });
+          },
           'aria-label': 'Add child under ' + node.title }, 'Add child')))))
     : React.createElement('div', { className: 'goalpage-fault' },
         'examined ' + examined + ' of ' + expected +
