@@ -2782,11 +2782,11 @@ def land(
 # landing staleifies the rest again (#1157 trap: "you rebase all branches up
 # front, then gate them all").
 #
-# Four outcomes stay distinguishable (#136): landed, refused, rebase-conflict,
-# skipped. A batch reports BOTH denominators (#868): how many it attempted and
-# how many landed.
+# Five outcomes stay distinguishable (#136): landed, refused, rebase-conflict,
+# abort-failed, skipped. A batch reports BOTH denominators (#868): how many
+# it attempted and how many landed.
 
-# Five outcomes. ``abort-failed`` (round 2, #1157 P1) MUST NOT collapse into
+# ``abort-failed`` (round 2, #1157 P1) MUST NOT collapse into
 # ``rebase-conflict`` (#136): a conflict is routine and leaves the branch
 # clean (the abort succeeded); an abort-failed rebase is a worktree the abort
 # could NOT return to a clean state — stranded mid-rebase, which is precisely
@@ -3127,14 +3127,17 @@ def land_batch(
             )
             continue
 
-        # #1157 round 3 P1: a refused gate must not rewrite the lane's branch.
-        # The rebase (which can move the lane ref) runs ONLY after the
-        # non-mutating refusal checks (breadcrumb, dirty main) pass, and the
-        # gate mutex is held across the rebase AND the gate so nothing can
-        # land in between. Acquiring, releasing and re-acquiring would
-        # reintroduce the race in a subtler form; the mutex is held throughout.
-        # A REFUSE here leaves the lane ref byte-identical to its pre-batch
-        # value — reported as lane-ref-mutated=False (#136).
+        # #1157 round 3 P1: a batch preflight (repository-state) refusal must
+        # not rewrite the lane's branch. Four per-entry refusal reasons are
+        # checked BEFORE the rebase and are non-mutating: mutex busy, live
+        # breadcrumb, dead breadcrumb, dirty main. Post-rebase land() refusals
+        # (selection, six gate phases, advance, retirement) CAN have moved the
+        # ref — the rebase ran, by design. The gate mutex is held across the
+        # rebase AND the gate so nothing can land in between; acquiring,
+        # releasing and re-acquiring would reintroduce the race in a subtler
+        # form, so it is held throughout. A preflight REFUSE leaves the lane
+        # ref byte-identical to its pre-batch value — reported as
+        # lane-ref-mutated=False (#136).
         gate_lock = _try_lock(common_git_dir, "dreamwork-gate.lock")
         if gate_lock is None:
             outcome = BatchOutcome(
