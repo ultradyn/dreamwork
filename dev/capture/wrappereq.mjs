@@ -83,7 +83,9 @@ for (const testCase of CASES) {
   const mounted = await builderPage.evaluate(async ({ name, delegate, props }) => {
     const root = document.createElement('div');
     root.id = `wrapper-equality-mount-${name}`;
-    document.body.append(root);
+    /* Keep the equality subject detached: the live page's one-second ages()
+       sweep fills `.age` nodes after mount, which compares post-render DOM to
+       the builder's raw string and makes equality depend on tick timing. */
     dwNative.ReactDOM.createRoot(root).render(
       dwNative.React.createElement(DreamworkDesign[name], props));
     for (let i = 0; i < 100; i++) {
@@ -110,6 +112,14 @@ for (const testCase of CASES) {
   const floor = Math.max(1, readings.expected.length - 1);
   notes.push(`${testCase.name} serialized lengths: builder=${readings.expected.length}` +
     `, wrapper=${readings.actual.length}, runtime floor=${floor}`);
+  if (readings.actual !== readings.expected) {
+    let at = 0;
+    while (readings.expected[at] === readings.actual[at] &&
+           at < readings.expected.length && at < readings.actual.length) at++;
+    notes.push(`${testCase.name} first mismatch at ${at}: expected ` +
+      JSON.stringify(readings.expected.slice(at, at + 100)) + ', wrapper ' +
+      JSON.stringify(readings.actual.slice(at, at + 100)));
+  }
   ok(`${testCase.name} builder precondition: fixture output is non-empty`,
      builder.length > 0);
   ok(`${testCase.name} builder precondition: output carries class="${testCase.expectedClass}"`,
