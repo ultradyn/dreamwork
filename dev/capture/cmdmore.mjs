@@ -19,16 +19,25 @@
      centre); sits at the row's hard-right edge (its right == the row's right);
      has a separating gap from the last kind; and the row does not wrap (the
      control is on the same line as the kinds and the page does not overflow).
-   - APPEARANCE (his vocabulary, load-bearing for #164): a computed surface
-     fill (non-transparent background), ZERO computed border, and a NON-ACCENT
-     fill. Outline means "this acts", fill means "this reveals" — a menu
-     reveals, so it is filled, never outlined, never accent-coloured.
+   - APPEARANCE (#1015 supersedes the #164 fill contract): the control is
+     BARE — a transparent computed background, not a surface fill. #164 made
+     the ⋯ a filled chip ("fill means this reveals"); his 2026-08-02 steer
+     overrode that — the ⋯ should read as a bare affordance, and weight (not
+     a fill) is what keeps the glyph findable. So the guard now asserts the
+     fill is GONE and the glyph is BOLDER (computed weight ≥ 700, the page's
+     one --weight-bold token). ZERO computed border is unchanged.
    - VISIBILITY / the false-green #161 found and closed: an invisible element
      retains perfect rectangles, so geometry-only PASSED at opacity:0 in all
      four cases. This guard asserts computed visibility/opacity AND emits a
      dedicated composite FAIL — "cmdmore geometry passed over an invisible
      control" — when geometry is sound but the control cannot be seen. That
      message names the exact class the guard can detect (#651).
+   - FOCUS (#1015): with the surface fill gone, a focus indicator that lived
+     on contrast against the button's own background would disappear — the
+     accessibility regression removing the fill invites. So the guard focuses
+     the control by keyboard and asserts a computed :focus-visible outline is
+     present (nonzero width), the same idiom every other actionable surface
+     on the page declares explicitly.
 
    Four cases: 390px and 1100px × normal and reduced motion. Reduced motion is
    asserted as parity of geometry (the dots are placed identically), which is
@@ -127,6 +136,7 @@ async function readCase(browser, c) {
       clientW: document.documentElement.clientWidth,
       bg: cs.backgroundColor, bgImage: cs.backgroundImage,
       borderStyle: cs.borderTopStyle, borderWidth: cs.borderTopWidth,
+      fw: cs.fontWeight,
       opacity: parseFloat(cs.opacity), visibility: cs.visibility,
       btnW: br.width, btnH: br.height,
       accent,
@@ -160,13 +170,13 @@ try {
       continue;
     }
 
-    // ── APPEARANCE (his vocabulary, #164): fill not outline, surface not accent
-    const filled = d.bg !== 'rgba(0, 0, 0, 0)' && d.bg !== 'transparent';
+    // ── APPEARANCE (#1015 supersedes #164): bare, not filled; bold glyph
+    const bare = d.bg === 'rgba(0, 0, 0, 0)' || d.bg === 'transparent';
     const noBorder = d.borderStyle === 'none' || d.borderWidth === '0px';
-    const nonAccent = d.bg.toLowerCase() !== d.accent && d.bg !== d.accent;
-    ok(`${tag}: the ⋯ control has a computed surface fill (bg ${d.bg})`, filled);
+    const bold = parseInt(d.fw, 10) >= 700;
+    ok(`${tag}: the ⋯ control is bare — no surface fill (bg ${d.bg})`, bare);
     ok(`${tag}: the ⋯ control has ZERO computed border (${d.borderStyle}/${d.borderWidth})`, noBorder);
-    ok(`${tag}: the ⋯ fill is non-accent (accent is ${d.accent})`, nonAccent);
+    ok(`${tag}: the ⋯ glyph is bolder than the page's 400 (weight ${d.fw}, #1015)`, bold);
 
     // ── GEOMETRY: centreline, hard-right, gap, no-wrap ───────────────────
     const inkCentred = Math.abs(d.inkOff) <= CENTRE_TOL;
@@ -200,8 +210,74 @@ try {
                    d.sameLine && d.scrollW <= d.clientW + 1;
     ok(`${tag}: cmdmore geometry did not pass over an invisible control`,
        !(geomOk && !visible));
-    notes.push(`${tag}: ${JSON.stringify({ inkOff: +d.inkOff.toFixed(2), ctrlOff: +d.ctrlOff.toFixed(2), gap: +d.gap.toFixed(1), bg: d.bg, border: d.borderStyle + '/' + d.borderWidth, opacity: d.opacity })}`);
+    notes.push(`${tag}: ${JSON.stringify({ inkOff: +d.inkOff.toFixed(2), ctrlOff: +d.ctrlOff.toFixed(2), gap: +d.gap.toFixed(1), bg: d.bg, border: d.borderStyle + '/' + d.borderWidth, fw: d.fw, opacity: d.opacity })}`);
   }
+
+  // ── FOCUS (#1015): the fill is gone, so the focus ring must not have gone
+  // with it. One case (1100px) tabs to the control by keyboard and asserts the
+  // page's OWN :focus-visible ring is drawn — not the browser default, which a
+  // deleted page rule would leave and a naive check would pass over (#285 in
+  // filehead.mjs is the same false-green; the ring must be the accent). The
+  // resting-state loop above closes each context, so this opens its own.
+  const fctx = await br.newContext({ viewport: { width: 1100, height: 820 } });
+  const fp = await fctx.newPage();
+  fp.on('pageerror', e => errs.push(String(e)));
+  await fp.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+  await waitFor(fp, '#cmdplus');
+  await fp.click('#cmdplus');
+  await sleep(850);
+  await fp.screenshot({ path: `${OUT}/cmdmore-focus-resting.png` });
+  // Reach the control by keyboard, the way he does. The composer's textarea
+  // swallows Shift+Tab (#259 cycles the kinds with it), so the deterministic
+  // keyboard path onto the ⋯ is to focus the LAST .cmdkind and Tab forward
+  // one stop — .cmdmore sits immediately after .cmdkinds in DOM order. A
+  // plain Tab is browser focus there (the #259 handler is cmdtext-scoped), so
+  // it satisfies the :focus-visible heuristic the outline depends on.
+  const fKinds = await fp.$$('.cmdkind');
+  ok(`focus: the kinds row renders for the keyboard path (${fKinds.length})`,
+     fKinds.length > 0);
+  let stops = 0;
+  if (fKinds.length) {
+    await fKinds[fKinds.length - 1].focus();
+    for (let i = 1; i <= 4; i++) {
+      await fp.keyboard.press('Tab');
+      const there = await fp.evaluate(() =>
+        !!(document.activeElement && document.activeElement.classList &&
+           document.activeElement.classList.contains('cmdmorebtn')));
+      if (there) { stops = i; break; }
+    }
+  }
+  ok(`focus: the ⋯ control is reachable by keyboard (Tab from the last ` +
+     `kind, ${stops || 'never'} stops)`, stops > 0);
+  if (stops > 0) {
+    // Wait on the focused element's OWN transitions before reading the
+    // computed outline, the same discipline filehead.mjs uses: a read on the
+    // frame after Tab catches a colour mid-travel and reports a wrong value.
+    await fp.evaluate(() => Promise.all(
+      document.activeElement.getAnimations().map(a => a.finished.catch(() => {}))));
+    const focus = await fp.evaluate(() => {
+      const el = document.activeElement, cs = getComputedStyle(el);
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--accent)';
+      document.body.appendChild(probe);
+      const accent = getComputedStyle(probe).color;
+      probe.remove();
+      return { fv: el.matches(':focus-visible'),
+               outlineStyle: cs.outlineStyle,
+               outlineWidth: parseFloat(cs.outlineWidth) || 0,
+               outlineColor: cs.outlineColor, accent };
+    });
+    await fp.screenshot({ path: `${OUT}/cmdmore-focus-tabbed.png` });
+    ok(`focus: Tab lands the ⋯ in :focus-visible`, focus.fv);
+    ok(`focus: a ring is actually drawn, not a colour shift ` +
+       `(outline ${focus.outlineStyle} ${focus.outlineWidth}px)`,
+       focus.outlineStyle !== 'none' && focus.outlineWidth > 0);
+    ok(`focus: it is THIS PAGE's ring, in the accent ` +
+       `(${focus.outlineColor} vs accent ${focus.accent})`,
+       focus.outlineColor === focus.accent);
+  }
+  await fctx.close();
+
   await br.close();
 } catch (e) {
   errs.push('guard threw: ' + (e && e.stack ? e.stack : String(e)));
