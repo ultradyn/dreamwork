@@ -3684,12 +3684,12 @@ def test_batch_summary_reports_all_five_outcomes_distinguishably(tmp_path: Path)
 
 
 # ---------------------------------------------------------------------------
-# #1157 round 3 — the P1: a batch preflight (repository-state) refusal must
-# not rewrite the lane's branch.
-# The batch runs the non-mutating refusal checks (breadcrumb, dirty main)
-# BEFORE the rebase, holding the mutex across both. These prove the lane SHA
-# is byte-identical after each refusal the reviewer named (#136: "refused and
-# left alone" is a distinct state from "refused after mutating").
+# #1157 round 3 — the P1: a refusal raised before the rebase leaves the
+# lane ref byte-identical, because nothing has written it yet. The batch
+# runs its refusal checks BEFORE the rebase, holding the mutex across both.
+# These tests prove the lane SHA is byte-identical after each pre-rebase
+# refusal (#136: "refused and left alone" is a distinct state from
+# "refused after mutating").
 # ---------------------------------------------------------------------------
 
 
@@ -3744,7 +3744,7 @@ def test_batch_refuses_dirty_main_without_rebasing_the_lane(tmp_path: Path):
     lane_after = _git(root, "rev-parse", "refs/heads/lane")
     assert lane_after == lane_before, (
         f"dirty-main refusal moved the lane ref {lane_before[:12]} -> "
-        f"{lane_after[:12]} — a batch preflight refusal must change nothing (#136)"
+        f"{lane_after[:12]} — a pre-rebase refusal must leave the ref unchanged (#136)"
     )
 
 

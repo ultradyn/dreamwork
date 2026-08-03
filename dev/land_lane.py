@@ -2966,12 +2966,13 @@ def _batch_gate_preflight(
 ) -> str | None:
     """Lock-held, NON-MUTATING gate refusal checks for the batch (#1157 r3 P1).
 
-    These are the refusal paths that fire regardless of whether the branch is
-    rebased: a gate-in-flight breadcrumb (live or dead) and a dirty main
-    checkout. Running them BEFORE the rebase — while the gate mutex is held —
-    guarantees a REFUSE leaves the lane ref byte-identical to its pre-batch
-    value (#136): nothing mutates the ref until the gate has committed to
-    proceeding.
+    Runs BEFORE the rebase, so any refusal raised here leaves the lane ref
+    byte-identical to its pre-batch value: the rebase is the first operation
+    that can move the ref, and it has not run yet (#136). This holds for
+    every refusal this function could raise — today a gate-in-flight
+    breadcrumb (live or dead) and a dirty main checkout — and for any added
+    later, because the guarantee is the call's position relative to the
+    rebase, not a list of checked outcomes.
 
     The staleness (ancestor) check is deliberately NOT here: the branch is
     expected to be stale before the rebase, and the rebase is what fixes it —
@@ -3127,17 +3128,17 @@ def land_batch(
             )
             continue
 
-        # #1157 round 3 P1: a batch preflight (repository-state) refusal must
-        # not rewrite the lane's branch. Four per-entry refusal reasons are
-        # checked BEFORE the rebase and are non-mutating: mutex busy, live
-        # breadcrumb, dead breadcrumb, dirty main. Post-rebase land() refusals
-        # (selection, six gate phases, advance, retirement) CAN have moved the
-        # ref — the rebase ran, by design. The gate mutex is held across the
-        # rebase AND the gate so nothing can land in between; acquiring,
-        # releasing and re-acquiring would reintroduce the race in a subtler
-        # form, so it is held throughout. A preflight REFUSE leaves the lane
-        # ref byte-identical to its pre-batch value — reported as
-        # lane-ref-mutated=False (#136).
+        # #1157 round 3 P1: a refusal raised before the rebase leaves the
+        # lane ref byte-identical — nothing has written it yet. A refusal
+        # raised after the rebase (inside land()) may find the ref already
+        # moved, because the rebase ran by design. Preflight runs before the
+        # rebase; land() runs after it; the split is structural, so the
+        # guarantee does not depend on enumerating which refusal fires where.
+        # The gate mutex is held across the rebase AND the gate so nothing
+        # can land in between; acquiring, releasing and re-acquiring would
+        # reintroduce the race in a subtler form, so it is held throughout.
+        # A preflight REFUSE leaves the lane ref byte-identical to its
+        # pre-batch value — reported as lane-ref-mutated=False (#136).
         gate_lock = _try_lock(common_git_dir, "dreamwork-gate.lock")
         if gate_lock is None:
             outcome = BatchOutcome(
@@ -3155,10 +3156,10 @@ def land_batch(
         retained = f"branch={entry.branch}; worktree={lane}"
         lane_before = _git_text(lane, "rev-parse", "HEAD")
         try:
-            # Non-mutating preflight BEFORE the rebase: the refusal paths that
-            # fire regardless of staleness (breadcrumb, dirty main). Staleness
-            # is NOT checked here — the branch is expected to be stale before
-            # the rebase, and land() confirms it is satisfied afterwards.
+            # Non-mutating preflight BEFORE the rebase (see
+            # _batch_gate_preflight). Staleness is NOT checked here — the
+            # branch is expected to be stale before the rebase, and land()
+            # confirms it is satisfied afterwards.
             refusal = _batch_gate_preflight(
                 repo, common_git_dir, base, retained,
             )
