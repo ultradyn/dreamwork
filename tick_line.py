@@ -62,6 +62,7 @@ no failure in this file can cost the loop its wake.
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import os
 import subprocess
@@ -110,6 +111,23 @@ _LIVENESS_CLAUSE_SPECS = (
 # width the title is cut to LIMIT-1 and an ellipsis is appended, so the quoted
 # content is at most exactly LIMIT characters in every case.
 GOAL_TITLE_LIMIT = 48
+
+# IGC, context: every tick must expose growth of the LIVE sibling
+# ``../.worktrees/`` root; the 28-worktree floor in #1181 is expected.
+#
+# Idea                    All  G1  G2  G3  G4
+# previous tick             X   +   X   +   +
+# session-start baseline    X   +   X   +   +
+# persisted low-water       +   +   +   +   +
+#
+# G1: an increase is visible without reader memory. G2: it remains a
+# regression after coordinator restart. G3: equality/the permanent floor does
+# not alarm. G4: state is gitignored and lane-neutral. The first two ideas lose
+# their comparator at restart; the low-water survives in the target-local
+# ``*.lock`` state already excluded by .gitignore. It is not status, ledger,
+# questions, or any other coordinator-owned record.
+_WORKTREE_LOW_WATER = ".worktrees-size-low-water.lock"
+_WORKTREE_DU_TIMEOUT_SECONDS = 15
 
 
 def _resident_sources_sha() -> str:
@@ -383,6 +401,71 @@ def _fleet_fact(target: str) -> str:
     return fact
 
 
+def _display_size(size: int) -> str:
+    """Compact IEC size without rounding a positive value down to zero."""
+    for unit, divisor in (("GiB", 1024 ** 3), ("MiB", 1024 ** 2),
+                          ("KiB", 1024)):
+        if size >= divisor:
+            return "%.1f %s" % (size / divisor, unit)
+    return "%d B" % size
+
+
+def _allocated_worktree_bytes(root: Path) -> int:
+    """Exact allocated size of one filesystem tree, or raise as unmeasured."""
+    if not root.is_dir():
+        raise FileNotFoundError("live worktree root is missing: %s" % root)
+    measured = subprocess.run(
+        ["du", "-sx", "--block-size=1", str(root)],
+        capture_output=True, text=True, timeout=_WORKTREE_DU_TIMEOUT_SECONDS)
+    if measured.returncode:
+        reason = measured.stderr.strip() or "du exited %d" % measured.returncode
+        raise OSError(reason)
+    try:
+        return int(measured.stdout.split(None, 1)[0])
+    except (IndexError, ValueError) as exc:
+        raise OSError("du returned no byte count") from exc
+
+
+def _worktrees_size_fact(target: str) -> str:
+    """Current live-root allocation against a durable, monotone low-water."""
+    target_path = Path(target)
+    root = target_path.parent / ".worktrees"
+    current = _allocated_worktree_bytes(root)
+    state_path = target_path / ".dreamwork" / _WORKTREE_LOW_WATER
+    new_low = False
+    with state_path.open("a+", encoding="ascii") as state:
+        fcntl.flock(state, fcntl.LOCK_EX)
+        state.seek(0)
+        raw = state.read().strip()
+        if raw:
+            try:
+                low = int(raw)
+            except ValueError as exc:
+                raise OSError("invalid worktree low-water state") from exc
+            if low < 0:
+                raise OSError("invalid negative worktree low-water state")
+        else:
+            low = current
+
+        if current <= low:
+            new_low = not raw or current < low
+            low = current
+            if new_low:
+                state.seek(0)
+                state.truncate()
+                state.write("%d\n" % low)
+                state.flush()
+                os.fsync(state.fileno())
+
+    size = _display_size(current)
+    if current > low:
+        return "worktrees %s · WORKTREE-SIZE-REGRESSION +%s above low %s" % (
+            size, _display_size(current - low), _display_size(low))
+    if new_low:
+        return "worktrees %s (new durable low-water)" % size
+    return "worktrees %s (at durable low-water)" % size
+
+
 def _goal_fact(target: str) -> str:
     """The current goal as a HANDLE: id, elided title, progress — nothing else.
 
@@ -503,6 +586,7 @@ def facts(target: str) -> str:
     return SEP.join([
         _guarded(lambda: _fleet_fact(target), "fleet"),
         delegation,
+        _guarded(lambda: _worktrees_size_fact(target), "worktrees"),
         _guarded(lambda: _open_fact(target), "open"),
     ] + posture_parts + [_guarded(lambda: _goal_fact(target), "goal"),
                          _stamp_fact()])
