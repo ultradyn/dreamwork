@@ -33,7 +33,17 @@
        this page `--warn` means broken (#136) and a numeral is not broken.
        These break the one-accent rule inside a code block the way the
        artifact already does — colouring code is the point of the pane. */
-    --accent2:#7dd3fc; --ok:#86efac; --amber:#fcd34d; }
+    --accent2:#7dd3fc; --ok:#86efac; --amber:#fcd34d;
+    /* #1015 — the one place bold lives on this page. Emphasis everywhere
+       else is luminance, never weight: a mono face steps rather than
+       transitions, and re-metricing the very thing being opened is the
+       failure mode (see the disclosure summary, ~L259). The ⋯ disclosure
+       glyph is the exception he named — a bare affordance with no surface
+       fill, where weight is what keeps the glyph findable against the page
+       once the fill is gone. One token so the value is named once, and so a
+       second surface that wants it reaches for the name rather than a
+       literal that quietly stops matching. */
+    --weight-bold:700; }
   /* Scrollbars are chrome, and chrome should recede: hairline track,
      dim thumb, no arrows. Firefox first, then the WebKit pseudos. */
   * { scrollbar-width:thin; scrollbar-color:var(--dimmer) transparent; }
@@ -2133,11 +2143,21 @@
     margin:.3rem 0 0 auto; }
   .cmdmorebtn { display:inline-flex; align-items:center; justify-content:center;
     box-sizing:border-box; width:1.5rem; height:1.75rem;
-    background:var(--panel2); border:0; font:inherit;
+    background:none; border:0; font:inherit; font-weight:var(--weight-bold);
     color:var(--dimmer); padding:0; cursor:pointer; line-height:1;
     border-radius:var(--radius); transition:color .3s ease; }
   .cmdmore:hover .cmdmorebtn, .cmdmore:focus-within .cmdmorebtn {
     color:var(--muted); }
+  /* #1015 — the focus indicator, stated explicitly rather than left to the
+     browser default. The button has NO surface fill now (his steer: it reads
+     as a bare affordance, not a filled chip), and a focus ring that lived on
+     contrast against the button's own background would vanish the moment the
+     background did — the accessibility regression removing the fill invites.
+     The page's vocabulary is an explicit :focus-visible outline (every other
+     actionable surface declares one), so this is that idiom on this surface:
+     it shows for the keyboard, not the mouse. */
+  .cmdmorebtn:focus-visible { outline:1px solid var(--accent);
+    outline-offset:2px; }
   /* no gap between icon and menu: the pointer must be able to travel from one
      to the other without ever leaving .cmdmore, or the menu closes en route.
      The menu is anchored to the ⋯'s RIGHT edge and grows left, because the ⋯
