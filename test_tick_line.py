@@ -237,6 +237,24 @@ class TestWorktreeSizeDirection:
                "fixture root is unreadable)" in out
         assert "worktrees 0" not in out
 
+    def test_growth_stays_a_regression_after_process_restart(self, tmp_path):
+        """A process-local previous reading is a false green this closes."""
+        target, root = self._target(tmp_path)
+        payload = root / "payload"
+        payload.write_bytes(b"a" * 4096)
+        probe = (
+            "import sys, tick_line; "
+            "print(tick_line._worktrees_size_fact(sys.argv[1]))")
+        first = subprocess.run(
+            [sys.executable, "-c", probe, str(target)], check=True,
+            capture_output=True, text=True).stdout
+        payload.write_bytes(b"b" * (1024 * 1024))
+        after_restart = subprocess.run(
+            [sys.executable, "-c", probe, str(target)], check=True,
+            capture_output=True, text=True).stdout
+        assert "REGRESSION" not in first
+        assert "WORKTREE-SIZE-REGRESSION +" in after_restart
+
 
 class TestNoUnqualifiedFleetSize:
     """The count the loop cannot measure must never be asserted.
