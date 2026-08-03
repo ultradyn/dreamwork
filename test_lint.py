@@ -325,7 +325,9 @@ class TestSyncConflictFiles:
         """Production line: the OK row with roots-examined and files-scanned.
 
         A check that examined nothing must not read as passing (#671/#685).
-        The OK row carries the counts as evidence.
+        The OK row carries the counts as evidence and DISCLOSES what it pruned
+        (#651/#1166 P1a): a reader must not be told "clean" about ground it
+        did not walk.
         """
         t = target(tmp_path)
         (t / ".dreamwork" / "ledger.sqlite3").write_bytes(b"")
@@ -337,6 +339,9 @@ class TestSyncConflictFiles:
         assert "root(s) examined" in detail
         assert "file(s) scanned" in detail
         assert "0 conflict copies" in detail
+        # The pruned subtrees must be named, not silently skipped (#651).
+        assert "pruned:" in detail
+        assert ".git/objects/" in detail
         # Precondition: the scan actually reached files (not zero).
         assert int(detail.split("file(s) scanned")[0].split()[-1]) > 0, detail
 
@@ -380,7 +385,9 @@ class TestSyncConflictFiles:
         """Production line: worktree roots are scanned, not just the repo root.
 
         Conflict copies appeared under ../.worktrees/ as well (#1162). The
-        check must scan both root families.
+        check must scan both root families. A sibling worktree is externally
+        owned (#1166 P1b): the conflict is reported as WARN (non-blocking),
+        never ERROR, so it cannot wedge the gate for branches that do not own it.
         """
         t = fresh(tmp_path)
         dw = t / ".dreamwork"
@@ -390,24 +397,109 @@ class TestSyncConflictFiles:
         sibling_wt.mkdir(parents=True)
         (sibling_wt / "scratch.sync-conflict-20260803-180706-ABCDEFG.py").write_text("")
         rep = self._check(dw, monkeypatch)
+        warns = [d for lvl, w, d in rep.rows
+                 if lvl == lint.WARN and w == "sync-conflict"]
         errors = [d for lvl, w, d in rep.rows
                   if lvl == lint.ERROR and w == "sync-conflict"]
-        assert len(errors) == 1, rep.render()
-        assert "scratch.sync-conflict" in errors[0]
+        assert len(warns) == 1, rep.render()
+        assert len(errors) == 0, rep.render()
+        assert "scratch.sync-conflict" in warns[0]
 
     def test_device_id_and_date_are_not_hardcoded(self, tmp_path, monkeypatch):
-        """The pattern matches ANY date and device id, not a literal."""
+        """The pattern matches ANY date and device id, not a literal (#1166 P2).
+
+        The device-id segment is REQUIRED; these names all carry it. The
+        alphabet is loose ([A-Za-z0-9]+), wider than the observed uppercase
+        sample, so a lowercase or mixed-case id also matches.
+        """
         t = target(tmp_path)
-        for name in [
+        names = [
             "ledger.sync-conflict-20260101-120000-DEVICE01.sqlite3",
             "notes.sync-conflict-19991231-235959-XYZ9876.md",
-            "data.sync-conflict-20260803-180706.json",
-        ]:
+        ]
+        for name in names:
             (t / ".dreamwork" / name).write_bytes(b"")
         rep = self._check(t / ".dreamwork", monkeypatch)
         errors = [d for lvl, w, d in rep.rows
                   if lvl == lint.ERROR and w == "sync-conflict"]
-        assert len(errors) == 3, rep.render()
+        assert len(errors) == 2, rep.render()
+
+    def test_malformed_no_device_id_not_reported(self, tmp_path, monkeypatch):
+        """A name without the device-id segment is NOT a conflict copy (#1166 P2).
+
+        `data.sync-conflict-20260803-180706.json` is malformed: Syncthing always
+        emits a device id after the time segment. Reporting it would be a false
+        positive — the opposite of what the check exists for. Round 1 blessed
+        this malformed shape (asserted 3 matches including this one); that test
+        encoded the defect. This test inverts it: the name is NOT reported.
+        """
+        t = target(tmp_path)
+        (t / ".dreamwork" / "data.sync-conflict-20260803-180706.json").write_bytes(b"")
+        rep = self._check(t / ".dreamwork", monkeypatch)
+        sync_rows = [(lvl, d) for lvl, w, d in rep.rows if w == "sync-conflict"]
+        # The malformed name must not produce any sync-conflict row.
+        assert all(lvl == lint.OK for lvl, _ in sync_rows), rep.render()
+
+    def test_git_metadata_conflict_is_found_and_blocks(self, tmp_path, monkeypatch):
+        """#1166 P1a: a conflict copy under .git/ metadata is found and ERRORs.
+
+        Round 1 inherited _WALK_SKIP_DIRS which skips .git — the check was blind
+        exactly where the only real conflict copy lives
+        (.git/wt/cache/ci-status/master.sync-conflict-…). This test would fail
+        if .git became unreachable again. A conflict copy of .git/index corrupts
+        the repository itself, so it is ERROR, not WARN.
+        """
+        t = target(tmp_path)
+        git_dir = t / ".git"
+        git_dir.mkdir()
+        # Precondition: the fixture name matches the pattern.
+        name = "index.sync-conflict-20260803-180706-QJRKU52"
+        assert lint.SYNC_CONFLICT_RE.search(name), "fixture name must match"
+        (git_dir / name).write_bytes(b"")
+        rep = self._check(t / ".dreamwork", monkeypatch)
+        errors = [d for lvl, w, d in rep.rows
+                  if lvl == lint.ERROR and w == "sync-conflict"]
+        assert len(errors) == 1, rep.render()
+        assert name in errors[0]
+        assert str(git_dir) in errors[0]
+
+    def test_critical_git_state_blocks_but_non_critical_does_not(
+            self, tmp_path, monkeypatch):
+        """#1166 P1b: a conflict in the repo's own critical state ERRORs; a
+        conflict in a non-critical git path or a sibling worktree WARNs.
+
+        The gate-wedge from #1166 round 1 was an ERROR in an externally owned
+        root. This test would fail if severity collapsed back to ERROR-for-all
+        or WARN-for-all.
+        """
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        git_dir = t / ".git"
+        git_dir.mkdir()
+        (git_dir / "refs" / "heads").mkdir(parents=True)
+        # Critical: .git/refs/heads/master conflict → ERROR
+        (git_dir / "refs" / "heads"
+         / "master.sync-conflict-20260803-180706-QJRKU52").write_bytes(b"")
+        # Non-critical: .git/wt/cache/ (CI status cache) → WARN
+        (git_dir / "wt" / "cache").mkdir(parents=True)
+        (git_dir / "wt" / "cache"
+         / "master.sync-conflict-20260729-032627-QJRKU52.json").write_bytes(b"")
+        # Sibling worktree: externally owned → WARN
+        sibling_wt = t.parent / ".worktrees" / "cx-other"
+        sibling_wt.mkdir(parents=True)
+        (sibling_wt / "scratch.sync-conflict-20260803-180706-XYZ123.py").write_text("")
+
+        rep = self._check(dw, monkeypatch)
+        errors = [d for lvl, w, d in rep.rows
+                  if lvl == lint.ERROR and w == "sync-conflict"]
+        warns = [d for lvl, w, d in rep.rows
+                 if lvl == lint.WARN and w == "sync-conflict"]
+        assert len(errors) == 1, rep.render()
+        assert "refs" in errors[0]
+        assert len(warns) == 2, rep.render()
+        assert any("wt" in d for d in warns), rep.render()
+        assert any("cx-other" in d for d in warns), rep.render()
 
 
 class TestInRepoWorktreeDrain:
