@@ -469,11 +469,21 @@ def test_answers_fixture_covers_unreadable_empty_open_answered_and_askform():
     assert af["answers_open"] and af["answers_answered"], (
         "Answers askform fixture must populate a non-empty surface alongside "
         "the form")
-    # Distinct titles across every record so no case can reuse another's words
-    # and pass the shape checks hollow (a false-zero fixture, #136).
-    titles = [open_recs[0]["title"], ans_recs[0]["title"]]
-    titles += [r["title"] for r in af["answers_open"]]
-    titles += [r["title"] for r in af["answers_answered"]]
+    # Every record across the open/answered/askform cases must carry a real
+    # question (non-empty title+body) and a content-stable aid. A [0]-only
+    # check would miss a hollow record in a non-first position (the askform
+    # case carries two) that exercises no answerRecord branch — a false-zero
+    # fixture, #136.
+    all_recs = [(case, r) for case in ("open", "answered", "askform")
+                for r in (fixture[case]["data"]["answers_open"]
+                          + fixture[case]["data"]["answers_answered"])]
+    for case, r in all_recs:
+        assert r.get("title") and r.get("body"), (
+            "Answers %s fixture record does not exercise a real question"
+            % case)
+        assert r.get("aid"), (
+            "Answers %s fixture record has no content-stable aid" % case)
+    titles = [r["title"] for _, r in all_recs]
     assert len(set(titles)) == len(titles), (
         "Answers fixture reuses question titles across cases (hollow)")
 
