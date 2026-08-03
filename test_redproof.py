@@ -1654,6 +1654,40 @@ class TestInjectionInHistoryIsRefused:
 
 
 class TestHistoryScanRegistrationBoundary:
+    def test_rebase_does_not_turn_pre_begin_code_into_an_injection(
+            self, repo, capsys):
+        old = "export function route() { return false; /* OLD BUG */ }\n"
+        fixed = "export function route() { return Boolean(guard); }\n"
+        (repo / "router.js").write_text(old)
+        _commit(repo, "router.js", msg="feat(#1179): production before fix")
+        _git(repo, "switch", "-q", "-c", "lane-fixture")
+        (repo / "carry.txt").write_text("work before the fix\n")
+        predecessor = _commit(
+            repo, "carry.txt", msg="feat(#1179): carried pre-fix work")
+        (repo / "router.js").write_text(fixed)
+        _commit(repo, "router.js", msg="fix(#1179): repair old bug")
+
+        _begin(repo, "router.js")
+        (repo / "router.js").write_text(old)
+        _restore(repo, "router.js")
+        _git(repo, "rebase", "--force-rebase", "master")
+
+        rewritten_predecessor = _git(
+            repo, "log", "--format=%H",
+            "--grep=^feat(#1179): carried pre-fix work$")
+        assert rewritten_predecessor != predecessor
+        entries, _ = rp._read_registry(repo)
+        rep = rp.scan_history(repo, entries)
+        assert rep["hits"] == [], (
+            "rebase made pre-begin production code look like an injection: "
+            f"{rep['hits']}")
+
+        assert _check(repo) == 0
+        out, err = capsys.readouterr()
+        assert "restoration clean" in out, out
+        assert "rebase-stable merge-base prefix" in out, out
+        assert "REFUSED" not in err, err
+
     def test_a_pre_begin_pre_fix_commit_is_not_an_armed_injection(
             self, lane, capsys):
         # The canonical direction-1 sabotage restores the pre-fix bytes.  That
