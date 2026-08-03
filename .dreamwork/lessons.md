@@ -5912,3 +5912,63 @@ Related, from the same review: round 4's lint WARN-set delta was explained as in
 "master-only `inbox.md` over-threshold row", and **the explanation did not reproduce**
 against either master or the stated base. *An explanation that does not reproduce is worse
 than an unexplained diff*, because it stops the next reader from looking.
+
+## Four rounds narrowing an enumeration means the claim is the wrong kind
+
+`#1157` spent rounds 3, 4 and 5 on comments alone. The code was confirmed correct every
+time; what kept failing was a list. Round 3 found three "a REFUSE leaves the ref
+byte-identical" claims too broad. Round 4 narrowed exactly those three — and round 4's
+review found a **fourth** site that predated the documentation commit, plus a *narrowed*
+enumeration at `:3130` that was still incomplete: "selection, six gate phases, advance,
+retirement" omitted `preflight`, `worktree-creation`, `lint-baseline`,
+`diff-classification`, `merge`, `merge-identity`, `scratch-cleanup` and more. The six
+declared gate phases were count-correct. They were simply not the taxonomy.
+
+Three careful lanes and two careful reviewers did not produce a complete list. That is the
+finding. **An enumeration is a claim whose truth must be re-verified against the whole call
+graph every time the code changes**, and nobody re-derives a comment's membership list when
+adding a refusal. It is true on the day it is written and decays silently, which is the
+same failure mode as a guard that names a mode it cannot detect — a true statement read as
+a stronger claim than it supports.
+
+The repair is not a longer list. It is a **structural invariant that decides the cases the
+comment never mentions**:
+
+> A refusal raised **before** the rebase leaves the lane ref byte-identical, because
+> nothing has written it yet. A refusal raised **after** it does not, and the abort path is
+> what restores it.
+
+That sentence answers the question for a ninth refusal added next week. A list cannot.
+When a review keeps returning "the enumeration is still incomplete", stop enumerating —
+and where specific names must stay (`squash-verification` is batch-unreachable;
+`rebase-conflict` and `abort-failed` are separate outcomes), give them as **examples of
+the invariant**, not as the membership.
+
+## A verdict computed from one process, read as a claim about the lane
+
+`lane_liveness.py` decided `wedged` vs `working` from a single PID: `:823` kept the first
+cwd runner in **`/proc` enumeration order**, then `:845` overwrote it with the lock PID.
+The reviewer reproduced the consequence against a live lane in a disposable fixture:
+
+    (701 low CPU, 702 high CPU)  ->  wedged
+    (702 high CPU, 701 low CPU)  ->  working
+
+Same lane, same two live runners, opposite verdicts — decided by nothing but the order the
+kernel returned directory entries. `WEDGED` is the verdict that authorises destroying a
+lane's work, and the normal shape of every lane in this fleet is a nested `ccc` runner
+under a lock holder that is often a shell waiting on a child, accumulating no CPU. The
+busy process was the one skipped.
+
+Two things generalise:
+
+- **A safety property that vetoes a destructive action must be evaluated over the whole
+  candidate set, not a representative of it.** "Any runner accumulating CPU prevents
+  `WEDGED`" is checkable; "the runner is idle" silently assumes a singular that does not
+  exist.
+- **Sorting is not the fix.** Determinism would make this fail *reproducibly* — picking the
+  same wrong process every time, and looking settled. The property wanted is conservatism.
+
+It took four rounds to surface because each earlier round's defect masked it: the scratch-set
+bug produced `wedged` for the wrong reason, so the wrong-PID bug had nothing to show. Rounds
+that keep finding new P1s in the same function are not evidence of a careless lane; they are
+evidence that each fix is exposing the layer beneath.
