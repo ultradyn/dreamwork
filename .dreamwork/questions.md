@@ -108,7 +108,7 @@
     loudly when a `*sync-conflict*` file appears under the repo or worktree root — today nothing
     reports them at all and I found this by accident while cleaning something else.
 
-  - **Answer (human, via transcript, 2026-08-03):** "yeah let's exclude them from syncthing"
+  - **Note (human, via session, 2026-08-03):** "yeah let's exclude them from syncthing"
   - **Folded:** done, and the exclusion is live. Wrote `/home/xertrov/.llm-general/.stignore` with
     `/skills/.worktrees` and `/skills/ud-dreamwork/.dreamwork`; Syncthing picked it up on its own
     file watcher and now reports `ignorePatterns: true` with the four derived patterns (each path
@@ -181,7 +181,7 @@
   nearly briefed two blocked tasks as ready. Filed as `#1152` (P1); `ledger.py counts` reports blockers
   correctly, so it is the listing verb specifically.
 
-  - **Answer (human, via transcript, 2026-08-03):** "you should always batch when you can and it
+  - **Note (human, via session, 2026-08-03):** "you should always batch when you can and it
     makes sense"
   - **Folded:** taken as a STANDING preference, not just a ruling on this chain. Recorded in
     DREAMWORK.md. Applied immediately: `#1061`..`#1065` (the five wrapper exports) will go out as ONE
