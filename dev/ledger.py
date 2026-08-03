@@ -107,6 +107,35 @@ class LedgerError(Exception):
     """A fold or count could not be performed safely."""
 
 
+# #1042 — the goal-reference grammar. Matches the documented `\bPG-\d+\b`
+# notation (file-formats.md) and the renderer's `PG-(\d+)` branch, so anything
+# the CLI accepts also renders as a link. int()'s permissive forms (PG--1,
+# PG-1_000, PG- 1) are rejected, not silently coerced into a wrong group id.
+_GOAL_REF_RE = re.compile(r"^(?:PG-)?(\d+)$")
+
+
+def _goal_ref(value):
+    """Argparse type: accept a bare int OR a ``PG-<num>`` goal reference.
+
+    #1042 — project goals are cited as ``PG-<num>`` so a goal reference never
+    renders as a link to an unrelated task. Every group-id argument accepts
+    both ``1`` and ``PG-1``; the value returned is the bare integer either way.
+
+    The grammar is exactly ``(?:PG-)?\\d+`` — the doc says ``\\bPG-\\d+\\b``
+    and the renderer matches ``PG-(\\d+)``, so the three agree. This rejects
+    the forms int() would silently accept (``PG--1`` → -1, ``PG-1_000`` →
+    1000, ``PG- 1`` → 1) because none of them render as a goal link and a
+    user who typos one should hear about it, not reach a wrong record.
+    """
+    s = str(value).strip()
+    m = _GOAL_REF_RE.match(s)
+    if m is None:
+        raise argparse.ArgumentTypeError(
+            "expected a group id (bare integer or PG-<num>, e.g. 1 or PG-1), "
+            "got %r" % (value,))
+    return int(m.group(1))
+
+
 # ---------------------------------------------------------------------------
 # anchored-heading invariant — the single thing this tool exists to protect
 # ---------------------------------------------------------------------------
@@ -3549,7 +3578,7 @@ def main(argv=None):
     groups_list.add_argument("--ledger", default=LEDGER_DEFAULT)
     groups_get = groups_sub.add_parser(
         "get", help="read exact membership and derived progress")
-    groups_get.add_argument("group_id", type=int)
+    groups_get.add_argument("group_id", type=_goal_ref)
     groups_get.add_argument("--json", action="store_true")
     groups_get.add_argument("--ledger", default=LEDGER_DEFAULT)
     groups_create = groups_sub.add_parser("create", help="create a group record")
@@ -3559,13 +3588,13 @@ def main(argv=None):
     groups_create.add_argument("kind", help="a kind from `groups kinds`")
     groups_create.add_argument("title")
     groups_create.add_argument("--description", default=None)
-    groups_create.add_argument("--parent", type=int, default=None,
+    groups_create.add_argument("--parent", type=_goal_ref, default=None,
                                help="nest under this group id")
     groups_create.add_argument("--actor", default=None)
     groups_create.add_argument("--ledger", default=LEDGER_DEFAULT)
     groups_add = groups_sub.add_parser(
         "add-task", help="add one canonical task id to a group")
-    groups_add.add_argument("group_id", type=int)
+    groups_add.add_argument("group_id", type=_goal_ref)
     groups_add.add_argument("task_id", type=int)
     groups_add.add_argument("--actor", default=None)
     groups_add.add_argument(
@@ -3579,7 +3608,7 @@ def main(argv=None):
     groups_remove = groups_sub.add_parser(
         "remove-task",
         help="remove one task from a group (audited; refuses non-members)")
-    groups_remove.add_argument("group_id", type=int)
+    groups_remove.add_argument("group_id", type=_goal_ref)
     groups_remove.add_argument("task_id", type=int)
     groups_remove.add_argument("--why", required=True,
         help="the reason — recorded in the task's history (NOT optional)")
@@ -3591,7 +3620,7 @@ def main(argv=None):
     groups_trigger = groups_sub.add_parser(
         "add-trigger",
         help="register an inert task definition for group completion")
-    groups_trigger.add_argument("group_id", type=int)
+    groups_trigger.add_argument("group_id", type=_goal_ref)
     groups_trigger.add_argument("title")
     groups_trigger.add_argument("--priority", default=None)
     groups_trigger.add_argument("--type", default="task")
@@ -3610,22 +3639,22 @@ def main(argv=None):
     groups_defkind.add_argument("--ledger", default=LEDGER_DEFAULT)
     groups_parent = groups_sub.add_parser(
         "set-parent", help="nest or detach a group; cycles are refused")
-    groups_parent.add_argument("group_id", type=int)
-    groups_parent.add_argument("--parent", type=int, default=None,
+    groups_parent.add_argument("group_id", type=_goal_ref)
+    groups_parent.add_argument("--parent", type=_goal_ref, default=None,
                                help="omit to detach to a root")
     groups_parent.add_argument("--actor", default=None)
     groups_parent.add_argument("--ledger", default=LEDGER_DEFAULT)
     groups_tree = groups_sub.add_parser(
         "tree", help="render the hierarchy by parent links")
-    groups_tree.add_argument("--root", type=int, default=None)
+    groups_tree.add_argument("--root", type=_goal_ref, default=None)
     groups_tree.add_argument("--ledger", default=LEDGER_DEFAULT)
     groups_require = groups_sub.add_parser(
         "require", help="record a prerequisite edge with a group endpoint")
-    groups_require.add_argument("--group", dest="group_id", type=int,
+    groups_require.add_argument("--group", dest="group_id", type=_goal_ref,
                                 default=None, help="the blocked group")
     groups_require.add_argument("--task", dest="task_id", type=int,
                                 default=None, help="the blocked task")
-    groups_require.add_argument("--needs-group", dest="needs_group", type=int,
+    groups_require.add_argument("--needs-group", dest="needs_group", type=_goal_ref,
                                 default=None)
     groups_require.add_argument("--needs-task", dest="needs_task", type=int,
                                 default=None)
@@ -3633,7 +3662,7 @@ def main(argv=None):
     groups_require.add_argument("--ledger", default=LEDGER_DEFAULT)
     groups_blockers = groups_sub.add_parser(
         "blockers", help="unmet prerequisites of one group or task")
-    groups_blockers.add_argument("--group", dest="group_id", type=int,
+    groups_blockers.add_argument("--group", dest="group_id", type=_goal_ref,
                                  default=None)
     groups_blockers.add_argument("--task", dest="task_id", type=int,
                                  default=None)
@@ -3641,7 +3670,7 @@ def main(argv=None):
     groups_blockers.add_argument("--ledger", default=LEDGER_DEFAULT)
     groups_ready = groups_sub.add_parser(
         "ready", help="open subtree tasks with no unmet prerequisite")
-    groups_ready.add_argument("group_id", type=int)
+    groups_ready.add_argument("group_id", type=_goal_ref)
     groups_ready.add_argument("--json", action="store_true")
     groups_ready.add_argument("--ledger", default=LEDGER_DEFAULT)
     # #962 — the current-goal pointer the tick renders. Setting it asserts
@@ -3652,7 +3681,7 @@ def main(argv=None):
         "set-current",
         help="point the tick's current-goal pointer at a goal, or clear it")
     groups_setcurrent.add_argument(
-        "group_id", type=int, nargs="?",
+        "group_id", type=_goal_ref, nargs="?",
         help="a goal group id (kind='goal'); refused for any other kind")
     groups_setcurrent.add_argument(
         "--none", action="store_true", dest="clear_current",

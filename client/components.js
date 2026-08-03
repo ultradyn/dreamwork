@@ -552,7 +552,12 @@ const TASK_REF_SKIP = 'a,button,code,pre,script,select,style,textarea,[data-task
    to a link here does not re-open it. */
 const TASK_REF_SKIP_NO_CODE =
   'a,button,pre,script,select,style,textarea,[data-task-ref-ui]';
-const TASK_REF_RE = /(^|[^\w])#(\d+)\b/g;
+/* #1042 — project goals use PG-<num>, distinct from #<num> task refs so a
+   goal reference never renders as a link to an unrelated task. The combined
+   RE matches both in one pass: group 2 is a task id (#N), group 3 is a goal
+   id (PG-N). PG- is case-sensitive (no i flag) so pg1/PG13 in prose do not
+   match, and the hyphen cannot collide with use-igcs' G1/G2/G3 labels. */
+const TASK_REF_RE = /(^|[^\w])(?:#(\d+)|PG-(\d+))\b/g;
 const TASK_REF_CACHE_MS = 60 * 1000;
 const taskRefCache = new Map();
 /* #1017 — inline `#NNN` links unless the user turned the setting off. The
@@ -571,10 +576,15 @@ function taskRefParts(text) {
   let last = 0, match;
   TASK_REF_RE.lastIndex = 0;
   while ((match = TASK_REF_RE.exec(text)) !== null) {
-    const hashAt = match.index + match[1].length;
-    if (hashAt > last) out.push({ text: text.slice(last, hashAt) });
-    out.push({ id: Number(match[2]), text: '#' + match[2] });
-    last = hashAt + match[2].length + 1;
+    const refAt = match.index + match[1].length;
+    if (refAt > last) out.push({ text: text.slice(last, refAt) });
+    if (match[3]) {  /* #1042 — PG-N goal reference */
+      out.push({ id: Number(match[3]), kind: 'goal', text: 'PG-' + match[3] });
+      last = refAt + 3 + match[3].length;
+    } else {  /* #N task reference */
+      out.push({ id: Number(match[2]), text: '#' + match[2] });
+      last = refAt + match[2].length + 1;
+    }
   }
   if (last < text.length) out.push({ text: text.slice(last) });
   return out;
@@ -702,9 +712,18 @@ function linkTaskRefText(node) {
   for (const part of parts) {
     if (part.id == null) { frag.appendChild(node.ownerDocument.createTextNode(part.text)); continue; }
     const a = node.ownerDocument.createElement('a');
-    a.className = 'taskref'; a.href = '/tasks?t=' + part.id;
-    a.dataset.taskId = String(part.id); a.textContent = part.text;
-    a.setAttribute('aria-describedby', 'task-ref-preview');
+    if (part.kind === 'goal') {
+      /* #1042 — PG-N links to /goals, never /tasks?t=N. The distinct class
+         and href mean a reader can tell a goal link from a task link, and
+         the two never shadow each other even when PG-1 and #1 share a
+         number. No hover: the goals page is the destination, not a card. */
+      a.className = 'goalref'; a.href = '/goals';
+      a.textContent = part.text;
+    } else {
+      a.className = 'taskref'; a.href = '/tasks?t=' + part.id;
+      a.dataset.taskId = String(part.id); a.textContent = part.text;
+      a.setAttribute('aria-describedby', 'task-ref-preview');
+    }
     frag.appendChild(a);
   }
   node.replaceWith(frag);

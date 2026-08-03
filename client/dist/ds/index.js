@@ -2273,7 +2273,7 @@ var DreamworkDesign = (() => {
   }
   var TASK_REF_SKIP = "a,button,code,pre,script,select,style,textarea,[data-task-ref-ui]";
   var TASK_REF_SKIP_NO_CODE = "a,button,pre,script,select,style,textarea,[data-task-ref-ui]";
-  var TASK_REF_RE = /(^|[^\w])#(\d+)\b/g;
+  var TASK_REF_RE = /(^|[^\w])(?:#(\d+)|PG-(\d+))\b/g;
   var TASK_REF_CACHE_MS = 60 * 1e3;
   var taskRefCache = /* @__PURE__ */ new Map();
   function backtickTaskLinksOn() {
@@ -2285,10 +2285,15 @@ var DreamworkDesign = (() => {
     let last = 0, match;
     TASK_REF_RE.lastIndex = 0;
     while ((match = TASK_REF_RE.exec(text)) !== null) {
-      const hashAt = match.index + match[1].length;
-      if (hashAt > last) out.push({ text: text.slice(last, hashAt) });
-      out.push({ id: Number(match[2]), text: "#" + match[2] });
-      last = hashAt + match[2].length + 1;
+      const refAt = match.index + match[1].length;
+      if (refAt > last) out.push({ text: text.slice(last, refAt) });
+      if (match[3]) {
+        out.push({ id: Number(match[3]), kind: "goal", text: "PG-" + match[3] });
+        last = refAt + 3 + match[3].length;
+      } else {
+        out.push({ id: Number(match[2]), text: "#" + match[2] });
+        last = refAt + match[2].length + 1;
+      }
     }
     if (last < text.length) out.push({ text: text.slice(last) });
     return out;
@@ -2421,11 +2426,17 @@ var DreamworkDesign = (() => {
         continue;
       }
       const a = node.ownerDocument.createElement("a");
-      a.className = "taskref";
-      a.href = "/tasks?t=" + part.id;
-      a.dataset.taskId = String(part.id);
-      a.textContent = part.text;
-      a.setAttribute("aria-describedby", "task-ref-preview");
+      if (part.kind === "goal") {
+        a.className = "goalref";
+        a.href = "/goals";
+        a.textContent = part.text;
+      } else {
+        a.className = "taskref";
+        a.href = "/tasks?t=" + part.id;
+        a.dataset.taskId = String(part.id);
+        a.textContent = part.text;
+        a.setAttribute("aria-describedby", "task-ref-preview");
+      }
       frag.appendChild(a);
     }
     node.replaceWith(frag);

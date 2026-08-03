@@ -208,6 +208,23 @@ def _extract_js_fn(page, sig):
     raise AssertionError("unbalanced braces extracting " + sig)
 
 
+def _extract_js_const(page, name):
+    """Extract one ``const NAME = …;`` declaration from the generated shell, so
+    a node-eval test runs the PRODUCTION constant — not a hand-restated copy.
+
+    #1042 — a test that restates ``TASK_REF_RE`` as a literal is blind to the
+    shipping autolinker: if production diverges the test still passes against
+    its own copy. Reaching the real constant means deleting or breaking the
+    production line makes the test go red (``ValueError`` on a deleted line, a
+    wrong render on a broken one). The three consts this reaches
+    (TASK_REF_SKIP, TASK_REF_SKIP_NO_CODE, TASK_REF_RE) carry no embedded ``;``
+    so the first one after the ``=`` ends the declaration cleanly."""
+    marker = "const " + name + " ="
+    start = page.index(marker)
+    end = page.index(";", start)
+    return page[start:end + 1]
+
+
 # #509 — a fixture DERIVED FROM the real answered #229 entry's triggering
 # features: a hard-wrapped title, a `-> answered` resolution head inside a
 # long rewrappable prose body, and a note carrying a box-drawing (nested)
@@ -6801,10 +6818,14 @@ class TestTasksRoute(unittest.TestCase):
         # three contexts a rendered-HTML regex cannot distinguish. #1017 adds
         # a setting: inline <code> links when it is ON (default), stays literal
         # when OFF; a #NNN already inside an <a> never double-links.
+        # #1042 — the skip sets AND the autolinker RE are pulled from the
+        # production source (not restated as literals), so the node-eval runs
+        # the SHIPPING TASK_REF_RE. Break the production regex and this test
+        # goes red (ValueError or a wrong render).
         script = textwrap.dedent("""\
-            const TASK_REF_SKIP = 'a,button,code,pre,script,select,style,textarea,[data-task-ref-ui]';
-            const TASK_REF_SKIP_NO_CODE = 'a,button,pre,script,select,style,textarea,[data-task-ref-ui]';
-            const TASK_REF_RE = /(^|[^\\w])#(\\d+)\\b/g;
+            %s
+            %s
+            %s
             let data = null;
             %s
             %s
@@ -6849,9 +6870,215 @@ class TestTasksRoute(unittest.TestCase):
             if (codeOff.result)
               { console.error('inline code linked with setting off'); process.exit(15); }
             if (!proseOff.result || proseOff.result[1].href !== '/tasks?t=229') process.exit(16);
-        """) % (_extract_js_fn(src, "function taskRefParts("),
-                   _extract_js_fn(src, "function backtickTaskLinksOn("),
-                   _extract_js_fn(src, "function linkTaskRefText("))
+
+            // #1042 r3 — a digit run run straight into word chars must NOT
+            // link. Production TASK_REF_RE ends in \b; drop it and #229abc
+            // links as #229 (the reviewer reproduced this green over the bug).
+            // Prove the negative beside a live ref so the positive still
+            // holds: #1 links, #229abc does not.
+            const boundary = node('see #1 and #229abc end', 'prose');
+            linkTaskRefText(boundary);
+            const bAnchors = (boundary.result || []).filter(x => x.kind === 'a');
+            if (bAnchors.some(a => a.href === '/tasks?t=229'))
+              { console.error('#229abc leaked a #229 link'); process.exit(17); }
+            if (bAnchors.length !== 1 || bAnchors[0].href !== '/tasks?t=1')
+              { console.error('#1 did not link alone beside #229abc'); process.exit(18); }
+        """) % (_extract_js_const(src, "TASK_REF_SKIP"),
+                _extract_js_const(src, "TASK_REF_SKIP_NO_CODE"),
+                _extract_js_const(src, "TASK_REF_RE"),
+                _extract_js_fn(src, "function taskRefParts("),
+                _extract_js_fn(src, "function backtickTaskLinksOn("),
+                _extract_js_fn(src, "function linkTaskRefText("))
+        _node_check(["node", "-e", script])
+
+    def test_goal_reference_pg_links_to_goals_not_tasks(self):
+        """#1042 — PG-<num> resolves to /goals; #<num> still resolves to the
+        task. The two share a number space but MUST render to different
+        targets, so a reader can tell a goal link from a task link. This is
+        the discriminating test the brief's direction-2 traps are aimed at:
+        it asserts the HREF and CLASS, not merely that *a* link rendered."""
+        src = watch.COMPONENTS_JS
+        self.assertIn("PG-(\\d+)", src)  # the combined RE carries the goal branch
+        self.assertIn("a.className = 'goalref'", src)
+        self.assertIn("a.href = '/goals'", src)
+        # #1042 — same extraction as the task-ref test: skip sets AND the RE
+        # come from production source so this node-eval reaches the SHIPPING
+        # TASK_REF_RE, not a restated copy. Break the goal branch in the
+        # production regex and the PG-1 assertions below go red.
+        script = textwrap.dedent("""\
+            %s
+            %s
+            %s
+            let data = null;
+            %s
+            %s
+            %s
+            const doc = {
+              createDocumentFragment() { return {kids:[], appendChild(n){this.kids.push(n)}}; },
+              createTextNode(text) { return {kind:'text', text}; },
+              // #1042 r6 — capture the tag so links() (kind === 'a') reflects
+              // the REAL element type.  Without this the double ignores its
+              // argument and createElement('span') in production is invisible:
+              // count, class, href and text all pass while the page ships a
+              // <span> where an <a> belongs.
+              createElement(tag) { return {tag, kind: tag, dataset:{}, setAttribute(){}}; }
+            };
+            // 'prose' is never skipped; 'pre' is skipped by BOTH sets.
+            const node = (text, kind) => ({
+              nodeValue:text, ownerDocument:doc,
+              parentElement:{closest(selector){
+                if (selector === TASK_REF_SKIP)
+                  return (kind === 'pre' || kind === 'code' || kind === 'a') ? {} : null;
+                if (selector === TASK_REF_SKIP_NO_CODE)
+                  return (kind === 'pre' || kind === 'a') ? {} : null;
+                return selector === '.md' ? {} : null;
+              }},
+              replaceWith(frag){this.result=frag.kids}
+            });
+            const links = n => (n.result || []).filter(x => x.kind === 'a');
+            const hrefs = n => links(n).map(x => x.href);
+            // #1042 r6 — conservation helper: reconstruct all fragment text
+            // and compare to the immutable original captured before the walker.
+            // An index or position claim rests on the result list being the one
+            // you think it is; a counter that drops text invalidates that.
+            // Pattern copied from the task-ref sibling (exit 14).
+            const conserved = (n, orig) =>
+              (n.result || []).map(x => x.text || x.textContent).join('') === orig;
+
+            // Both token orders, with independent leading/trailing prose,
+            // resolve to the same two DIFFERENT targets in document order.
+            const both = node('PG-1 is blocked on #1', 'prose');
+            const mixedCases = [
+              ['both', both, ['goalref', 'taskref']],
+              ['forward-leading', node('see PG-1 is blocked on #1', 'prose'), ['goalref', 'taskref']],
+              ['forward-trailing', node('PG-1 is blocked on #1 today', 'prose'), ['goalref', 'taskref']],
+              ['forward-both-ends', node('see PG-1 is blocked on #1 today', 'prose'), ['goalref', 'taskref']],
+              ['reverse', node('#1 blocks PG-1', 'prose'), ['taskref', 'goalref']],
+              ['reverse-leading', node('see #1 blocks PG-1', 'prose'), ['taskref', 'goalref']],
+              ['reverse-trailing', node('#1 blocks PG-1 today', 'prose'), ['taskref', 'goalref']],
+              ['reverse-both-ends', node('see #1 blocks PG-1 today', 'prose'), ['taskref', 'goalref']],
+            ];
+            let goal, task;
+            for (const [label, mixed, expectedClasses] of mixedCases) {
+              const original = mixed.nodeValue;
+              linkTaskRefText(mixed);
+              const mixedLinks = links(mixed);
+              if (!conserved(mixed, original))
+                { console.error(label + ': reconstructed text diverged — text not conserved, mixed-link assertions are meaningless'); process.exit(35); }
+              if (mixedLinks.length !== 2)
+                { console.error(label + ': expected 2 <a> links, got ' + mixedLinks.length
+                  + ' — linkTaskRefText may be creating non-anchor elements'); process.exit(20); }
+              const expected = expectedClasses.map(className => className === 'goalref'
+                ? ['goalref', '/goals', 'PG-1']
+                : ['taskref', '/tasks?t=1', '#1']);
+              for (let i = 0; i < expected.length; i++) {
+                const [className, href, text] = expected[i];
+                const anchor = mixedLinks[i];
+                if (!anchor || anchor.tag !== 'a' || anchor.className !== className
+                    || anchor.href !== href || anchor.textContent !== text)
+                  { console.error(label + ': ordered anchor ' + i + ' was not <a.' + className
+                    + '> to ' + href + ' with text ' + text); process.exit(21 + i); }
+              }
+              if (label === 'both') {
+                goal = mixedLinks[0];
+                task = mixedLinks[1];
+              }
+            }
+
+            // PG-1 must NOT link to /tasks?t=1 — the exact collision this
+            // task removes. If goal.href were /tasks?t=1 this fires.
+            if (goal.href === '/tasks?t=1') process.exit(23);
+
+            // Edge cases — each is a distinct position/shape.
+            // line start
+            const ls = node('PG-1 starts the line', 'prose');
+            // #1042 r6 — capture original BEFORE the walker, then assert text
+            // conservation before accepting the first-link index below.  An
+            // index claim ([0]) has the same premise as gbound's character
+            // offset: the result list is the one you think it is.
+            const lsText = ls.nodeValue;
+            linkTaskRefText(ls);
+            if (!conserved(ls, lsText))
+              { console.error('ls: reconstructed text diverged — text not conserved, first-link index is meaningless'); process.exit(33); }
+            if (hrefs(ls)[0] !== '/goals') { console.error('line-start PG-1 failed'); process.exit(24); }
+            // punctuation-adjacent
+            const pa = node('see PG-1.', 'prose');
+            const paText = pa.nodeValue;
+            linkTaskRefText(pa);
+            if (!conserved(pa, paText))
+              { console.error('pa: reconstructed text diverged — text not conserved, first-link index is meaningless'); process.exit(34); }
+            if (hrefs(pa)[0] !== '/goals') { console.error('punctuation-adjacent PG-1 failed'); process.exit(25); }
+            // PG- with no digits — must NOT link
+            const nodigit = node('see PG- now', 'prose');
+            linkTaskRefText(nodigit);
+            if (links(nodigit).length !== 0) { console.error('PG- with no digits linked'); process.exit(26); }
+            // lowercase pg-1 — case-sensitive, must NOT link
+            const lower = node('see pg-1 here', 'prose');
+            linkTaskRefText(lower);
+            if (links(lower).length !== 0) { console.error('lowercase pg-1 linked'); process.exit(27); }
+            // inside <pre> — must NOT link (same rule as #NNN)
+            const pre = node('PG-1 in a fence', 'pre');
+            linkTaskRefText(pre);
+            if (links(pre).length !== 0) { console.error('PG-1 inside <pre> linked'); process.exit(28); }
+            // #1042 r3/r4/r5 — PG-1abc must NOT link (the same \b guard). The
+            // real PG-1 beside it still links; only the token whose digits are
+            // the whole token does, so a count of one (not two) is the signal.
+            // r4: count + textContent alone cannot tell WHICH PG-1 linked — the
+            // real token and the PG-1 prefix of PG-1abc both render as 'PG-1'.
+            // Pin the goalref's POSITION: it must land at the offset of the
+            // FIRST PG- token in the node (derived from the node's own text, not
+            // a hardcoded number), so a counter-regex that suppresses the real
+            // token and links the invalid one — landing at the SECOND token's
+            // offset — goes red here. exit(31).
+            // r5: the position check alone is false-greenable. A counter that
+            // links the wrong token AND drops the pre-link text chunk moves
+            // that token to offset 0 — matching firstPgAt in the original. So
+            // capture the original text BEFORE the walker, assert text
+            // conservation FIRST (exit 32), then accept the offset.
+            const gbound = node('PG-1 and PG-1abc', 'prose');
+            // #1042 r5 — capture the immutable original and derive firstPgAt
+            // BEFORE the walker mutates the node. Deriving an expectation from
+            // post-mutation state is the defect class this round closes: the
+            // test double's replaceWith leaves nodeValue unchanged today, but
+            // that is accidental safety, not a property the test asserts.
+            const gboundText = gbound.nodeValue;
+            const firstPgAt = gboundText.indexOf('PG-');
+            linkTaskRefText(gbound);
+            const gboundLinks = links(gbound);
+            if (gboundLinks.length !== 1)
+              { console.error('PG-1abc boundary: expected 1 goalref, got ' + gboundLinks.length); process.exit(29); }
+            if (!gboundLinks[0] || gboundLinks[0].textContent !== 'PG-1')
+              { console.error('the one goalref was not the real PG-1'); process.exit(30); }
+            // Text conservation: reconstruct all fragment text from the result
+            // and require it equals the immutable original captured above. An
+            // offset is a claim about a position in a string; it is evidence
+            // only if the string is the one you think it is. A counter that
+            // links the wrong token AND drops the pre-link text chunk moves
+            // that token to offset 0 — the same offset as the real token in
+            // the original — false-greening the position check. This guard
+            // fires first, before the offset is accepted. exit(32).
+            let reconText = '';
+            for (const kid of gbound.result) {
+              reconText += (kid.kind === 'text' ? kid.text : (kid.textContent || ''));
+            }
+            if (reconText !== gboundText)
+              { console.error('PG-1abc boundary: reconstructed fragment text diverged — got ' + JSON.stringify(reconText) + ', expected ' + JSON.stringify(gboundText) + ' — text not conserved, offset is meaningless'); process.exit(32); }
+            // Position: walk the result fragment in document order, summing
+            // text lengths, to find the goalref's character offset in the
+            // reconstructed text; it must equal the first PG- token's offset.
+            let recon = 0, goalAt = -1;
+            for (const kid of gbound.result) {
+              if (kid.kind === 'a' && kid.className === 'goalref') { goalAt = recon; break; }
+              recon += (kid.kind === 'text' ? kid.text : (kid.textContent || '')).length;
+            }
+            if (goalAt !== firstPgAt)
+              { console.error('the goalref linked at offset ' + goalAt + ', not the first PG- token at ' + firstPgAt + ' — the wrong token linked'); process.exit(31); }
+        """) % (_extract_js_const(src, "TASK_REF_SKIP"),
+                _extract_js_const(src, "TASK_REF_SKIP_NO_CODE"),
+                _extract_js_const(src, "TASK_REF_RE"),
+                _extract_js_fn(src, "function taskRefParts("),
+                _extract_js_fn(src, "function backtickTaskLinksOn("),
+                _extract_js_fn(src, "function linkTaskRefText("))
         _node_check(["node", "-e", script])
 
     def test_task_reference_states_and_origin_fail_closed(self):
