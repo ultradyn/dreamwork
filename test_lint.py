@@ -5450,6 +5450,50 @@ class TestLandedGuards:
         oks = self.rows(t, lint.OK)
         assert len(oks) == 1 and "1 guard(s) declared" in oks[0][1] and "defined" in oks[0][1]
 
+    def test_a_real_gate_worktree_reads_the_same_guard_corpus(self, tmp_path):
+        """A checkout's parent path must not exclude its own test tree."""
+        import subprocess
+
+        main = tmp_path / "main"
+        main.mkdir()
+
+        def git(*args, cwd=main):
+            return subprocess.run(
+                ["git", "-C", str(cwd), *args],
+                capture_output=True, text=True, check=True)
+
+        git("init", "-q")
+        git("config", "user.email", "test@example.invalid")
+        git("config", "user.name", "Test")
+        (main / ".dreamwork").mkdir()
+        (main / "landed-guards.md").write_text("- #868 test_still_here\n")
+        (main / "test_guard.py").write_text(
+            "def test_still_here():\n    assert True\n")
+        git("add", ".")
+        git("commit", "-qm", "fixture")
+
+        gate = tmp_path / ".worktrees" / ".gate-test"
+        git("worktree", "add", "-q", "--detach", str(gate), "HEAD")
+
+        main_rows = self.rows(main)
+        gate_rows = self.rows(gate)
+        assert gate_rows == main_rows, (
+            "the gate worktree must scan its own tests, independent of an "
+            f"ancestor directory name: main={main_rows!r}, gate={gate_rows!r}")
+
+    @pytest.mark.parametrize("nested_root", [".worktrees", ".native-lanes"])
+    def test_a_guard_defined_only_in_a_nested_lane_is_still_missing(
+            self, tmp_path, nested_root):
+        t = self.build(
+            tmp_path, "- #868 test_lane_shadow\n",
+            tests={"test_other.py": "def test_other():\n    pass\n"})
+        shadow = t / nested_root / "lane" / "test_shadow.py"
+        shadow.parent.mkdir(parents=True)
+        shadow.write_text("def test_lane_shadow():\n    assert True\n")
+
+        warns = self.rows(t, lint.WARN)
+        assert len(warns) == 1 and "test_lane_shadow" in warns[0][1], warns
+
     def test_an_empty_registry_reports_zero_so_checked_nothing_is_honest(
             self, tmp_path):
         # #868, the lesson this descends from: a probe that examined nothing
