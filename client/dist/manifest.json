@@ -44,13 +44,13 @@
     "dev/build/src/native-entry.js": "42c071b11224dd1be63aa3065ae59c45cc6dafb5bb3f1200b8fa30821b10f9d4",
     "dev/build/src/probe.js": "f6c51e602a98990ca28fe31206f0aa533c77016f5a9e04cc883769e52c3f67fc",
     "dev/build/src/registry.js": "6d8b3a665afcec61e7d0ab59b32b6ee23b0fc0bff90bf23b2558823057beb0a8",
-    "dev/build/src/research.js": "5ec498f1c9855a57dfb43da8cad8d5baf93d24c88e7f16d2dcd1b0ec32e1ede8",
+    "dev/build/src/research.js": "26813363dcb58d20cef045528fbf55da86827053584a480f9b549d03626987cd",
     "dev/build/wrapper-exports.js": "ceac587fd5555910a0f65aa1b0bff6ea114e03991a50509ffc75365464e70080"
   },
   "outputs": {
     "client/dist/ds/index.js": "bb9ef57b9f43aaa44cd83915ac91dee86ef791342901232cc6cbed4fa0999d9a",
     "client/dist/ds/styles.css": "cd335f737a8b6f2846e35faf184e2e3f6b3a2b793422a6b13ecde4cd5ef582fb",
-    "client/dist/native.js": "fe1ec612a0d92702ecd644444ed97e16ec37d220e7c068f520f6d66f315b31b4"
+    "client/dist/native.js": "3c160d9021b6542a5d34ddaf57910e57614b30fa5e20824e99fa5ab1bd620ed3"
   },
   "schema": 1,
   "tool": {
