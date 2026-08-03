@@ -408,15 +408,25 @@ and without it the map rots silently. A lane adding a plan under
 expected, not a regression, when the omitted names are the plans you just added;
 any other `doc-map.md` WARN is a real finding.
 
-  **This holds even if your brief tells you to add the slug yourself — the brief is wrong and the
-  rule wins.** The file has two different kinds of row and they mislead in opposite directions: a
-  per-plan *description* row (clearly the coordinator's) and a single enumerated *plan-slug list*
-  (which looks like a one-word append anyone could make). It is the second that bites. On
-  2026-08-03 two lanes each appended one slug to that one line, both correctly, and collided at
-  the merge gate; the coordinator hand-merged two 60-slug lines with three assertions to be sure
-  the result was right. **Two lanes cannot append to the same line.** Report your new doc path and
-  let it be folded. If a brief instructs otherwise, say so in your report — that is a defect in the
-  brief worth more than the row.
+  **CORRECTED 2026-08-03, same day, after the first version of this paragraph was measured wrong.**
+  The predicted row above is NOT merely a WARN you can quote and move past:
+  `test_lint.py::TestDocMapPlans::test_this_repo_maps_its_own_plans` asserts there are **no**
+  `doc-map.md` WARN rows at all, so a lane adding a plan under `.dreamwork/docs/plans/` **fails the
+  merge gate at phase=named-tests** until the slug is in the list. I wrote "the rule wins, report the
+  path and let it be folded" this morning and it is not survivable advice on its own — followed
+  literally, it guarantees a refusal.
+
+  **The resolution is about WHEN, not WHO.** The row is still the coordinator's, and lanes still must
+  not edit the file — two lanes each appended one slug to that single enumerated line on 2026-08-03,
+  both correctly, and collided at the merge gate; the merge left a stray diff3 marker on master that
+  a full lint run passed clean over (`#1126`). **Two lanes cannot append to the same line.** What was
+  missing is that the coordinator must add the slug **immediately before gating that branch**, in the
+  same adjacency window as the rebase (`#1055`) — not "at merge" in some unspecified later sense.
+
+  So: name your new doc path prominently in your completion report, and expect the gate to be run
+  only after the row lands. If a brief tells you to add the slug yourself, say so in your report; the
+  file has two kinds of row — a per-plan *description* row and the single enumerated *plan-slug
+  list* — and it is the second, which looks like a harmless one-word append, that collides.
 
 **Lane bars are command-, snapshot-, and interpreter-relative.** Run `python3 lint.py`: require
 NO ERRORs and compare the complete WARN row set against the measured baseline, not only the trailer
