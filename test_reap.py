@@ -150,14 +150,15 @@ def test_empty_ignored_regular_file_is_disposable(lane):
     assert "ignored: examined 1 file; 1 disposable, 0 NOT disposable" in result.stdout
 
 
-def test_unforeseen_ignored_file_type_falls_through_allowlist(lane):
+def test_unforeseen_ignored_file_type_falls_through_allowlist_and_refuses(lane):
     _, worktree = lane
     (worktree / "red-proof.tmp.unforeseen").write_text("unknown kind\n", encoding="utf-8")
 
     result = _run("--check", worktree)
 
-    assert result.returncode == 0, result.stderr
-    assert "1 NOT disposable: red-proof.tmp.unforeseen" in result.stdout
+    assert result.returncode == 1
+    assert "1 NOT disposable: red-proof.tmp.unforeseen" in result.stderr
+    assert "REFUSE: ignored path would be lost: red-proof.tmp.unforeseen" in result.stderr
 
 
 def test_handwritten_note_inside_pycache_is_not_hidden_by_directory_name(lane):
@@ -168,8 +169,12 @@ def test_handwritten_note_inside_pycache_is_not_hidden_by_directory_name(lane):
 
     result = _run("--check", worktree)
 
-    assert result.returncode == 0, result.stderr
-    assert "1 NOT disposable: __pycache__/handwritten-note.md" in result.stdout
+    assert result.returncode == 1
+    assert "1 NOT disposable: __pycache__/handwritten-note.md" in result.stderr
+    assert (
+        "REFUSE: ignored path would be lost: __pycache__/handwritten-note.md"
+        in result.stderr
+    )
 
 
 def test_ignored_symlink_does_not_report_files_beyond_the_worktree(lane, tmp_path):

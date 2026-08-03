@@ -117,19 +117,28 @@ EXPECTED_UNTRACKED = frozenset({"BRIEF.md"})
 DISPOSABLE_IGNORED_DIRS = frozenset({".pytest_cache", ".ruff_cache", "node_modules"})
 
 
-def _is_disposable_ignored(path: str) -> bool:
+def _is_disposable_ignored(target: Path, path: str) -> bool:
     parts = PurePosixPath(path).parts
-    return (
+    if (
         path.endswith((".pyc", ".lock"))
         or any(part in DISPOSABLE_IGNORED_DIRS for part in parts)
-    )
+    ):
+        return True
+    candidate = target / path
+    try:
+        return (
+            candidate.is_file()
+            and not candidate.is_symlink()
+            and candidate.stat().st_size == 0
+        )
+    except OSError:
+        return False
 
 
-def _ignored_detail(rows: list[StatusPath]) -> str:
+def _ignored_detail(rows: list[StatusPath], notable: list[StatusPath]) -> str:
     total = len(rows)
     if total == 0:
         return "ignored: examined 0 files; NOT an all-clear"
-    notable = [row.path for row in rows if not _is_disposable_ignored(row.path)]
     disposable = total - len(notable)
     noun = "file" if total == 1 else "files"
     detail = (
@@ -137,7 +146,7 @@ def _ignored_detail(rows: list[StatusPath]) -> str:
         f"{len(notable)} NOT disposable"
     )
     if notable:
-        detail += ": " + ", ".join(notable)
+        detail += ": " + ", ".join(row.path for row in notable)
     return detail
 
 
@@ -212,8 +221,8 @@ def reap(target_arg: str, *, base: str = "master", force: bool = False,
     ignored = [row for row in rows if row.kind == "ignored"]
     # The untracked paths beyond the per-lane scratch set are the signal: they
     # may be a deliverable the lane forgot to commit (#760). Naming them does
-    # does not change the gate — the gate stays tracked-only — it only turns
-    # a collapsed number into something a coordinator can act on (#702).
+    # not change the gate; it only turns a collapsed number into something a
+    # coordinator can act on (#702).
     unexpected = [
         row for row in untracked if row.path not in EXPECTED_UNTRACKED
     ]
@@ -228,15 +237,18 @@ def reap(target_arg: str, *, base: str = "master", force: bool = False,
             ignored=len(ignored),
         )
 
+    non_disposable_ignored = [
+        row for row in ignored if not _is_disposable_ignored(target, row.path)
+    ]
     summary = _summary(
         target,
         len(tracked),
         len(untracked),
         len(ignored),
         len(commits),
-        _ignored_detail(ignored),
+        _ignored_detail(ignored, non_disposable_ignored),
     )
-    unsafe = bool(tracked or commits)
+    unsafe = bool(tracked or commits or non_disposable_ignored)
     stream = sys.stderr if unsafe and not force else sys.stdout
     print(summary, file=stream)
     # Name unexpected untracked paths on every classified run, not only the
@@ -247,6 +259,8 @@ def reap(target_arg: str, *, base: str = "master", force: bool = False,
     if unsafe and not force:
         for row in tracked:
             print(f"REFUSE: tracked path would be lost: {row.path}", file=sys.stderr)
+        for row in non_disposable_ignored:
+            print(f"REFUSE: ignored path would be lost: {row.path}", file=sys.stderr)
         for sha, subject in commits:
             print(
                 f"REFUSE: unmerged commit would become easier to delete unseen: "
