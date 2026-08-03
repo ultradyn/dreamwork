@@ -302,6 +302,71 @@ class TestZeroStatesAreDistinct:
         assert "unparseable" in err or "FAULT" in err
 
 
+class TestRequiredProofRemediesMatchTheProvenance:
+    """Missing, empty, and short populations need one honest default remedy."""
+
+    FRESH = "Produce a fresh causal proof"
+
+    def test_missing_registry_asks_for_fresh_proof_not_an_ancestor(
+            self, repo, capsys):
+        exit_code = _check(repo, require=1)
+        _, err = capsys.readouterr()
+
+        assert exit_code == 2
+        assert self.FRESH in err, (
+            "missing registry received the wrong remedy; expected fresh causal "
+            "proof guidance:\n" + err)
+        assert "ancestor's injection" not in err, err
+
+    def test_empty_registry_asks_for_fresh_proof_not_an_ancestor(
+            self, repo, capsys):
+        rp._write_registry(repo, [])
+
+        exit_code = _check(repo, require=1)
+        _, err = capsys.readouterr()
+
+        assert exit_code == 1
+        assert "registry empty" in err, err
+        assert self.FRESH in err, (
+            "empty registry received the wrong remedy; expected fresh causal "
+            "proof guidance:\n" + err)
+        assert "ancestor's injection" not in err, err
+
+    def test_under_count_registry_asks_for_fresh_proof_not_an_ancestor(
+            self, repo, capsys):
+        _begin(repo, "router.js")
+        (repo / "router.js").write_text("UNDER COUNT SABOTAGE\n")
+        _restore(repo, "router.js")
+        capsys.readouterr()
+
+        exit_code = _check(repo, require=2)
+        _, err = capsys.readouterr()
+
+        assert exit_code == 1
+        assert "1 injection(s) registered, but --require 2 was set" in err, err
+        assert self.FRESH in err, (
+            "under-count registry received the wrong remedy; expected fresh "
+            "causal proof guidance:\n" + err)
+        assert "ancestor's injection" not in err, err
+
+    def test_explicit_carry_forward_names_the_coordinator_and_current_lane_cycle(
+            self, repo, capsys):
+        exit_code = _check(repo, require=1, carry_forward=True)
+        _, err = capsys.readouterr()
+
+        assert exit_code == 2
+        assert "Carry-forward provenance was supplied" in err, err
+        assert "coordinator's brief must name" in err, err
+        assert "same carried production path" in err, err
+        assert "same expectation" in err, err
+        assert "same discriminating test" in err, err
+        assert all(verb in err for verb in ("`begin`", "`observe`", "`restore`", "`check`")), err
+        assert "prior worktree location for use as `--cwd`" in err, err
+        assert "audits exactly the worktree root it is given" in err, err
+        assert "can satisfy `--require` from that root's registry" in err, err
+        assert "operator is responsible" in err, err
+
+
 def test_reach_examined_fragment_formats_non_empty_population():
     """#1038 Finding 2: the shared denominator formatter must handle a
     NON-empty population. The calm path's population is structurally empty
@@ -629,6 +694,43 @@ class TestInjectionReachEvidence:
         text = evidence.read_text()
         assert "INJECTED RUN" in text and "RESTORED CONTROL RUN" in text
         assert self.FAILURE in text
+
+    def test_foreign_root_success_qualifies_which_root_was_proved(
+            self, repo, tmp_path, monkeypatch, capsys):
+        _begin(repo, "router.js")
+        (repo / "router.js").write_text(
+            "export function route() { return false; /* BUG */ }\n")
+        assert _observe(repo, "router.js", self.FAILURE, self._route_check()) == 0
+        assert _restore(repo, "router.js") == 0
+        capsys.readouterr()
+
+        invoking = tmp_path / "invoking-repo"
+        invoking.mkdir()
+        _git(invoking, "init", "-q", "-b", "master", ".")
+        monkeypatch.chdir(invoking)
+
+        assert _check(repo, require=1) == 0
+        out, err = capsys.readouterr()
+        assert not err
+        assert "red-proof reach: OK" in out
+        assert f"audited root {repo.resolve()}" in out
+        assert "not proof for the invoking lane" in out
+
+    def test_same_root_success_stays_unqualified(
+            self, repo, monkeypatch, capsys):
+        _begin(repo, "router.js")
+        (repo / "router.js").write_text(
+            "export function route() { return false; /* BUG */ }\n")
+        assert _observe(repo, "router.js", self.FAILURE, self._route_check()) == 0
+        assert _restore(repo, "router.js") == 0
+        capsys.readouterr()
+        monkeypatch.chdir(repo)
+
+        assert _check(repo, require=1) == 0
+        out, err = capsys.readouterr()
+        assert not err
+        assert "red-proof reach: OK" in out
+        assert "not proof for the invoking lane" not in out
 
     def test_unrelated_failure_does_not_count_as_caught(self, repo, capsys):
         unrelated = "unrelated pre-existing fixture failure"
@@ -2140,6 +2242,8 @@ class TestCoordinatorAuditSeesTheLane:
             "must FAULT, not pass (#671)")
         assert "1 injection(s) were required" in err1, err1
         assert "cannot be verified" in err1, err1
+        assert "Produce a fresh causal proof" in err1, err1
+        assert "do not invent an unrelated injection" in err1, err1
         # THE discrimination: one fixture, two flags, two different verdicts.
         assert exit0 != exit1, (
             "the two flags produced the same verdict — the fix does not "
@@ -2369,10 +2473,27 @@ class TestCoordinatorModeBlindCaseViaCli:
         env[rp._ls.ROLE_ENV] = rp._ls.ROLE_AUTHOR
         r = subprocess.run(
             ["python3", str(CLI_PATH), "check", "--cwd", str(repo),
-             "--require", "1"],
+             "--require", "1", "--carry-forward"],
             capture_output=True, text=True, env=env)
         assert r.returncode == 2, r.stdout + r.stderr
         assert "1 injection(s) were required" in r.stderr, r.stderr
+        assert "coordinator's brief must name" in r.stderr, r.stderr
+        assert "same carried production path" in r.stderr, r.stderr
+        assert "same expectation" in r.stderr, r.stderr
+        assert "same discriminating test" in r.stderr, r.stderr
+        assert "prior worktree location for use as `--cwd`" in r.stderr, r.stderr
+
+    def test_adoption_is_not_a_cli_proof_path(self, repo, tmp_path):
+        """A candidate-authored foreign registry has no adoption entrypoint."""
+        env = dict(__import__("os").environ)
+        env["REDPROOF_SCRATCH_ROOT"] = str(tmp_path / "cli-scratch")
+        r = subprocess.run(
+            ["python3", str(CLI_PATH), "adopt", "--cwd", str(repo),
+             "--from-registry", str(tmp_path / "forged-registry.json")],
+            capture_output=True, text=True, env=env)
+
+        assert r.returncode == 2, r.stdout + r.stderr
+        assert "invalid choice: 'adopt'" in r.stderr, r.stderr
 
     def test_named_lane_absent_registry_agrees_with_coordinator_both_flags(
             self, repo, tmp_path):
@@ -2440,6 +2561,55 @@ class TestObserveRemainderOptionGuard:
         assert "swallowed token '--lane'" in result.stderr, result.stderr
         assert "before --command" in result.stderr, result.stderr
         assert "command's `--` delimiter" in result.stderr, result.stderr
+
+    def test_command_may_end_with_carry_forward_as_consumer_data(
+            self, repo, tmp_path):
+        """The check/handoff affordance must not reserve a pytest argument."""
+        env = dict(__import__("os").environ)
+        env["REDPROOF_SCRATCH_ROOT"] = str(tmp_path / "scratch-1171")
+        lane = "cx-1171-command-data"
+        armed = self._run(
+            repo, env, "begin", "router.js", "--lane", lane,
+            "--expectation", "expectation.txt")
+        assert armed.returncode == 0, armed.stdout + armed.stderr
+        (repo / "router.js").write_text("CARRY FORWARD COMMAND SABOTAGE\n")
+        command_dir = tmp_path / "command-bin"
+        command_dir.mkdir()
+        pytest_command = command_dir / "pytest"
+        pytest_command.write_text(
+            "#!/bin/sh\n"
+            "printf '%s\\n' 'carry-forward consumer argument reached' >&2\n"
+            "exit 1\n",
+            encoding="utf-8",
+        )
+        pytest_command.chmod(0o755)
+        env["PATH"] = f"{command_dir}{os.pathsep}{env['PATH']}"
+
+        result = self._run(
+            repo, env, "observe", "router.js", "--lane", lane,
+            "--failure", "carry-forward consumer argument reached",
+            "--command", "pytest", "--carry-forward")
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "swallowed token" not in result.stderr, result.stderr
+        restored = self._run(
+            repo, env, "restore", "router.js", "--lane", lane)
+        assert restored.returncode == 0, restored.stdout + restored.stderr
+
+    def test_carry_forward_is_not_a_redproof_option_for_begin(
+            self, repo, tmp_path):
+        env = dict(__import__("os").environ)
+        env["REDPROOF_SCRATCH_ROOT"] = str(tmp_path / "scratch-1171-scope")
+
+        result = self._run(
+            repo, env, "begin", "router.js", "--expectation",
+            "expectation.txt", "--carry-forward")
+
+        assert result.returncode == 2, result.stdout + result.stderr
+        assert (
+            "--carry-forward is valid only for check and handoff"
+            in result.stderr
+        ), result.stderr
 
     def test_guard_derives_options_and_honours_the_command_escape(self):
         parser = rp._parser()
@@ -3571,6 +3741,25 @@ class TestHandoffDerivesRequirement:
         # The derived number is STATED in the header — the lane quotes THIS,
         # not its own "no injection owed" recollection.
         assert "1 injection(s) owed" in out, out
+        assert "Produce a fresh causal proof" in err, err
+        assert "Carry-forward provenance was supplied" not in err, err
+
+    def test_a_carry_forward_binding_diff_with_no_registry_gets_cli_remedy(
+            self, repo, capsys):
+        """handoff forwards explicit CLI provenance without changing require."""
+        base, head = _binding_branch(repo)
+        derived = rp._derived_requirement(repo, base, head)
+        assert derived["require"] == 1, derived
+        capsys.readouterr()
+
+        exit_code = _handoff(repo, carry_forward=True)
+        out, err = capsys.readouterr()
+
+        assert exit_code == 2, out + err
+        assert "1 injection(s) owed" in out, out
+        assert "Carry-forward provenance was supplied" in err, err
+        assert "audits exactly the worktree root it is given" in err, err
+        assert "Produce a fresh causal proof" not in err, err
 
     def test_a_retired_only_registry_is_refused_not_reported_clean(
             self, repo, capsys):

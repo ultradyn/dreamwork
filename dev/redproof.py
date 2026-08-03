@@ -213,6 +213,39 @@ _EXPECTATION_DRIFT_REARM = (
     "a clean restore, so repeat that cycle after the final rebase."
 )
 
+# A refusal cannot infer ancestry from an absent or short registry.  Ask for a
+# fresh causal proof by default; only a caller that explicitly supplies
+# carry-forward provenance gets the more specific coordinator/lane protocol.
+_FRESH_CAUSAL_PROOF = (
+    " Produce a fresh causal proof on a production path that the expectation "
+    "and discriminating test actually bind; do not invent an unrelated "
+    "injection merely to satisfy the count."
+)
+
+_CARRY_FORWARD_REARM = (
+    " Carry-forward provenance was supplied. The coordinator's brief must "
+    "name the same carried production path, the same expectation, and the "
+    "same discriminating test; do not invent an unrelated injection. In the "
+    "current lane, `begin` that carried path against the named expectation, "
+    "sabotage it and `observe` the named discriminating test, then `restore` "
+    "and `check`. Only when inspection is genuinely needed should the brief "
+    "name the prior worktree location for use as `--cwd`. `--cwd` audits "
+    "exactly the worktree root it is given and can satisfy `--require` from "
+    "that root's registry; the operator is responsible for treating a foreign "
+    "root as inspection, not as proof for the current lane."
+)
+
+
+def _proof_remedy(carry_forward: bool) -> str:
+    """Select CLI advice from caller provenance, never from registry shape.
+
+    The production landing gate deliberately supplies no carry-forward claim:
+    it has no durable provenance input that can distinguish a first round from
+    a carried round.  Its refusal therefore always uses the honest generic
+    remedy; the specific branch is an explicit check/handoff CLI affordance.
+    """
+    return _CARRY_FORWARD_REARM if carry_forward else _FRESH_CAUSAL_PROOF
+
 
 def _now() -> str:
     return _dt.datetime.now(_dt.timezone.utc).astimezone().isoformat(timespec="seconds")
@@ -1559,8 +1592,19 @@ def _reach_report(restored: list[dict]) -> tuple[str, list[str], bool]:
     )
 
 
+def _emit_success_root_qualification(audited_root: Path) -> None:
+    """Qualify a successful audit when it proves a different Git root."""
+    invoking_root = _ls.worktree_root()
+    if audited_root == invoking_root:
+        return
+    print(
+        f"root qualification: audited root {audited_root}; this successful "
+        f"result is proof about that root and not proof for the invoking lane "
+        f"rooted at {invoking_root}.")
+
+
 def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
-          lane: str | None = None) -> int:
+          lane: str | None = None, carry_forward: bool = False) -> int:
     """Hand-off gate: refuse if a registered injection survives in tree OR history.
 
     Exit 0 = restoration clean, or no evidence when no injection is registered.
@@ -1756,6 +1800,7 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
                     f"an all-clear.{hint}")
             print(reach_line)
             print(identity_scope)
+            _emit_success_root_qualification(root)
             return 0
         # require > 0: a required injection cannot be verified when no registry
         # can be located. Stays FAULT (#671/#895) in BOTH modes (#1038 F3).
@@ -1769,7 +1814,7 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
                 f"read; its absence means the proof cannot be verified, not "
                 f"that it passed. If the lane ran, pass "
                 f"`--lane <DREAMWORK_LANE_ID>` or inspect its scratch by "
-                f"hand.")
+                f"hand." + _proof_remedy(carry_forward))
         else:
             # Name the identity actually audited (#651): "the named lane" when
             # no --lane was passed is how instance 1's FAULT read as a proof
@@ -1783,6 +1828,7 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
                 f"{label} (role: {role}). A required red-proof must leave a "
                 f"registry this audit can read; its absence means the proof "
                 f"cannot be verified, not that it passed.{hint}")
+            sys.stderr.write(_proof_remedy(carry_forward).lstrip() + "\n")
         return 2
 
     # RETIRED records are history-scan evidence and nothing else (#942), so
@@ -1812,7 +1858,8 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
             _check_error(identity_scope,
                 f"check: REFUSED — {label} (role: {role}), but --require "
                 f"{require} was set. A hand-off that the brief mandated "
-                f"red-proofing must show at least one registered injection.")
+                f"red-proofing must show at least one registered injection."
+                + _proof_remedy(carry_forward))
             return 1
         if not retired:
             print(f"check: no evidence — {label} (role: {role}); injection "
@@ -1822,6 +1869,7 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
                   f"injection(s); {_reach_examined_fragment(0, 0)}; "
                   "population is zero, not a clean reach sweep.")
             print(identity_scope)
+            _emit_success_root_qualification(root)
             return 0
         # Retired-only: there is no restoration to certify, but there ARE
         # recorded bytes to look for in history. Fall through to the scan.
@@ -1861,7 +1909,8 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
             f"check: REFUSED — {len(active)} injection(s) registered, but "
             f"--require {require} was set."
             + (f" ({len(retired)} retired registration(s) are in history scope "
-               f"but are not live evidence.)" if retired else ""))
+               f"but are not live evidence.)" if retired else "")
+            + _proof_remedy(carry_forward))
         return 1
 
     # Unknown states are refused FIRST and distinctly (#950). They are the
@@ -1992,6 +2041,7 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
               f"absent from this branch's commits. Restoration was not "
               f"evaluated, because no live injection is registered.")
         print(identity_scope)
+        _emit_success_root_qualification(root)
         return 0
     kinds = [_target_kind(e) for e in restored]
     test_like = kinds.count("test-like")
@@ -2028,7 +2078,10 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
     if listed:
         print(listed)
     print(identity_scope)
-    return 0 if reach_ok or require == 0 else 1
+    success = reach_ok or require == 0
+    if success:
+        _emit_success_root_qualification(root)
+    return 0 if success else 1
 
 
 # --------------------------------------------------------------------------- #
@@ -2078,7 +2131,7 @@ def _derived_requirement(root: Path, base_oid: str, head: str) -> dict:
 
 
 def handoff(cwd: Path | None, *, base: str | None = None,
-            lane: str | None = None) -> int:
+            lane: str | None = None, carry_forward: bool = False) -> int:
     """Derive the diff's injection requirement, then run the hand-off check.
 
     The requirement is DERIVED from the branch diff (#868) — never from the
@@ -2127,7 +2180,8 @@ def handoff(cwd: Path | None, *, base: str | None = None,
     print(f"this is the number to quote: {require} injection(s) owed, derived "
           f"from the diff — not the registered count.")
     print("--- check below (quote this block verbatim in your report) ---")
-    return check(cwd, require=require, base=base, lane=lane)
+    return check(cwd, require=require, base=base, lane=lane,
+                 carry_forward=carry_forward)
 
 
 # --------------------------------------------------------------------------- #
@@ -2160,13 +2214,21 @@ def _parser() -> argparse.ArgumentParser:
     ap.add_argument("--base", default=None,
                     help=f"check: base ref for the history scan (default: first "
                          f"of {', '.join(DEFAULT_BASES)} that resolves)")
+    ap.add_argument("--carry-forward", action="store_true",
+                    help="check/handoff CLI only: the operator supplied "
+                         "carry-forward provenance; changes remedy text only, "
+                         "never the evidence requirement. The production "
+                         "landing gate does not infer or pass this flag")
     ap.add_argument("--lane", default=None,
                     help="resolve a NAMED launch identity for every verb; an "
                          "explicit value wins over DREAMWORK_LANE_ID. Without "
                          "one, write verbs use the environment and check "
                          "enumerates every identity dir when the environment "
                          "is absent (#895).")
-    ap.add_argument("--cwd", default=None, help="derive for this directory")
+    ap.add_argument("--cwd", default=None,
+                    help="audit or derive for exactly this worktree root; its "
+                         "registry may satisfy --require, so a foreign root is "
+                         "inspection only by operator responsibility")
     return ap
 
 
@@ -2202,13 +2264,15 @@ def _parse_args(
 
 def _swallowed_self_option(
         ap: argparse.ArgumentParser,
-        command: list[str]) -> tuple[str, str] | None:
+        command: list[str],
+        *,
+        command_data_options: frozenset[str] = frozenset()) -> tuple[str, str] | None:
     """Return a command token argparse would recognise as our own option."""
     for token in command:
         if token == "--":
             return None
         option = _self_option(ap, token)
-        if option is not None:
+        if option is not None and option not in command_data_options:
             return token, option
     return None
 
@@ -2216,8 +2280,13 @@ def _swallowed_self_option(
 def main(argv: list[str] | None = None) -> int:
     ap = _parser()
     args = _parse_args(ap, argv)
+    if args.carry_forward and args.verb not in {"check", "handoff"}:
+        ap.error("--carry-forward is valid only for check and handoff")
     if args.verb == "observe":
-        swallowed = _swallowed_self_option(ap, args.command)
+        swallowed = _swallowed_self_option(
+            ap, args.command,
+            command_data_options=frozenset({"--carry-forward"}),
+        )
         if swallowed is not None:
             token, option = swallowed
             sys.stderr.write(
@@ -2230,9 +2299,11 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         if args.verb == "check":
-            return check(cwd, require=args.require, base=args.base, lane=args.lane)
+            return check(cwd, require=args.require, base=args.base, lane=args.lane,
+                         carry_forward=args.carry_forward)
         if args.verb == "handoff":
-            return handoff(cwd, base=args.base, lane=args.lane)
+            return handoff(cwd, base=args.base, lane=args.lane,
+                           carry_forward=args.carry_forward)
         if args.path is None:
             ap.error(f"{args.verb} requires a path argument")
         if args.verb == "begin":

@@ -2007,7 +2007,7 @@ def test_plan_plus_required_doc_map_row_lands_without_an_injection(
 def test_real_code_beside_a_doc_map_row_still_requires_an_injection(
     plan_with_doc_map_repo,
 ):
-    """The narrow credit must not exempt a mixed documentation/code diff."""
+    """A carried doc round plus code gets the gate's provenance-neutral remedy."""
     root, lane = plan_with_doc_map_repo
     _write(lane / "dev/feature.py", "VALUE = 1\n")
     _git(lane, "add", "dev/feature.py")
@@ -2029,6 +2029,28 @@ def test_real_code_beside_a_doc_map_row_still_requires_an_injection(
         ".dreamwork/docs/doc-map.md"
     ) in result.stdout
     assert "1 injection(s) were required (--require)" in result.stderr
+    assert "Produce a fresh causal proof" in result.stderr
+    assert "Carry-forward provenance was supplied" not in result.stderr
+    assert "ancestor's injection" not in result.stderr
+    assert "do not invent an unrelated injection" in result.stderr
+    _assert_base_unmoved(root, before)
+
+
+def test_first_round_code_with_no_registry_gets_the_same_gate_remedy(tmp_path):
+    """The production gate cannot infer provenance, so one honest text serves both."""
+    root, lane = _make_repo(tmp_path)
+    _write(lane / "dev/feature.py", "VALUE = 1\n")
+    _git(lane, "add", "dev/feature.py")
+    _git(lane, "commit", "-m", "first-round code")
+    before = _git(root, "rev-parse", "--verify", "refs/heads/master")
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 1
+    assert "red-proof requirement: 1 injection required" in result.stdout
+    if "Carry-forward provenance was supplied" in result.stderr:
+        pytest.fail("first-round gate emitted CLI-only carry-forward remedy")
+    assert "Produce a fresh causal proof" in result.stderr
     _assert_base_unmoved(root, before)
 
 
