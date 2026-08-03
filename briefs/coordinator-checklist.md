@@ -45,8 +45,26 @@ healthy briefs and cannot reliably distinguish instructions from evidence.
   paragraph in the boilerplate. Where a stop was correct, **say so plainly in
   the next round's brief and name the error as yours** — a lane that is told its
   refusal was right refuses again when it should.
+- **Derive `Lane-owns:` from the deliverables, not from memory of the diff.**
+  Read each numbered deliverable back and name the file it lands in. On
+  2026-08-04 two headers failed within an hour, in opposite ways. `#1071`'s
+  wrapped across two lines with a parenthetical, and `launch-lane` refused at
+  `phase=brief-generation` — *"an empty selection is indistinguishable from
+  broken derivation"* — which cost two minutes and is the refusal working. But
+  `#1049` round 11's listed neither `client/style.css` nor `watch-design.md`
+  while its own P2b required styling **and** an authoritative styleguide entry;
+  every path resolved, so nothing refused, and the lane reported it afterwards
+  in its dogfood. **The tool checks that the paths resolve, never that they are
+  the right paths** — so a clean dispatch is not evidence the header is
+  complete. Keep it one line, plain paths, no parentheticals.
 - Put the measurement instrument beside every numeric bar so a reader can
   audit how the number was obtained.
+- **Never quote a piped command's empty output as a measurement.** The exit
+  status dies in the pipe and a failed command's empty stdout is
+  indistinguishable from an empty result. `ledger.py list --status open | grep …`
+  returned nothing and I filed the nothing as evidence in `#1185`; the verb
+  takes `--state`. Check the verb's own `--help` first, and let the conclusion
+  survive redoing the measurement before it survives being written down.
 
 ## Mechanism decision (IGC)
 
