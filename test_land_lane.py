@@ -3967,7 +3967,15 @@ def test_batch_lands_two_stale_doc_branches_by_rebasing_per_entry(batch_two_doc_
     assert "lane: LANDED" in result.stdout, result.stdout
     assert "lane-b: LANDED" in result.stdout, result.stdout
     # Both denominators stated (#868).
-    assert "batch summary: attempted=2 landed=2" in result.stdout
+    summary = next(l for l in result.stdout.splitlines() if "batch summary:" in l)
+    assert "attempted=2 landed=2" in summary
+    merge_shas = _git(
+        root, "rev-list", "--first-parent", "--max-count=2", "master",
+    ).splitlines()
+    assert len(merge_shas) == 2
+    assert all(sha in summary for sha in merge_shas), (
+        "a batch summary with multiple landings omitted a merge sha"
+    )
     # Lane-a's landing advanced master; lane-b was rebased onto that new tip
     # before its own gate. If the rebase were up-front, lane-b would REFUSE.
     assert "REFUSE phase=preflight: branch is not rebased" not in result.stdout
