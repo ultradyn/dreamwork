@@ -56,12 +56,14 @@ before a commit; the default rewrites and prints what changed.
 from __future__ import annotations
 
 import argparse
+from collections.abc import Mapping
 import json
 import os
 import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 40# #331: the ids-only bold span has ONE definition, in watch.py. Consume it
 # here rather than restating it — this was the third unpinned copy of the
@@ -351,7 +353,7 @@ def _read_proc_cwd(pid: int) -> str | None:
     return lane_liveness.read_proc_cwd(pid)
 
 
-def _argv_lane(pid: int, wt_root: str) -> str | None:
+def _argv_lane(pid: int, wt_root: str, *, scan: dict | None = None) -> str | None:
     """The lane name a process's argv carries under ``wt_root``, or None.
 
     #775: a live ``ccc`` lane's cwd is the MAIN checkout (``os.execvp`` runs
@@ -374,7 +376,14 @@ def _argv_lane(pid: int, wt_root: str) -> str | None:
     try:
         with open("/proc/%d/cmdline" % pid, "rb") as f:
             raw = f.read()
+    except FileNotFoundError:
+        # The process exited during the scan, so it cannot be a live lane at
+        # the point this result is returned. A new process born after the
+        # snapshot remains an explicitly documented limit of this probe.
+        return None
     except OSError:
+        if scan is not None:
+            scan["complete"] = False
         return None
     if not raw:
         return None
@@ -481,8 +490,25 @@ def _is_lane_runner(pid: int) -> bool:
 _ancestor_pids = lane_runner_identity.ancestor_pids
 
 
+class LaneDiscovery(NamedTuple):
+    """Discovery population plus whether it is safe as negative evidence."""
+
+    found: list
+    phantoms: list
+    agent_tool: list
+    complete: bool
+
+
 def discover_lanes(target: Path, *, stats: dict | None = None):
-    """Live lanes the cwd probe can see, as ``(found, phantoms, agent_tool)``.
+    """Live lanes the cwd probe can see, with explicit scan completeness.
+
+    ``complete`` requires a non-empty numeric process population and a
+    readable cmdline for every process not already identified by cwd. A
+    permission-denied read makes the result unknown; a vanished process is
+    already not live. The probe still cannot distinguish an ordinary process
+    with readable argv and unreadable cwd from a cwd-only Agent-tool lane, or
+    see a process born after the directory snapshot. Those are named limits,
+    not confidence heuristics.
 
     Walks ``/proc/*/cwd`` for paths under both ``<target>/../.worktrees/`` and
     the draining ``<target>/.worktrees/`` (#716/#846), and ALSO scans each
@@ -534,6 +560,7 @@ def discover_lanes(target: Path, *, stats: dict | None = None):
     seen_lanes = set()
     seen_rank = {}
     process_candidates = 0
+    scan = {"complete": True}
     for entry in os.listdir("/proc"):
         if not entry.isdigit():
             continue
@@ -558,7 +585,7 @@ def discover_lanes(target: Path, *, stats: dict | None = None):
         argv_lane = None
         if not cwd_lane:
             for root in wt_roots:
-                argv_lane = _argv_lane(pid, root)
+                argv_lane = _argv_lane(pid, root, scan=scan)
                 if argv_lane:
                     argv_root = root
                     break
@@ -621,9 +648,11 @@ def discover_lanes(target: Path, *, stats: dict | None = None):
         # examined a plausible process population.  The tick line publishes
         # this count, so an inert /proc walk cannot impersonate "no lanes".
         stats["process_candidates"] = process_candidates
-    return (sorted(found, key=lambda lpm: lpm[0]),
-            sorted(phantoms, key=lambda lp: lp[0]),
-            sorted(agent_tool, key=lambda lp: lp[0]))
+    return LaneDiscovery(
+        sorted(found, key=lambda lpm: lpm[0]),
+        sorted(phantoms, key=lambda lp: lp[0]),
+        sorted(agent_tool, key=lambda lp: lp[0]),
+        process_candidates > 0 and scan["complete"])
 
 
 def live_lane_count(target: Path) -> int:
@@ -638,8 +667,8 @@ def live_lane_count(target: Path) -> int:
     is a legitimate ``None``) and ``ValueError`` if ``discover_lanes``
     contract changes — the latter is a bug and must stay loud (#136).
     """
-    found, _phantoms, _agent_tool = discover_lanes(target)
-    return len(found)
+    discovery = discover_lanes(target)
+    return len(discovery.found)
 
 
 def read_open_ids(dw, lpath):
@@ -742,22 +771,34 @@ def _lane_task(lane: str, ids) -> int | str:
 
 
 def _lane_entry_base_id(entry) -> int | None:
-    """The task id a free-form ``lanes`` entry names, from its lane prefix.
+    """The task id a ``lanes`` entry names.
 
-    ``lanes`` entries are author-written dispatch notes whose text begins
-    with the lane name (``cx-968foldsha — #968 P2: …``). A lane name is
-    ``<dispatch>-<id><slug>`` (brief.py builds ``cx-{task}``; a slug may
-    follow), so the leading digits after the first ``-`` are the task.
-    Returns ``None`` for an entry the prefix cannot reach — matching
+    Current entries are mappings carrying ``lane`` and ``task``; historical
+    entries are author-written strings beginning with the lane name. A lane
+    name is ``<dispatch>-<id><slug>`` (brief.py builds ``cx-{task}``; a slug
+    may follow), so the leading digits after the first ``-`` are the task.
+    Prefer that dispatch identity when a mapping's lane and task disagree,
+    falling back only to a numeric ``task`` when the lane is absent or
+    unparseable. String task ids are not trusted here: coercing author-written
+    malformed data into a task identity can turn *cannot compare* into a reap.
+
+    Returns ``None`` when neither form yields an id — matching
     ``_base_id``'s contract so *cannot compare* reads as *kept*, never as
-    *landed* (#702/#136): a judgement string the tool cannot tie to a task
+    *landed* (#702/#136): a judgement entry the tool cannot tie to a task
     is preserved, not pruned on a guess.
     """
+    if isinstance(entry, Mapping):
+        m = re.match(r"^[a-z]+-(\d+)", str(entry.get("lane")))
+        if m:
+            return int(m.group(1))
+        task = entry.get("task")
+        return task if isinstance(task, int) and not isinstance(task, bool) else None
     m = re.match(r"^[a-z]+-(\d+)", str(entry))
     return int(m.group(1)) if m else None
 
 
-def reap_finished_lanes(lanes, open_ids):
+def reap_finished_lanes(lanes, open_ids, live_lane_names=(),
+                        discovery_complete=True):
     """Prune ``lanes`` entries whose dispatch has landed (#969).
 
     ``lanes`` is author-owned judgement text, but the dispatch it names is
@@ -770,6 +811,12 @@ def reap_finished_lanes(lanes, open_ids):
     fields answer to, so they can no longer corroborate each other's
     staleness.
 
+    A landed task does not prove its dispatch has stopped. An entry whose
+    lane name is present in the live process probe is therefore kept until
+    that lane disappears; its author-written ``what`` cannot be regenerated.
+    An incomplete discovery result is not negative evidence at all, so it
+    refuses every reap and carries the complete mappings verbatim.
+
     Returns ``(kept, reaped, examined, unparseable)``. An entry whose prefix
     yields no task id is KEPT (#702/#136: *cannot compare* must not read as
     *landed*); the population is returned in full so ``examined 0`` is
@@ -778,10 +825,17 @@ def reap_finished_lanes(lanes, open_ids):
     """
     if not isinstance(lanes, list):
         return [], [], 0, 0
+    if not discovery_complete:
+        return (list(lanes), [], len(lanes),
+                sum(_lane_entry_base_id(entry) is None for entry in lanes))
     open_set = set(open_ids)
+    live_names = set(live_lane_names)
     kept, reaped = [], []
     unparseable = 0
     for entry in lanes:
+        if isinstance(entry, dict) and entry.get("lane") in live_names:
+            kept.append(entry)
+            continue
         base = _lane_entry_base_id(entry)
         if base is None:
             unparseable += 1
@@ -1055,7 +1109,9 @@ def main(argv: list[str] | None = None) -> int:
     # a lane the probe sees but cannot classify is simply absent from the
     # discovery list — REPORTED, never silently dropped (#702's "cannot
     # compare must not read as landed", applied to discovery rather than reap).
-    discovered, phantoms, agent_tool = discover_lanes(Path(args.target))
+    discovery = discover_lanes(Path(args.target))
+    discovered, phantoms, agent_tool = (
+        discovery.found, discovery.phantoms, discovery.agent_tool)
     existing_lanes = {d.get("lane") for d in pruned if isinstance(d, dict)}
     added = []
     resolved = Path(args.target).resolve()
@@ -1202,24 +1258,40 @@ def main(argv: list[str] | None = None) -> int:
     # leaving the #702 disagreement check silent. Giving `lanes` the same
     # task-open reaper breaks the tie: the ledger is the third party both
     # fields answer to, so they can no longer corroborate each other's
-    # staleness. The population is named on every run because `lanes: []` is
+    # staleness. A dispatch that is still in the live discovery population is
+    # exempt even after its task lands: discovery cannot reconstruct the
+    # author-written `what`. The population is named on every run because
+    # `lanes: []` is
     # both correct-idle and a broken deriver's output (#868 inside the fix).
     raw_lanes = status.get("lanes", [])
-    if isinstance(raw_lanes, list):
-        kept_lanes, reaped_lanes, examined, unparseable = reap_finished_lanes(
-            raw_lanes, ids)
-        print("status_sync: lanes reap examined %d, pruned %d, kept %d, "
-              "unparseable %d — population named because an empty pair is "
-              "both idle and a broken deriver (#868/#969)"
-              % (examined, len(reaped_lanes), len(kept_lanes), unparseable),
-              file=sys.stderr)
-        if reaped_lanes:
-            status["lanes"] = kept_lanes
-            changes.append("lanes reap %d finished dispatch(es) (examined "
-                           "%d, pruned %d, kept %d, unparseable %d): %s"
-                           % (len(reaped_lanes), examined, len(reaped_lanes),
-                              len(kept_lanes), unparseable,
-                              [_lane_entry_base_id(e) for e in reaped_lanes]))
+    discovered_lane_names = (
+        {lane for lane, _pid, _model in discovered}
+        | {lane for lane, _pid in agent_tool})
+    kept_lanes, reaped_lanes, examined, unparseable = reap_finished_lanes(
+        raw_lanes, ids, discovered_lane_names, discovery.complete)
+    invalid_shape = (
+        " — INVALID top-level lanes shape %s; treated as an empty population"
+        % type(raw_lanes).__name__
+        if not isinstance(raw_lanes, list) else "")
+    parse_failure = (
+        " — TOTAL PARSE FAILURE: no lane entry could be tied to a task"
+        if examined and unparseable == examined else "")
+    discovery_unknown = (
+        " — DISCOVERY UNKNOWN: refusing all lanes reaping"
+        if not discovery.complete else "")
+    print("status_sync: lanes reap examined %d, pruned %d, kept %d, "
+          "unparseable %d of %d%s%s%s — population named because an empty "
+          "pair is both idle and a broken deriver (#868/#969)"
+          % (examined, len(reaped_lanes), len(kept_lanes), unparseable,
+             examined, invalid_shape, parse_failure, discovery_unknown),
+          file=sys.stderr)
+    if reaped_lanes:
+        status["lanes"] = kept_lanes
+        changes.append("lanes reap %d finished dispatch(es) (examined "
+                       "%d, pruned %d, kept %d, unparseable %d): %s"
+                       % (len(reaped_lanes), examined, len(reaped_lanes),
+                          len(kept_lanes), unparseable,
+                          [_lane_entry_base_id(e) for e in reaped_lanes]))
 
     print(coverage(status))
 

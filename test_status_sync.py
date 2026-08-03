@@ -1364,7 +1364,7 @@ class TestDiscoveryAddsMissingLanes:
             monkeypatch.setattr(
                 status_sync.os, "listdir",
                 lambda d: [str(proc.pid)] if d == "/proc" else [])
-            found, _ph, _at = status_sync.discover_lanes(tmp_path)
+            found, _ph, _at, _complete = status_sync.discover_lanes(tmp_path)
             found_pairs = [(f[0], f[1]) for f in found]
             assert ("lane-707sweep", proc.pid) in found_pairs, found
             # Task id is derived from the lane name (707 IS open here).
@@ -1524,7 +1524,7 @@ class TestPhantomWorktreeExcludedAndReported:
                 status_sync.os, "listdir",
                 lambda d: [str(proc.pid)] if d == "/proc" else [])
 
-            found, phantoms, _at = status_sync.discover_lanes(tmp_path)
+            found, phantoms, _at, _complete = status_sync.discover_lanes(tmp_path)
             # THE GUARD: the phantom is NOT in found (would take a fleet slot
             # under "lane-719test (deleted)" without the guard).
             assert found == [], \
@@ -1620,7 +1620,7 @@ class TestPhantomWorktreeExcludedAndReported:
             monkeypatch.setattr(
                 status_sync.os, "listdir",
                 lambda d: [str(proc.pid)] if d == "/proc" else [])
-            found, phantoms, _at = status_sync.discover_lanes(tmp_path)
+            found, phantoms, _at, _complete = status_sync.discover_lanes(tmp_path)
             # Still caught: the recreate did not produce a false green.
             assert found == [], \
                 "recreate must not let the phantom through; got %s" % found
@@ -2016,7 +2016,7 @@ class TestDiscoveryRepopulatesFromEmpty:
                 status_sync.os, "listdir",
                 lambda d: [str(proc.pid)] if d == "/proc" else [])
             # Discover through the symlink: resolve() normalises link → real.
-            found, _ph, _at = status_sync.discover_lanes(link)
+            found, _ph, _at, _complete = status_sync.discover_lanes(link)
             assert any(f[0] == "lane-720target" for f in found), \
                 ("resolve() must normalise the symlink to the real path so "
                  "wt_root matches the lane cwd; got %s" % found)
@@ -2211,7 +2211,7 @@ class TestAgentToolLaneDiscovery:
             monkeypatch.setattr(
                 status_sync.os, "listdir",
                 lambda d: [str(proc.pid)] if d == "/proc" else [])
-            found, _ph, agent_tool = status_sync.discover_lanes(tmp_path)
+            found, _ph, agent_tool, _complete = status_sync.discover_lanes(tmp_path)
             # THE DISCRIMINATING ASSERTION: the non-ccc lane appears in
             # agent_tool, not in found. A reverted discover_lanes (ccc-only)
             # would yield found=[] and agent_tool=[] — this test would pass
@@ -2279,7 +2279,7 @@ class TestAgentToolLaneDiscovery:
                 status_sync.os, "listdir",
                 lambda d: [str(ccc_proc.pid), str(child_proc.pid)]
                 if d == "/proc" else [])
-            found, _ph, agent_tool = status_sync.discover_lanes(tmp_path)
+            found, _ph, agent_tool, _complete = status_sync.discover_lanes(tmp_path)
             found_lanes = {f[0] for f in found}
             at_lanes = {a[0] for a in agent_tool}
             # The lane appears in ccc found (claimed first) but NOT in
@@ -2329,8 +2329,7 @@ class TestAgentToolLaneDiscovery:
 
 def test_live_lane_count_returns_an_int(tmp_path):
     # Production line whose reversion reds this: live_lane_count's
-    # `found, _phantoms, _agent_tool = discover_lanes(target)` unpack, or
-    # discover_lanes changing its return arity.
+    # `discover_lanes(target).found`, or discover_lanes changing its result.
     n = status_sync.live_lane_count(tmp_path)
     assert isinstance(n, int), \
         "live_lane_count must return an int; got %r" % type(n)
@@ -2338,14 +2337,11 @@ def test_live_lane_count_returns_an_int(tmp_path):
         "an empty target must report zero lanes, not None or a raise (%r)" % n
 
 
-def test_discover_lanes_arity_is_three(tmp_path):
+def test_discover_lanes_arity_is_four(tmp_path):
     # THE DISCRIMINATING ASSERTION for the arity contract: discover_lanes
-    # returns EXACTLY three elements. If a future change adds a fourth
-    # field, live_lane_count's unpack silently keeps working (Python drops
-    # nothing into the gaps), so this guard catches what the accessor
-    # cannot. Revert discover_lanes to its pre-#675 2-tuple and this reds.
+    # returns EXACTLY four elements, including explicit completeness.
     result = status_sync.discover_lanes(tmp_path)
-    assert isinstance(result, tuple) and len(result) == 3, \
+    assert isinstance(result, tuple) and len(result) == 4, \
         "discover_lanes arity changed; live_lane_count and the test suite " \
         "need updating together (was %d-tuple)" % len(result)
 
@@ -2360,12 +2356,35 @@ def test_discovery_accounts_for_the_candidate_population(tmp_path, monkeypatch):
     monkeypatch.setattr(status_sync.os, "listdir",
                         lambda path: ["101", "202", "x"])
     monkeypatch.setattr(status_sync, "_read_proc_cwd", lambda pid: None)
-    monkeypatch.setattr(status_sync, "_argv_lane", lambda pid, root: None)
+    monkeypatch.setattr(
+        status_sync, "_argv_lane", lambda pid, root, **_kwargs: None)
     stats = {}
-    found, phantoms, agent = status_sync.discover_lanes(tmp_path, stats=stats)
+    found, phantoms, agent, complete = status_sync.discover_lanes(
+        tmp_path, stats=stats)
     assert found == phantoms == agent == []
+    assert complete
     assert stats.get("process_candidates") == 2, \
         "lane detector examined no plausible process candidates: %r" % stats
+
+
+def test_discovery_marks_unreadable_proc_entry_unknown(tmp_path, monkeypatch):
+    """A silently skipped cmdline read is not a complete process scan."""
+    import builtins
+
+    monkeypatch.setattr(status_sync.os, "listdir", lambda path: ["101"])
+    monkeypatch.setattr(status_sync, "_read_proc_cwd", lambda pid: None)
+    real_open = builtins.open
+
+    def unreadable(path, *args, **kwargs):
+        if path == "/proc/101/cmdline":
+            raise PermissionError(path)
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", unreadable)
+    discovery = status_sync.discover_lanes(tmp_path)
+    assert discovery.complete is False, (
+        "unreadable /proc entry was silently treated as a complete scan: %r"
+        % (discovery,))
 
 
 def test_discovery_unions_new_and_draining_roots_as_lane_name_set(
@@ -2382,7 +2401,7 @@ def test_discovery_unions_new_and_draining_roots_as_lane_name_set(
     monkeypatch.setattr(status_sync, "_is_ccc_proc", lambda pid: True)
     monkeypatch.setattr(status_sync, "_ccc_model", lambda pid: "fixture")
 
-    found, phantoms, agent = status_sync.discover_lanes(target)
+    found, phantoms, agent, _complete = status_sync.discover_lanes(target)
 
     assert [lane for lane, _pid, _model in found] == ["lane-new", "lane-old"], \
         "drain discovery dropped a root: %r" % (found,)
@@ -2401,7 +2420,7 @@ def test_discovery_deduplicates_same_lane_name_across_both_roots(
     monkeypatch.setattr(status_sync, "_read_proc_cwd", lambda pid: cwds[pid])
     monkeypatch.setattr(status_sync, "_is_ccc_proc", lambda pid: True)
     monkeypatch.setattr(status_sync, "_ccc_model", lambda pid: "fixture")
-    found, phantoms, agent = status_sync.discover_lanes(target)
+    found, phantoms, agent, _complete = status_sync.discover_lanes(target)
     assert [lane for lane, _pid, _model in found] == ["same"]
     assert found[0][1] == 202, "the new root must win independent of PID order"
     assert phantoms == agent == []
@@ -2509,7 +2528,7 @@ class TestArgvDiscoveryFindsLaneWithMainCwd:
                 status_sync.os, "listdir",
                 lambda d: [str(proc.pid)] if d == "/proc" else [])
 
-            found, _ph, _at = status_sync.discover_lanes(tmp_path)
+            found, _ph, _at, _complete = status_sync.discover_lanes(tmp_path)
             # DISCRIMINATING (Direction 1): the lane is present by name. A
             # count-only check passes against the bug; this names exactly
             # which lane was invisible.
@@ -2608,7 +2627,7 @@ class TestArgvDiscoveryInjectedTable:
         # So this lane is NOT ccc; it falls to agent_tool (the #675 channel).
         # The POINT: discovery SEES it (it is not zero); a runner-name
         # matcher would not.
-        found, _ph, agent_tool = status_sync.discover_lanes(tmp_path)
+        found, _ph, agent_tool, _complete = status_sync.discover_lanes(tmp_path)
         assert found == [], found   # not ccc, so not in `found`
         # DISCRIMINATING (Direction 2a): the execed-away lane IS discovered
         # via argv — it appears in agent_tool, not nowhere. A matcher keyed
@@ -2628,7 +2647,7 @@ class TestArgvDiscoveryInjectedTable:
         brief = "Worktree: %s" % wt
         raw = ("ccc\x00-y\x00@glm52\x00" + brief + "\x00").encode()
         self._setup_proc(monkeypatch, 888222, str(tmp_path), raw)
-        found, _ph, _at = status_sync.discover_lanes(tmp_path)
+        found, _ph, _at, _complete = status_sync.discover_lanes(tmp_path)
         # DISCRIMINATING: the ccc lane with main cwd is in `found` (ccc,
         # not agent_tool), recovered via argv. Revert to cwd-only and
         # found=[] — the bug.
@@ -2646,7 +2665,7 @@ class TestArgvDiscoveryInjectedTable:
                b"1640fa687243e9110badb503c6fa3ff1e1efe9805d4bd8d534a1c5ccc"
                b"6d22e34\x00-address\x00/run/containerd/containerd.sock\x00")
         self._setup_proc(monkeypatch, 888333, "/run/containerd", raw)
-        found, phantoms, agent_tool = status_sync.discover_lanes(tmp_path)
+        found, phantoms, agent_tool, _complete = status_sync.discover_lanes(tmp_path)
         # DISCRIMINATING (Direction 2b): no lane is counted. A substring
         # matcher on `ccc` would count this container; the worktree-path
         # invariant does not.
@@ -2669,7 +2688,7 @@ class TestArgvDiscoveryInjectedTable:
         raw = ("grep\x00-n\x00worktree\x00some note about %s here\x00"
                % wt_path).encode()
         self._setup_proc(monkeypatch, 888444, str(tmp_path), raw)
-        found, phantoms, agent_tool = status_sync.discover_lanes(tmp_path)
+        found, phantoms, agent_tool, _complete = status_sync.discover_lanes(tmp_path)
         # DISCRIMINATING: all lane buckets are empty. Reporting a phantom here
         # would still invent a lane name from prose, just under another label.
         assert found == [], \
@@ -2688,7 +2707,7 @@ class TestArgvDiscoveryInjectedTable:
 # tie, so the two fields can no longer be stale together.
 
 class TestReapFinishedLanes:
-    """A `lanes` entry naming a task no longer under `## Open` is reaped.
+    """A landed `lanes` entry is reaped once its dispatch is not live.
 
     Production seam whose reversion reds these tests: ``reap_finished_lanes``
     and its call site in ``main``. Remove the call (or make the helper return
@@ -2714,6 +2733,130 @@ class TestReapFinishedLanes:
         # DISCRIMINATING: the reap named its population — not a silent drop.
         assert "lanes reap" in err.lower(), err
         assert "pruned 1" in err, err
+
+    def test_live_dict_shape_survives_landed_task_while_running(
+            self, tmp_path):
+        lane = "cx-999running"
+        worktree = tmp_path / ".worktrees" / lane
+        worktree.mkdir(parents=True)
+        proc = subprocess.Popen(
+            ["sleep", "30"], cwd=worktree,
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL)
+        try:
+            assert status_sync._pid_alive(proc.pid), \
+                "precondition: owned sleep process must be running"
+            live_landed = {"lane": lane, "task": 999,
+                           "agent": "@cx-reviewer",
+                           "what": "review still running after task landed"}
+            dead_landed = {"lane": "cx-1000dead", "task": 1000,
+                           "agent": "@cx-reviewer",
+                           "what": "review that finished after task landed"}
+            status = {"lanes": [live_landed, dead_landed],
+                      "dreamers": [], "task": "t"}
+            ledger = _ledger(7, 8)          # 999 and 1000 are NOT open
+            rc, out, err = _run(status, ledger, tmp_path)
+            assert rc == 0, err
+            assert proc.poll() is None, \
+                "precondition: owned sleep process stopped during status sync"
+            result = json.loads(
+                (tmp_path / ".dreamwork" / "status.json").read_text())
+            assert live_landed in result["lanes"], (
+                "live lane %s was deleted even though its owned process was "
+                "running: %r" % (lane, result["lanes"]))
+            assert dead_landed not in result["lanes"], (
+                "landed not-live lane cx-1000dead survived lanes reap: %r"
+                % result["lanes"])
+            assert "unparseable 0 of 2" in err, err
+        finally:
+            proc.terminate()
+            proc.wait()
+
+    @pytest.mark.parametrize("case, found", [
+        ("empty", []),
+        ("partial", [("cx-998other", 998, None)]),
+    ])
+    def test_incomplete_discovery_preserves_complete_lanes_mapping(
+            self, tmp_path, monkeypatch, case, found):
+        lane = "cx-999running"
+        worktree = tmp_path / ".worktrees" / lane
+        worktree.mkdir(parents=True)
+        proc = subprocess.Popen(
+            ["sleep", "30"], cwd=worktree,
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL)
+        try:
+            assert status_sync._pid_alive(proc.pid), \
+                "precondition: owned sleep process must be running"
+            live_landed = {"lane": lane, "task": 999,
+                           "agent": "@cx-reviewer",
+                           "what": "review still running after task landed"}
+            dead_landed = {"lane": "cx-1000dead", "task": 1000,
+                           "agent": "@cx-reviewer",
+                           "what": "must also survive an unknown census"}
+            lanes = [live_landed, dead_landed]
+            monkeypatch.setattr(
+                status_sync, "discover_lanes",
+                lambda _target: status_sync.LaneDiscovery(
+                    found, [], [], False))
+            rc, out, err = _run(
+                {"lanes": lanes, "dreamers": [], "task": "t"},
+                _ledger(7, 8), tmp_path)
+            assert rc == 0, err
+            assert proc.poll() is None, \
+                "precondition: owned sleep process stopped during status sync"
+            result = json.loads(
+                (tmp_path / ".dreamwork" / "status.json").read_text())
+            assert result["lanes"] == lanes, (
+                "live lane %s was deleted under incomplete %s discovery; "
+                "complete mapping including what changed: %r"
+                % (lane, case, result["lanes"]))
+            assert "DISCOVERY UNKNOWN: refusing all lanes reaping" in err, err
+        finally:
+            proc.terminate()
+            proc.wait()
+
+    def test_mapping_lane_name_wins_when_task_key_disagrees(self):
+        entry = {"lane": "cx-999stale", "task": 7,
+                 "agent": "@cx-reviewer", "what": "stale dispatch note"}
+        kept, reaped, examined, unparseable = (
+            status_sync.reap_finished_lanes([entry], [7, 8]))
+        assert reaped == [entry], (
+            "lane cx-999 identifies the landed dispatch; task key 7 must not "
+            "keep it: kept=%r" % kept)
+        assert (examined, unparseable) == (1, 0)
+
+    def test_mapping_falls_back_to_task_when_lane_is_unparseable(self):
+        entry = {"lane": "manual note", "task": 7,
+                 "agent": "@cx-reviewer", "what": "open dispatch note"}
+        kept, reaped, examined, unparseable = (
+            status_sync.reap_finished_lanes([entry], [7, 8]))
+        assert kept == [entry]
+        assert reaped == []
+        assert (examined, unparseable) == (1, 0)
+
+    @pytest.mark.parametrize("entry", [
+        {"lane": None},
+        {"lane": 42},
+        {"task": True},
+        {"task": "1042"},
+        {"lane": None, "task": "1042"},
+        {"lane": 42, "task": "1042"},
+        {"agent": "@cx-reviewer", "what": "no identity"},
+        42,
+    ], ids=[
+        "null-lane", "numeric-lane", "boolean-task", "string-task",
+        "null-lane-string-task", "numeric-lane-string-task",
+        "mapping-with-neither-key", "non-mapping-non-string",
+    ])
+    def test_malformed_entries_are_kept_without_coercion(self, entry):
+        kept, reaped, examined, unparseable = (
+            status_sync.reap_finished_lanes([entry], [7, 8]))
+        assert reaped == [], (
+            "malformed entry was deleted instead of KEPT: %r" % entry)
+        assert kept == [entry], (
+            "malformed entry missing from KEPT: %r" % entry)
+        assert (examined, unparseable) == (1, 1)
 
     def test_open_dispatch_survives_the_open_false_green(self, tmp_path):
         # Direction 2: a lane whose task is STILL OPEN survives the reap even
@@ -2760,6 +2903,56 @@ class TestReapFinishedLanes:
         assert result["lanes"] == []
         # The population line names `examined 0` — not silence.
         assert "examined 0" in err, err
+
+    @pytest.mark.parametrize("lanes, shape", [
+        (None, "NoneType"),
+        ({"lane": "cx-7active"}, "dict"),
+        ("cx-7active", "str"),
+    ])
+    def test_non_list_lanes_reports_invalid_population_shape(
+            self, tmp_path, lanes, shape):
+        status = {
+            "lanes": lanes, "dreamers": [], "task": "t",
+            "queue": {"in_progress": 0, "pending": 2},
+            "current_task_ids": [],
+        }
+        rc, out, err = _run(status, _ledger(7, 8), tmp_path, "--check")
+        assert rc == 0, err
+        assert "lanes reap examined 0, pruned 0, kept 0" in err, err
+        assert "INVALID top-level lanes shape %s" % shape in err, err
+
+    def test_total_parse_failure_is_distinct_from_all_parsed(self, tmp_path):
+        failed_target = tmp_path / "failed"
+        parsed_target = tmp_path / "parsed"
+        failed_target.mkdir()
+        parsed_target.mkdir()
+        unparseable_lanes = [
+            {"lane": "manual note %d" % task, "task": None,
+             "agent": "@cx-reviewer", "what": "unreachable dispatch"}
+            for task in range(1, 7)
+        ]
+        rc, out, failed = _run(
+            {"lanes": unparseable_lanes, "dreamers": [], "task": "t",
+             "queue": {"in_progress": 0, "pending": 6},
+             "current_task_ids": []},
+            _ledger(*range(1, 7)), failed_target, "--check")
+        assert rc == 0, failed
+        assert "unparseable 6 of 6" in failed, failed
+        assert "TOTAL PARSE FAILURE" in failed, failed
+
+        parsed_lanes = [
+            {"lane": "cx-%dactive" % task, "task": task,
+             "agent": "@cx-reviewer", "what": "live dispatch"}
+            for task in range(1, 7)
+        ]
+        rc, out, parsed = _run(
+            {"lanes": parsed_lanes, "dreamers": [], "task": "t",
+             "queue": {"in_progress": 0, "pending": 6},
+             "current_task_ids": []},
+            _ledger(*range(1, 7)), parsed_target, "--check")
+        assert rc == 0, parsed
+        assert "unparseable 0 of 6" in parsed, parsed
+        assert "TOTAL PARSE FAILURE" not in parsed, parsed
 
     def test_mixed_only_finished_reaped(self, tmp_path):
         lanes = ["cx-7active — #7 P2: in flight",
@@ -3034,7 +3227,7 @@ class TestFleetProbesAgreeOnLiveLane:
 
             # PATH B — status_sync: discover_lanes.
             stats = {}
-            found, _ph, agent_tool = status_sync.discover_lanes(
+            found, _ph, agent_tool, _complete = status_sync.discover_lanes(
                 target, stats=stats)
             sync_lanes = sorted(f[0] for f in found + agent_tool)
 
@@ -3085,7 +3278,8 @@ class TestFleetProbesAgreeOnLiveLane:
 
             # BASELINE: both probes find the lane.
             base = lane_liveness.inspect_lanes(target)
-            base_found, _bph, base_at = status_sync.discover_lanes(target)
+            base_found, _bph, base_at, _complete = (
+                status_sync.discover_lanes(target))
             assert self._LANE in sorted(base.live + base.cwd_live), \
                 "baseline: tick probe must find the lane"
             assert self._LANE in sorted(f[0] for f in base_found + base_at), \
@@ -3101,7 +3295,8 @@ class TestFleetProbesAgreeOnLiveLane:
                       if n != "ccc"))
 
             blind = lane_liveness.inspect_lanes(target)
-            b_found, _bfph, b_at = status_sync.discover_lanes(target)
+            b_found, _bfph, b_at, _complete = (
+                status_sync.discover_lanes(target))
             tick_lanes = sorted(blind.live + blind.cwd_live)
             sync_lanes = sorted(f[0] for f in b_found + b_at)
             # The disagreement the #868/#1084 family descends from: one
