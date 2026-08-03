@@ -2151,6 +2151,53 @@ def _membership_target(tmp_path):
     return target, group_id, 1, fresh_task_id, ledger, db
 
 
+# groups PG-<num> — #1042. The notation convention (DREAMWORK.md) is real in
+# the tool, not only in prose: every group-id argument accepts PG-<num> as a
+# synonym for the bare integer, so "the goal referenced as PG-1" and "group 1"
+# reach the same record. The production seam is _goal_ref (dev/ledger.py), the
+# argparse type applied to every group-id / --parent / --root / --needs-group
+# argument.
+
+def test_groups_pg_ref_accepted_wherever_bare_id_is(dev_ledger, tmp_path):
+    """PG-<num> and a bare int resolve to the same group via every read verb.
+
+    The fixture has exactly one goal group (id 1). `groups get` is the
+    canonical reader; `groups tree --root` and `groups ready` exercise the
+    other _goal_ref sites so a regression that covers only one argument does
+    not pass. Each PG-<num> call must match its bare-int counterpart exactly.
+    """
+    target, goal_id, ledger = _goal_target(
+        tmp_path, title="pg-ref fixture", total=1)
+    assert goal_id == 1, "fixture must hold goal id 1 for PG-1 to mean it"
+
+    for verb_args in (
+        ["get", "PG-1", "--json"],
+        ["get", "1", "--json"],
+    ):
+        rc, out, _ = _run(dev_ledger, [
+            "groups", *verb_args, "--ledger", ledger])
+        assert rc == 0, out
+        rec = json.loads(out.splitlines()[0])
+        assert rec["id"] == 1, (
+            f"groups {verb_args} resolved to id {rec['id']}, not 1")
+
+    # PG-1 and bare 1 must produce byte-identical output — same record.
+    rc_a, out_a, _ = _run(dev_ledger, [
+        "groups", "get", "PG-1", "--json", "--ledger", ledger])
+    rc_b, out_b, _ = _run(dev_ledger, [
+        "groups", "get", "1", "--json", "--ledger", ledger])
+    assert rc_a == rc_b == 0 and out_a == out_b, (
+        f"PG-1 and bare 1 diverged: {out_a!r} vs {out_b!r}")
+
+    # --root and ready exercise the remaining _goal_ref argument sites.
+    rc_tree, _, _ = _run(dev_ledger, [
+        "groups", "tree", "--root", "PG-1", "--ledger", ledger])
+    assert rc_tree == 0, "groups tree --root PG-1 should succeed"
+    rc_ready, _, _ = _run(dev_ledger, [
+        "groups", "ready", "PG-1", "--ledger", ledger])
+    assert rc_ready == 0, "groups ready PG-1 should succeed"
+
+
 def _membership_disposition(output):
     match = re.search(r"groups: task #\d+ (added|unchanged) in group #\d+", output)
     assert match is not None, f"membership disposition absent from {output!r}"
