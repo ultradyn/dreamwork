@@ -769,7 +769,7 @@ def _lane_entry_base_id(entry) -> int | None:
     return int(m.group(1)) if m else None
 
 
-def reap_finished_lanes(lanes, open_ids):
+def reap_finished_lanes(lanes, open_ids, live_lane_names=()):
     """Prune ``lanes`` entries whose dispatch has landed (#969).
 
     ``lanes`` is author-owned judgement text, but the dispatch it names is
@@ -782,6 +782,10 @@ def reap_finished_lanes(lanes, open_ids):
     fields answer to, so they can no longer corroborate each other's
     staleness.
 
+    A landed task does not prove its dispatch has stopped. An entry whose
+    lane name is present in the live process probe is therefore kept until
+    that lane disappears; its author-written ``what`` cannot be regenerated.
+
     Returns ``(kept, reaped, examined, unparseable)``. An entry whose prefix
     yields no task id is KEPT (#702/#136: *cannot compare* must not read as
     *landed*); the population is returned in full so ``examined 0`` is
@@ -791,9 +795,13 @@ def reap_finished_lanes(lanes, open_ids):
     if not isinstance(lanes, list):
         return [], [], 0, 0
     open_set = set(open_ids)
+    live_names = set(live_lane_names)
     kept, reaped = [], []
     unparseable = 0
     for entry in lanes:
+        if isinstance(entry, dict) and entry.get("lane") in live_names:
+            kept.append(entry)
+            continue
         base = _lane_entry_base_id(entry)
         if base is None:
             unparseable += 1
@@ -1214,11 +1222,17 @@ def main(argv: list[str] | None = None) -> int:
     # leaving the #702 disagreement check silent. Giving `lanes` the same
     # task-open reaper breaks the tie: the ledger is the third party both
     # fields answer to, so they can no longer corroborate each other's
-    # staleness. The population is named on every run because `lanes: []` is
+    # staleness. A dispatch that is still in the live discovery population is
+    # exempt even after its task lands: discovery cannot reconstruct the
+    # author-written `what`. The population is named on every run because
+    # `lanes: []` is
     # both correct-idle and a broken deriver's output (#868 inside the fix).
     raw_lanes = status.get("lanes", [])
+    discovered_lane_names = (
+        {lane for lane, _pid, _model in discovered}
+        | {lane for lane, _pid in agent_tool})
     kept_lanes, reaped_lanes, examined, unparseable = reap_finished_lanes(
-        raw_lanes, ids)
+        raw_lanes, ids, discovered_lane_names)
     invalid_shape = (
         " — INVALID top-level lanes shape %s; treated as an empty population"
         % type(raw_lanes).__name__

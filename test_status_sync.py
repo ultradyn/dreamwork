@@ -2688,7 +2688,7 @@ class TestArgvDiscoveryInjectedTable:
 # tie, so the two fields can no longer be stale together.
 
 class TestReapFinishedLanes:
-    """A `lanes` entry naming a task no longer under `## Open` is reaped.
+    """A landed `lanes` entry is reaped once its dispatch is not live.
 
     Production seam whose reversion reds these tests: ``reap_finished_lanes``
     and its call site in ``main``. Remove the call (or make the helper return
@@ -2715,21 +2715,43 @@ class TestReapFinishedLanes:
         assert "lanes reap" in err.lower(), err
         assert "pruned 1" in err, err
 
-    def test_live_dict_shape_reaps_landed_task(self, tmp_path):
-        # This is the live status.json shape measured for #1175, not the
-        # legacy prose shape described by #969's original docstring.
-        landed = {"lane": "cx-999stale", "task": 999,
-                  "agent": "@cx-reviewer",
-                  "what": "review work that landed long ago"}
-        status = {"lanes": [landed], "dreamers": [], "task": "t"}
-        ledger = _ledger(7, 8)              # 999 is NOT open
-        rc, out, err = _run(status, ledger, tmp_path)
-        assert rc == 0, err
-        result = json.loads(
-            (tmp_path / ".dreamwork" / "status.json").read_text())
-        assert result["lanes"] == [], (
-            "landed task 999 survived lanes reap: %r" % result["lanes"])
-        assert "unparseable 0 of 1" in err, err
+    def test_live_dict_shape_survives_landed_task_while_running(
+            self, tmp_path):
+        lane = "cx-999running"
+        worktree = tmp_path / ".worktrees" / lane
+        worktree.mkdir(parents=True)
+        proc = subprocess.Popen(
+            ["sleep", "30"], cwd=worktree,
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL)
+        try:
+            assert status_sync._pid_alive(proc.pid), \
+                "precondition: owned sleep process must be running"
+            live_landed = {"lane": lane, "task": 999,
+                           "agent": "@cx-reviewer",
+                           "what": "review still running after task landed"}
+            dead_landed = {"lane": "cx-1000dead", "task": 1000,
+                           "agent": "@cx-reviewer",
+                           "what": "review that finished after task landed"}
+            status = {"lanes": [live_landed, dead_landed],
+                      "dreamers": [], "task": "t"}
+            ledger = _ledger(7, 8)          # 999 and 1000 are NOT open
+            rc, out, err = _run(status, ledger, tmp_path)
+            assert rc == 0, err
+            assert proc.poll() is None, \
+                "precondition: owned sleep process stopped during status sync"
+            result = json.loads(
+                (tmp_path / ".dreamwork" / "status.json").read_text())
+            assert live_landed in result["lanes"], (
+                "live lane %s was deleted even though its owned process was "
+                "running: %r" % (lane, result["lanes"]))
+            assert dead_landed not in result["lanes"], (
+                "landed not-live lane cx-1000dead survived lanes reap: %r"
+                % result["lanes"])
+            assert "unparseable 0 of 2" in err, err
+        finally:
+            proc.terminate()
+            proc.wait()
 
     def test_mapping_lane_name_wins_when_task_key_disagrees(self):
         entry = {"lane": "cx-999stale", "task": 7,
