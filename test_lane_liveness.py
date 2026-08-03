@@ -671,8 +671,10 @@ class TestLiveLaneStates:
             "%r" % (verdict,)
 
     def test_young_lane_with_marker_is_still_wedged(self):
-        """Youth is not innocence: a marker found under the age floor is still
-        wedged (step 1 precedes step 3 in classify_live_lane)."""
+        """Youth is not innocence: a marker found under the age floor (with
+        low CPU) is still wedged — the marker check (step 2) precedes the age
+        check (step 3) in classify_live_lane. CPU is checked first (step 1),
+        but 0.0 < floor so it does not clear."""
         verdict = lane_liveness.classify_live_lane(
             "cx-quick-wedge", cpu_seconds=0.0, elapsed_seconds=10.0,
             wedge_marker="auto-rejecting external_directory")
