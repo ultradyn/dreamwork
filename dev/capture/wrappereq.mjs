@@ -74,6 +74,11 @@ const CASES = [
       }
     },
   },
+  {
+    name: 'QaCompose', delegate: 'qaCompose', expectedClass: 'qcompose',
+    fixture: fixture('QaCompose'),
+    build: props => qaCompose(props.key, props.st, props.title),
+  },
 ];
 const hasContent = value => {
   if (typeof value === 'string') return value.trim().length > 0;

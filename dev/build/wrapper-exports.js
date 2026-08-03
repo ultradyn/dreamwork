@@ -76,3 +76,11 @@ export const FollowThread = ({ follows, fold, ctx = {} }) =>
 
 FollowThread.displayName = 'FollowThread';
 FollowThread.dwBuilder = 'followThread';
+
+export const QaCompose = ({ key, st, title }) => React.createElement(HOST, {
+  'data-dw-delegate': 'qaCompose',
+  dangerouslySetInnerHTML: { __html: qaCompose(key, st, title) },
+});
+
+QaCompose.displayName = 'QaCompose';
+QaCompose.dwBuilder = 'qaCompose';

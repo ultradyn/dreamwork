@@ -1930,7 +1930,8 @@ var DreamworkDesign = (() => {
     FollowThread: () => FollowThread,
     Label: () => Label,
     PipBtn: () => PipBtn,
-    QaCard: () => QaCard
+    QaCard: () => QaCard,
+    QaCompose: () => QaCompose
   });
   var import_react = __toESM(require_react(), 1);
   window.DEV = /*DEV*/
@@ -8601,6 +8602,12 @@ var DreamworkDesign = (() => {
   });
   FollowThread.displayName = "FollowThread";
   FollowThread.dwBuilder = "followThread";
+  var QaCompose = ({ key, st, title }) => import_react.default.createElement(HOST, {
+    "data-dw-delegate": "qaCompose",
+    dangerouslySetInnerHTML: { __html: qaCompose(key, st, title) }
+  });
+  QaCompose.displayName = "QaCompose";
+  QaCompose.dwBuilder = "qaCompose";
   return __toCommonJS(entry_exports);
 })();
 /*! Bundled license information:
