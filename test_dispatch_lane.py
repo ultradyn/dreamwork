@@ -16,6 +16,8 @@ from pathlib import Path
 
 import pytest
 
+from conftest import assert_dispatch_fixture_imports, install_dispatch_fixture_imports
+
 
 ROOT = Path(__file__).resolve().parent
 CLI = ROOT / "dev" / "dispatch_lane.py"
@@ -44,11 +46,8 @@ def _sandbox_cli(tmp_path: Path) -> tuple[Path, Path]:
     (root / "briefs").mkdir()
     cli = root / "dev" / "dispatch_lane.py"
     shutil.copy2(CLI, cli)
-    shutil.copy2(ROOT / "lane_liveness.py", root / "lane_liveness.py")
-    shutil.copy2(ROOT / "lane_runner_identity.py", root / "lane_runner_identity.py")
-    shutil.copy2(ROOT / "worktree_paths.py", root / "worktree_paths.py")
     shutil.copytree(ROOT / "dreamwork_db", root / "dreamwork_db")
-    shutil.copy2(ROOT / "ledger_store.py", root / "ledger_store.py")
+    install_dispatch_fixture_imports(ROOT, root, cli)
     (root / "briefs" / "boilerplate.md").write_text(CONTRACT, encoding="utf-8")
     subprocess.run(["git", "init", "-q", "-b", "master", str(root)], check=True)
     subprocess.run(
@@ -82,11 +81,8 @@ def _linked_worktree_cli(tmp_path: Path) -> tuple[Path, Path, Path]:
     (lane / "briefs").mkdir()
     cli = lane / "dev" / "dispatch_lane.py"
     shutil.copy2(CLI, cli)
-    shutil.copy2(ROOT / "lane_liveness.py", lane / "lane_liveness.py")
-    shutil.copy2(ROOT / "lane_runner_identity.py", lane / "lane_runner_identity.py")
-    shutil.copy2(ROOT / "worktree_paths.py", lane / "worktree_paths.py")
     shutil.copytree(ROOT / "dreamwork_db", lane / "dreamwork_db")
-    shutil.copy2(ROOT / "ledger_store.py", lane / "ledger_store.py")
+    install_dispatch_fixture_imports(ROOT, lane, cli)
     (lane / "briefs" / "boilerplate.md").write_text(CONTRACT, encoding="utf-8")
     return cli, main, lane
 
@@ -100,6 +96,18 @@ def _run(cli: Path, prompt: Path | None = None, *runner: str) -> subprocess.Comp
         text=True,
         env=env,
     )
+
+
+def test_fixture_import_preflight_names_a_real_missing_module(tmp_path):
+    cli, root = _sandbox_cli(tmp_path)
+    missing = root / "lane_runner_identity.py"
+    assert missing.is_file(), "derived closure omitted lane_liveness's repo-root import"
+    assert not (root / "watch.py").exists(), "fixture copied root modules wholesale"
+
+    missing.unlink()
+    with pytest.raises(
+            AssertionError, match=r"fixture repo could not import lane_runner_identity"):
+        assert_dispatch_fixture_imports(ROOT, root, cli)
 
 
 def _healthy_prompt(
