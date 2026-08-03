@@ -31,7 +31,9 @@ fact worth seeing, not a defect to hide.
 import argparse
 import os
 import re
+import shlex
 import sys
+from collections import Counter
 from pathlib import Path
 
 # Each act: (slug, when to consult it, anchor regex over an entry's full text).
@@ -88,6 +90,26 @@ ACTS: list[tuple[str, str, str]] = [
     ("clock", "before writing a timestamp / reasoning about elapsed time",
      r"timestamp|\bclock\b|elapsed|\bmtime|\bnow\(\)|wall-clock"),
 ]
+
+# IGC #1194. Context: every current act is 423-5,189 output lines, while a
+# coordinator needs four to six verbatim lessons to copy into a lane brief.
+#
+# Idea                         All  G1  G2  G3  G4  G5
+# rank + cap + explicit --all   Y    Y   Y   Y   Y   Y
+# split today's fat acts        N    Y   Y   N   N   Y
+# tighten today's classifiers   N    N   Y   N   N   Y
+# summarise with pointers       N    Y   N   Y   Y   Y
+# corpus-order pagination       N    Y   Y   Y   Y   N
+#
+# G1 <=6 entries by default and omissions are explicit; G2 verbatim evidence
+# remains available; G3 new lessons need no list/threshold maintenance; G4 is
+# not fitted to today's twelve populations; G5 promotes lessons whose CLAIM
+# directly governs the act, then lessons specific to fewer acts. Splitting and
+# classifier tuning accrete again (G3) and fit the sample (G4); tightening has
+# no bounded-output guarantee (G1); summaries drop evidence (G2); corpus order
+# has no relevance signal (G5). Oldest-first is the final tie-break, never
+# recency alone, because old lessons are often the load-bearing ones.
+DEFAULT_ACT_LIMIT = 6
 
 ENTRY_START = re.compile(r"^- ")
 SECTION_START = re.compile(r"^## ")  # newer lessons use `## ` heads, not `- ` bullets
@@ -167,6 +189,23 @@ def classify(entries: list[tuple[int, str]]) -> dict[str, list[tuple[int, str]]]
     return index
 
 
+def rank_for_act(
+        act: str,
+        index: dict[str, list[tuple[int, str]]],
+) -> list[tuple[int, str]]:
+    """Put direct, act-specific claims first; preserve corpus order on ties."""
+    pattern = next(pat for slug, _, pat in ACTS if slug == act)
+    memberships = Counter(ln for hits in index.values() for ln, _ in hits)
+    return sorted(
+        index[act],
+        key=lambda item: (
+            not bool(re.search(pattern, claim_of(item[1]), re.I)),
+            memberships[item[0]],
+            item[0],
+        ),
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         prog="lessons_index",
@@ -175,6 +214,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--lessons", default=".dreamwork/lessons.md",
                     help="path to lessons.md (default: .dreamwork/lessons.md)")
     ap.add_argument("--act", help="print the entries governing this act, verbatim")
+    ap.add_argument("--all", action="store_true",
+                    help="with --act, print every match instead of the ranked first six")
     ap.add_argument("--acts", action="store_true",
                     help="list the acts and when to consult each")
     args = ap.parse_args(argv)
@@ -197,7 +238,9 @@ def main(argv: list[str] | None = None) -> int:
             print(f"lessons_index: unknown act {args.act!r} — acts:",
                   ", ".join(slug for slug, _, _ in ACTS), file=sys.stderr)
             return 2
-        hits = index[args.act]
+        all_hits = rank_for_act(args.act, index)
+        hits = all_hits if args.all else all_hits[:DEFAULT_ACT_LIMIT]
+        omitted = len(all_hits) - len(hits)
         when = next(w for s, w, _ in ACTS if s == args.act)
         # Build the verbatim body once so the header can state its line count
         # and a trailing sentinel can confirm it. The slice can run to
@@ -213,17 +256,27 @@ def main(argv: list[str] | None = None) -> int:
             body_lines.append("")
             body_lines.append(f"lessons.md:{ln}")
             body_lines.extend(body.split("\n"))
-        n_lines = len(body_lines)
-        print(f"# act: {args.act} — {len(hits)} of {len(entries)} lessons, "
+        output_lines = list(body_lines)
+        if omitted:
+            command = ["python3", "dev/lessons_index.py", "--act", args.act,
+                       "--all"]
+            if args.lessons != ".dreamwork/lessons.md":
+                command.extend(["--lessons", args.lessons])
+            output_lines.append(
+                f"# omitted: {omitted} more matching lessons — run "
+                f"`{shlex.join(command)}` to see all {len(all_hits)}")
+        n_lines = len(output_lines)
+        print(f"# act: {args.act} — showing {len(hits)} of {len(all_hits)} lessons, "
               f"{n_lines} lines (consult {when})")
         # Only emit a body when there is one. An empty act declares `0 lines`
         # in the header; printing "\n".join([]) would emit a single blank
         # line anyway (print("") writes a newline), so the stated count would
         # lie about the received body — the same defect class this format
         # exists to close (#1033). Skip the line entirely at zero.
-        if body_lines:
-            print("\n".join(body_lines))
-        print(f"# end {args.act} — {len(hits)} lessons, {n_lines} lines")
+        if output_lines:
+            print("\n".join(output_lines))
+        print(f"# end {args.act} — showed {len(hits)} of {len(all_hits)} lessons, "
+              f"{n_lines} lines")
         return 0
 
     # Default: the index summary plus the tool's own coverage report.
