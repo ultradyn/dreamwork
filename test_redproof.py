@@ -2916,7 +2916,8 @@ class TestForgetExitCodeMeaning:
         # while the message keeps the operator informed.
         empty_exit = rp.forget(repo, "router.js")
         _, empty_err = capsys.readouterr()
-        assert empty_exit == 0, empty_err
+        assert empty_exit == 0, (
+            f"empty forget was not an idempotent success (#1188): {empty_err}")
         assert "nothing registered" in empty_err, empty_err
 
         # A live registration that is actually cleared is also success.
