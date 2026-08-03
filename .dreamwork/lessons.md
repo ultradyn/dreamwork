@@ -5408,3 +5408,110 @@ the parent's DISPOSITION on the parent, in a field a lister can read. "Supersede
 by #1024, #1025" belongs beside the state, not in the last paragraph of a long
 note. Until then: before briefing any task whose entry is long, read the END of
 the entry first — the continuation lines are where its later history lives.
+
+## A filter keyed on a field the payload does not contain reports that EVERYTHING passes (2026-08-03, #1152, mine, measured)
+
+Selecting work, I ran `ledger.py list --state open --json` and filtered with
+`not row.get("blocked_on")`. It reported **235 unblocked open tasks** — the
+entire open set. The filter examined nothing. The payload's keys are exactly
+`id, next_up, origin, priority, state, title, type`: there is no `blocked_on`
+and no dependency information at all, so `.get()` returned `None` for every row
+and every task read as free.
+
+**A wrong answer would have been better, because it would have looked wrong.**
+"All 235 are unblocked" is not implausible enough to trip anything; I acted on
+it and began briefing `#1069` and `#1070` as free work. Both are blocked on
+three predecessors each.
+
+The truth, read from the store with `PRAGMA query_only=ON`: `task.blocked_on`
+exists as a COLUMN but is NULL for all 73 open tasks ≥ 1000 — it is not where
+blocking lives. `depends(task, needs)` holds 52 edges and is the live store.
+Resolved against task state: open=235, blocked=26, free=209.
+
+And the 26 matter more than the number suggests: 21 of them are the React port,
+and they form a nearly pure SERIAL chain (#1060 → #1061 → … → #1082). That is
+the single most important scheduling fact the loop has — it is his stated main
+near-term goal, and it explains why the fleet cannot be parallelised into it.
+The supported listing verb cannot express any of it.
+
+The general form: **`dict.get(k)` on an absent key is indistinguishable from a
+legitimately empty value, and in a filter that difference inverts the result.**
+When a filter's output is "everything" or "nothing", check that the key exists
+before believing the population. Assert the field is PRESENT, then read it.
+
+## My own preflight was blind to fenced code blocks — the most literal thing a brief contains (2026-08-03, #1060 round 4, mine, measured)
+
+`preflight_paths.sh` scans backtick-quoted tokens and the `Lane-owns` line. The
+#1060 round-4 brief put a four-module pytest command inside a ``` fence:
+
+    CI= python3 -m pytest test_client_dist.py test_redproof.py test_build_client.py test_watch.py ...
+
+Nothing inside a fence is backtick-quoted, so the scan found no candidates
+there and printed a clean examined-count. **`test_build_client.py` does not
+exist** — not on disk, not tracked. The lane obeyed the command, pytest exited
+4 before collection, and it correctly stopped and burned a round.
+
+A fenced command is the single most literal thing a brief contains — it is
+copied and RUN verbatim — so it was exactly the wrong place to be blind. This is
+the **third** time this session my own tooling reported clean on something it
+never examined (`preflight_citations.sh` on an unopenable file;
+`dispatch_template.sh` resolving helpers after a `cd`). I keep filing this class
+against other people's tools and keep shipping it in mine.
+
+Fixed by scanning fence interiors for bare path-shaped tokens, and verified by
+re-running against the exact brief that shipped the error: it now prints
+`ABSENT: test_build_client.py`. **Red-proof your own tooling against the input
+that defeated it, not against a fresh example.**
+
+## `diff.tests` is the raw name-convention output, not what the gate runs (2026-08-03, #1060 round 4, mine, measured)
+
+I read `land_lane._classify_diff(...).tests` and quoted it into a brief as "the
+gate's derived selection". It is not. `_derived_test` maps `foo.py` →
+`test_foo.py` **unconditionally, without checking the file exists**, and
+`dev/build_client.py` has no conventionally-named test.
+
+`dev/land_lane.py:2377` is where the filtering happens:
+
+    existing = tuple(t for t in derived if (repo / t).is_file())
+
+Absent derived tests are REPORTED and NOT RUN; only `existing` reaches the
+pytest invocation. So the gate was never wedged — my brief was simply wrong, and
+it named a command that could not run.
+
+Measured properly afterwards for that branch: `ABSENT: ('test_build_client.py',)`
+and **45 existing modules the gate will run**, because `watch.py` is in the
+changed set and the import rule reaches the whole ledger/db/status suite.
+
+Two things to carry: **a derivation's raw output and its filtered output are
+different objects, and only one of them is a plan** — read to the call site
+before quoting an intermediate as a fact. And a brief that hands a lane five
+modules while the gate runs forty-five must SAY so, or the lane's green implies
+a coverage it never had.
+
+## A declaration mechanism that cannot observe its own subject reports the unobservable case as a false declaration (2026-08-03, #1150, measured)
+
+`cx-1146notes` correctly measured that its change REMOVES a WARN row, quoted it
+verbatim, and I passed it through as `--expect-warn-remove`. The gate refused:
+
+    baseline=7 rows; post-merge precheck=7 rows; 1 declared-removed row(s) not observed
+
+`land_lane` runs lint inside a DETACHED SCRATCH WORKTREE
+(`.worktrees/.gate-<pid>-<sha>`), and `.dreamwork/ledger.sqlite3` is gitignored,
+so it does not travel there. The blocker-citation check therefore reported `DID
+NOT EXAMINE open tasks … (denominator unknown)` on BOTH sides; the row was
+absent from baseline and post-merge alike; the sets were identical and nothing
+was owed a declaration at all.
+
+**The refusal sentence is TRUE and reads as a stronger claim than it supports.**
+"Not observed" is a fact about the gate's environment; read at face value it
+says the coordinator declared something false, and the natural next move is to
+doubt the lane and send it back for a round it does not need. I nearly did.
+
+Three states collapsed to two (#136): a declared row that genuinely did not
+change, one that changed but was unobservable because its producer never ran,
+and one declared wrongly. The middle is reported as the last.
+
+The re-gate with no declaration passed clean. The general form: **before
+reporting that an expectation was not met, establish that the thing which
+produces it actually ran.** A checker that cannot distinguish "absent" from "not
+measured" will blame the messenger every time.
