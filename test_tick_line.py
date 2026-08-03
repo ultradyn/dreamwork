@@ -1002,10 +1002,13 @@ class TestLiveLivenessOnTheTickLine:
             "the wedged lane was not named on the tick line: %s" % out
         assert "positive wedge evidence" in out
 
-    def test_working_lanes_add_no_clause(self, tmp_path, monkeypatch):
-        """A fleet where every lane is working: no wedged/unknown clause. The
-        line stays the length it was — this is a qualifier, not a fourth list
-        (#612 on volume: a longer line is less read, not more informed)."""
+    def test_working_fleet_renders_zero_counts(self, tmp_path, monkeypatch):
+        """#868 / #1155 P2a: when every lane is working, the zero counts for
+        wedged / unknown / not-yet-observed are STILL rendered — a count that
+        disappears when it is zero is a denominator the reader must
+        reconstruct. The zero forms are compact (no names, no parenthetical)
+        so the line does not grow unboundedly (#612). The zero label for
+        WEDGED is lowercase ('wedged 0'): zero wedged lanes is not alarming."""
         target = make_target(tmp_path, posture=HOT)
         verdicts = (
             lane_liveness.LiveLane("cx-a", lane_liveness.LIVE_WORKING, "5s cpu"),
@@ -1015,9 +1018,13 @@ class TestLiveLivenessOnTheTickLine:
                                                         liveness=verdicts))
         out = tick_line.facts(target)
         assert "lanes 2 live [cx-a, cx-b]" in out
-        assert "WEDGED" not in out
-        assert "live-liveness-unknown" not in out
-        assert "not-yet-observed" not in out
+        assert "working 2 [cx-a, cx-b] (cpu above floor)" in out
+        # Zero counts are rendered compactly — the denominator is visible.
+        assert "wedged 0" in out
+        assert "live-liveness-unknown 0" in out
+        assert "not-yet-observed 0" in out
+        # No alarming non-zero WEDGED count.
+        assert "WEDGED 1" not in out
 
     def test_unknown_lane_named_so_cannot_tell_is_sayable(self, tmp_path,
                                                           monkeypatch):

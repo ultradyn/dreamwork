@@ -33,9 +33,17 @@ def _git_subject(tmp_path, *, lane="cx-finished"):
 
     Unlike ``_subject`` (which mkdirs plain directories), this creates a git
     repository with an initial commit and a linked worktree at HEAD — the
-    shape a dispatched lane actually has. The worktree's branch is at base
-    (zero commits ahead of master), so the default wedge probe's git check
-    sees no progress, which is the on-disk evidence a real wedged lane leaves.
+    shape a dispatched lane actually has. The worktree is on a NAMED BRANCH
+    (``-b lane``, matching ``dev/launch_lane.py:611``); round 2 used
+    ``--detach``, which lint's own backstop calls an ERROR
+    (``test_lint.py:8278``). The identity is ``BRIEF.md`` — the coordinator-
+    written per-lane file that is in the live-progress scratch exclusion set,
+    so it does not inflate progress the way a test-only ``.{lane}-identity``
+    file would (#1155 round 3).
+
+    The worktree's branch is at base (zero commits ahead of master), so the
+    default wedge probe's git check sees no progress, which is the on-disk
+    evidence a real wedged lane leaves.
     """
     env = os.environ | _GIT_ENV
     target = tmp_path / "project"
@@ -46,13 +54,18 @@ def _git_subject(tmp_path, *, lane="cx-finished"):
             ["git", "-C", str(target), *args], check=True,
             capture_output=True, text=True, env=env)
 
-    git("init", "-q")
+    git("init", "-q", "-b", "master")
+    # Match the real repo's ignored-churn patterns so __pycache__/*.pyc appear
+    # as ignored (!! / disposable), not untracked (??). .pytest_cache is NOT
+    # gitignored (the real repo's .gitignore omits it), so it appears as ?? —
+    # the scratch the probe must exclude (#1155 P1).
+    (target / ".gitignore").write_text("__pycache__/\n*.pyc\n")
     (target / "tracked").write_text("fixture\n")
-    git("add", "tracked")
+    git("add", ".gitignore", "tracked")
     git("commit", "-q", "-m", "fixture")
     worktree = tmp_path / ".worktrees" / lane
-    git("worktree", "add", "-q", "--detach", str(worktree), "HEAD")
-    identity = worktree / f".{lane}-identity"
+    git("worktree", "add", "-q", "-b", lane, str(worktree), "HEAD")
+    identity = worktree / "BRIEF.md"
     identity.touch()
     (worktree / ".dreamwork").mkdir(parents=True, exist_ok=True)
     return target, worktree, identity
@@ -726,6 +739,15 @@ class TestLiveLaneCasesABC:
     would make the signal untrustworthy. All three, or it proves nothing.
     The default probe (the one the tick uses) must return WEDGED for A and
     NOT-wedged for B and C in the same run, unmodified.
+
+    pid_matches_lane BLIND SPOT (#651): every test in this class patches
+    pid_matches_lane to lambda True/False, so deleting the production
+    function fails setup but a BROKEN implementation stays green. The
+    identity check is exercised honestly by TestCwdRunnerChannel (which
+    injects read_cwd/read_cmdline so the cwd channel runs the real
+    is_lane_runner path) — this class delegates live/dead to the patch so
+    it can focus on the PROGRESS state machine. The blind spot is stated
+    here rather than left implicit.
     """
 
     def test_case_a_wedged_via_production_path(self, tmp_path, monkeypatch):
@@ -743,7 +765,6 @@ class TestLiveLaneCasesABC:
         monkeypatch.setattr(lane_liveness, "pid_matches_lane", lambda *_a: True)
         inspection = lane_liveness.inspect_lanes(  # NO wedge_probe
             target, process_entries=["1101"],
-            registered_worktrees=(worktree,),
             read_cmdline=lambda _pid: b"",
             read_cpu=lambda _pid: (0.1, 600.0))
         verdict = inspection.live_liveness
@@ -761,6 +782,15 @@ class TestLiveLaneCasesABC:
         → the default probe sees CPU ≥ floor → returns None → classify_live_lane
         reads WORKING (step 1: CPU wins). Same probe, same run, not wedged.
 
+        NOT A DISCRIMINATING PROBE TEST (#1155 round 3). B and C return early
+        on high CPU at _default_wedge_probe step 2 (cpu_seconds >= floor →
+        return None), so they never examine git and stay green under the
+        always-None defect. The false-positive protection for a no-commits
+        lane with high CPU rests on the classifier test
+        test_wedge_marker_with_high_cpu_is_working_not_wedged, and the probe's
+        git-check discrimination is closed by the P1 regression test
+        (old + low CPU + untracked deliverable → UNKNOWN) below.
+
         THIS IS THE DIRECTION-2 ANCHOR. The injected defect (classify on 'no
         commits' without checking CPU) would call THIS lane wedged and flag a
         working lane for destruction."""
@@ -770,7 +800,6 @@ class TestLiveLaneCasesABC:
         monkeypatch.setattr(lane_liveness, "pid_matches_lane", lambda *_a: True)
         inspection = lane_liveness.inspect_lanes(  # NO wedge_probe
             target, process_entries=["1102"],
-            registered_worktrees=(worktree,),
             read_cmdline=lambda _pid: b"",
             read_cpu=lambda _pid: (25.0, 660.0))
         verdict = inspection.live_liveness
@@ -784,7 +813,10 @@ class TestLiveLaneCasesABC:
         """Case C: REAL git worktree at base, zero commits, with a zero-byte
         transcript file (like a real opencode runner that writes at completion).
         31s CPU → the default probe sees CPU ≥ floor → None → WORKING.
-        Same probe, same run, not wedged."""
+        Same probe, same run, not wedged.
+
+        NOT A DISCRIMINATING PROBE TEST: same early-return on high CPU as
+        Case B — see that test's docstring for the full statement."""
         target, worktree, identity = _git_subject(
             tmp_path, lane="glm-1066label")
         _write_lock(worktree, identity, pid=1103)
@@ -792,7 +824,6 @@ class TestLiveLaneCasesABC:
         monkeypatch.setattr(lane_liveness, "pid_matches_lane", lambda *_a: True)
         inspection = lane_liveness.inspect_lanes(  # NO wedge_probe
             target, process_entries=["1103"],
-            registered_worktrees=(worktree,),
             read_cmdline=lambda _pid: b"",
             read_cpu=lambda _pid: (31.0, 540.0))
         verdict = inspection.live_liveness
@@ -834,12 +865,99 @@ class TestLiveLaneCasesABC:
         monkeypatch.setattr(lane_liveness, "pid_matches_lane", lambda *_a: True)
         inspection = lane_liveness.inspect_lanes(  # NO wedge_probe
             target, process_entries=["1105"],
-            registered_worktrees=(worktree,),
             read_cmdline=lambda _pid: b"",
             read_cpu=lambda _pid: (0.1, 600.0))
         verdict = inspection.live_liveness
         assert verdict[0].state == lane_liveness.LIVE_UNKNOWN, \
             "a worktree with progress read as wedged: %r" % (verdict[0],)
+
+    def test_case_a_untracked_deliverable_is_unknown_not_wedged(self, tmp_path,
+                                                                monkeypatch):
+        """#1155 round 3 P1 — THE REGRESSION TEST. Old + low CPU + an untracked
+        DELIVERABLE (new_module.py, uncommitted) must classify UNKNOWN, never
+        WEDGED. Through the PRODUCTION path with no injected probe, the way
+        round 2's Case A test does.
+
+        A lane that has written a file and not yet committed is the NORMAL
+        state of a lane mid-increment. Classifying it WEDGED would point the
+        destructive reaping tool at precisely the lane whose work exists only
+        in the working tree (#702 / #760: reap separates untracked from
+        ignored for exactly this reason).
+
+        If the discarding of ?? entries in _worktree_has_progress regresses,
+        this test fails: the probe sees no progress, returns a wedge marker,
+        and the lane classifies WEDGED instead of UNKNOWN. The file name
+        (new_module.py) appears in no assertion message — the failure is the
+        state mismatch — but the fixture creates it so the production path
+        reaches the git-check branch the regression breaks."""
+        target, worktree, identity = _git_subject(
+            tmp_path, lane="glm-untracked-work")
+        _write_lock(worktree, identity, pid=1106)
+        # An untracked deliverable — real work the runner has not committed.
+        (worktree / "new_module.py").write_text("real work\n")
+        monkeypatch.setattr(lane_liveness, "pid_matches_lane", lambda *_a: True)
+        inspection = lane_liveness.inspect_lanes(  # NO wedge_probe
+            target, process_entries=["1106"],
+            read_cmdline=lambda _pid: b"",
+            read_cpu=lambda _pid: (0.1, 600.0))
+        verdict = inspection.live_liveness
+        assert verdict[0].state == lane_liveness.LIVE_UNKNOWN, \
+            "a lane with an untracked deliverable (new_module.py) was " \
+            "classified WEDGED — this is the data-loss hazard: the lane " \
+            "holds uncommitted work and the probe pointed the reaper at " \
+            "it: %r" % (verdict[0],)
+
+    def test_scratch_only_untracked_still_reads_wedged(self, tmp_path,
+                                                       monkeypatch):
+        """BOUNDARY: the scratch exclusion does not swallow ALL untracked
+        files. A lane whose only untracked entries are scratch (BRIEF.md,
+        .pytest_cache/, .dreamwork/) has NO progress → WEDGED (old, low CPU).
+        This is the other side of the P1 fix: too broad an exclusion and the
+        hazard returns — every lane looks busy forever. The exclusion list is
+        the whole risk surface, and this test pins its boundary."""
+        target, worktree, identity = _git_subject(
+            tmp_path, lane="glm-scratch-only")
+        _write_lock(worktree, identity, pid=1107)
+        # Scratch the real fleet produces: .pytest_cache (not gitignored) and
+        # .dreamwork (lane-local state). BRIEF.md is already created by the
+        # fixture as the identity file.
+        (worktree / ".pytest_cache").mkdir()
+        (worktree / ".pytest_cache" / "v.json").write_text("{}")
+        monkeypatch.setattr(lane_liveness, "pid_matches_lane", lambda *_a: True)
+        inspection = lane_liveness.inspect_lanes(  # NO wedge_probe
+            target, process_entries=["1107"],
+            read_cmdline=lambda _pid: b"",
+            read_cpu=lambda _pid: (0.1, 600.0))
+        verdict = inspection.live_liveness
+        assert verdict[0].state == lane_liveness.LIVE_WEDGED, \
+            "a lane with ONLY scratch untracked was not classified wedged " \
+            "— the exclusion list is too broad and hides the hazard: %r" % (
+                verdict[0],)
+
+    def test_injected_probe_that_raises_degrades_to_unknown(self, tmp_path,
+                                                            monkeypatch):
+        """#1155 P2b: a probe that raises must leave the lane unclassified
+        (UNKNOWN), not propagate the exception. The TypeError fallback path
+        (backward-compat f(worktree, pid) probes) previously let the fallback
+        call's exception escape because only the keyword-form call was inside
+        the try/except. This test injects a probe that raises RuntimeError
+        from the fallback form and asserts no exception escapes inspect_lanes."""
+        target, worktree, identity = _subject(tmp_path, lane="glm-probe-boom")
+        _write_lock(worktree, identity, pid=1108)
+
+        def exploding_probe(_wt, _pid):
+            raise RuntimeError("probe broken")
+        monkeypatch.setattr(lane_liveness, "pid_matches_lane", lambda *_a: True)
+        inspection = lane_liveness.inspect_lanes(  # no exception escapes
+            target, process_entries=["1108"],
+            registered_worktrees=(worktree,),
+            read_cmdline=lambda _pid: b"",
+            read_cpu=lambda _pid: (0.1, 600.0),
+            wedge_probe=exploding_probe)
+        verdict = inspection.live_liveness
+        assert verdict[0].state == lane_liveness.LIVE_UNKNOWN, \
+            "a probe that raised did not degrade to unknown: %r" % (
+                verdict[0],)
 
     def test_default_cpu_probe_reads_proc(self, tmp_path, monkeypatch):
         """When read_cpu is not injected, inspect_lanes uses read_proc_cpu on
