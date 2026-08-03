@@ -18,6 +18,10 @@ import pytest
 
 REPO = Path(__file__).resolve().parent
 TOOL = REPO / "dev" / "rotate_inbox.py"
+BOILERPLATE = REPO / "briefs" / "boilerplate.md"
+LIVE_INBOX = Path(
+    "/home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/inbox.md"
+)
 
 
 def _load():
@@ -31,6 +35,21 @@ def _load():
 
 def _make_entry(i: int) -> str:
     return f"## Task #{i} — report\n\nLane #{i} completed its work.\nSHA: abc{i:04d}\n\n"
+
+
+def _fixture_append_command(target: Path) -> str:
+    """Retarget the single standing shell recipe to a fixture inbox."""
+    recipes = [
+        line.strip()
+        for line in BOILERPLATE.read_text().splitlines()
+        if line.strip().startswith("flock ") and line.strip().endswith(" <<'EOF'")
+    ]
+    assert len(recipes) == 1, f"expected one runnable locking append recipe, got {recipes!r}"
+    inbox = target / ".dreamwork" / "inbox.md"
+    command = recipes[0].removesuffix(" <<'EOF'")
+    return command.replace(str(LIVE_INBOX) + ".lock", str(inbox) + ".lock").replace(
+        str(LIVE_INBOX), str(inbox)
+    )
 
 
 @pytest.fixture
@@ -312,15 +331,7 @@ def _run_cli_at_observation(
         if appended_entry is not None:
             inbox = target / ".dreamwork" / "inbox.md"
             appender = subprocess.Popen(
-                [
-                    "flock",
-                    str(target / ".dreamwork" / "inbox.md.lock"),
-                    "sh",
-                    "-c",
-                    'cat >> "$1"',
-                    "sh",
-                    str(inbox),
-                ],
+                ["sh", "-c", _fixture_append_command(target)],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
