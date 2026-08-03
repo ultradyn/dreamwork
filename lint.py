@@ -2160,6 +2160,54 @@ def _direct_blocker_citations(entry: str, own_ids: set[int]) -> set[int]:
     return citations - own_ids
 
 
+CLEARING_BLOCKER_NOTE = re.compile(
+    r"^\s*·\s*(?:\*\*)?(?:UNBLOCKED|CLEARED|RESOLVED|NO\s+LONGER\s+BLOCKED|"
+    r"BLOCKER\s+(?:CLEARED|RESOLVED))\b",
+    re.IGNORECASE,
+)
+
+
+def _qualifying_clearing_note(
+        entry: str, cited_id: int, direct_citations: set[int]) -> bool:
+    """Whether a later status note unambiguously clears this direct citation.
+
+    A note must begin with an explicit clearing status. It must also name the
+    citation, unless the initial title/body carries exactly one direct blocker;
+    that unique citation makes a task-level clearing status unambiguous.
+    """
+    notes: list[str] = []
+    current: list[str] = []
+    for line in entry.splitlines():
+        if line.lstrip().startswith("·"):
+            if current:
+                notes.append("\n".join(current))
+            current = [line]
+        elif current:
+            current.append(line)
+    if current:
+        notes.append("\n".join(current))
+
+    for note in notes:
+        if not CLEARING_BLOCKER_NOTE.search(note):
+            continue
+        named_ids = {int(value) for value in QUESTION_ID.findall(note)}
+        if cited_id in named_ids or direct_citations == {cited_id}:
+            return True
+    return False
+
+
+def _blocker_citation_classification(
+        entry: str, cited_id: int, direct_citations: set[int],
+        question_state: str) -> str:
+    """Classify a citation as live, stale-acknowledged, or stale-unhandled."""
+    if question_state == "STILL OPEN":
+        return "live"
+    if (question_state == "ANSWERED" and cited_id in direct_citations
+            and _qualifying_clearing_note(entry, cited_id, direct_citations)):
+        return "stale-acknowledged"
+    return "stale-unhandled"
+
+
 def _unmet_group_blockers(
     dw: Path, task_ids: set[int], source: str,
 ) -> dict[int, tuple] | None:
@@ -2224,8 +2272,8 @@ def check_blocker_citations(dw: Path, watch, rep: Report) -> None:
 
     carrying = 0
     for task_id, body in entries:
-        citations = set(reverse.get(task_id, ())) | _direct_blocker_citations(
-            body, {task_id})
+        direct = _direct_blocker_citations(body, {task_id})
+        citations = set(reverse.get(task_id, ())) | direct
         if not citations:
             continue
         carrying += 1
@@ -2235,7 +2283,9 @@ def check_blocker_citations(dw: Path, watch, rep: Report) -> None:
             continue
         for cited_id in sorted(citations):
             state, cleared = states.get(cited_id, ("UNRESOLVABLE", None))
-            if state == "STILL OPEN":
+            classification = _blocker_citation_classification(
+                body, cited_id, direct, state)
+            if classification in {"live", "stale-acknowledged"}:
                 continue
             if state == "ANSWERED":
                 rep.add(

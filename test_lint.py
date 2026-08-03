@@ -7138,6 +7138,74 @@ class TestBlockerCitations1024:
         return [detail for row_level, what, detail in rows
                 if row_level == level and what == "blocker citations"]
 
+    def classification(self, entry, cited_id, question_state):
+        direct = lint._direct_blocker_citations(entry, set())
+        return lint._blocker_citation_classification(
+            entry, cited_id, direct, question_state)
+
+    def test_live_citation_is_not_stale_and_does_not_warn(self, tmp_path):
+        entry = (
+            "- **#701** — BLOCKED on the #591 design ruling · P1 · origin: **loop**\n")
+        questions = self.questions(open_entries=(
+            "- **P1 · #591: design ruling** still awaiting him\n"))
+        rows = self.rows(self.build(tmp_path, self.tasks(entry), questions))
+        assert self.classification(entry, 591, "STILL OPEN") == "live"
+        assert self.blocker_rows(rows) == [], rows
+
+    def test_stale_citation_with_later_clearing_note_is_acknowledged(self, tmp_path):
+        entry = (
+            "- **#702** — Build after the human gate · P1 · origin: **loop**\n"
+            "  Do not start before the ruling cited in #591.\n"
+            "  · UNBLOCKED 2026-07-31 19:1x — the G2 ruling this was waiting on has arrived.\n")
+        questions = self.questions(answered_entries=(
+            "- **P1 · #591: design ruling**\n"
+            "  → answered (2026-07-31 17:03): proceed\n"))
+        rows = self.rows(self.build(tmp_path, self.tasks(entry), questions))
+        assert self.classification(entry, 591, "ANSWERED") == "stale-acknowledged"
+        assert self.blocker_rows(rows) == [], rows
+
+    def test_stale_citation_without_qualifying_note_stays_unhandled(self, tmp_path):
+        entry = (
+            "- **#703** — Build after the human gate · P1 · origin: **loop**\n"
+            "  UNBLOCKED #591 was discussed earlier.\n"
+            "  Do not start before the ruling cited in #591.\n"
+            "  · Follow-up 2026-07-31 — #591 has useful background, but no status change.\n")
+        questions = self.questions(answered_entries=(
+            "- **P1 · #591: design ruling**\n"
+            "  → answered (2026-07-31 17:03): proceed\n"))
+        rows = self.rows(self.build(tmp_path, self.tasks(entry), questions))
+        classification = self.classification(entry, 591, "ANSWERED")
+        assert classification == "stale-unhandled", (
+            "#703/#591 misclassified stale-unhandled as stale-acknowledged: "
+            f"{classification}")
+        assert any("#703 cites blocker #591" in row
+                   for row in self.blocker_rows(rows)), rows
+
+    def test_clearing_note_only_acknowledges_the_blocker_it_names(self, tmp_path):
+        entry = (
+            "- **#704** — Build after both human gates · P1 · origin: **loop**\n"
+            "  Do not start before the ruling cited in #591.\n"
+            "  Do not start before the ruling cited in #832.\n"
+            "  · CLEARED 2026-08-03 — blocker #591 was answered.\n")
+        answered = (
+            "- **P1 · #591: first ruling**\n"
+            "  → answered (2026-07-31 17:03): proceed\n"
+            "- **P1 · #832: second ruling**\n"
+            "  → answered (2026-08-01 10:00): proceed\n")
+        rows = self.rows(self.build(
+            tmp_path, self.tasks(entry), self.questions(answered_entries=answered)))
+        direct = lint._direct_blocker_citations(entry, set())
+        assert lint._blocker_citation_classification(
+            entry, 591, direct, "ANSWERED") == "stale-acknowledged"
+        classification = lint._blocker_citation_classification(
+            entry, 832, direct, "ANSWERED")
+        assert classification == "stale-unhandled", (
+            "#704/#832 was muted by the clearing note for #591: "
+            f"{classification}")
+        warns = self.blocker_rows(rows)
+        assert not any("blocker #591" in row for row in warns), warns
+        assert any("#704 cites blocker #832" in row for row in warns), warns
+
     def test_630_body_and_question_title_report_one_cleared_blocker(self, tmp_path):
         tasks = self.tasks(
             "- **#630** — Build the derived component surface · P1 · origin: **loop**\n"
