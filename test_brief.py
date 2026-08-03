@@ -1455,7 +1455,8 @@ def test_the_frame_tells_a_lane_what_warn_means_before_the_gate_refuses_it():
     this frame already lost a load-bearing instruction that way (#936, where a
     badly-scoped prohibition suppressed ten lanes' dreams). The check pins
     CO-OCCURRENCE in one bullet rather than scattered mentions — a containment
-    check over mentions spread across the frame is exactly the #836 false-green.
+    check over mentions spread across the frame passes on tokens that co-occur
+    in no single rule.
     """
     frame = brief.FRAME_PATH.read_text(encoding="utf-8")
     # Group each `- ` bullet with its 2-space-indented continuation lines, so a
@@ -1484,7 +1485,7 @@ def test_the_frame_tells_a_lane_what_warn_means_before_the_gate_refuses_it():
         f"expected exactly one standing-rule bullet stating WARN means a "
         f"transient condition; found {len(warn_rule)} — the rule must be one "
         f"coherent instruction, not mentions scattered across bullets that a "
-        f"containment check would pass on (#836/#945)"
+        f"containment check would pass on (#945)"
     )
     # Clause 1 ("WARN means a transient condition someone will clear") is pinned
     # structurally: it IS the warn_rule selector above, so deleting it empties
@@ -1493,8 +1494,8 @@ def test_the_frame_tells_a_lane_what_warn_means_before_the_gate_refuses_it():
     # clause within the flattened bullet, so deleting the clause drops the
     # needle — "OK row that names it" is deliberately NOT used because the
     # rewrite repeats it in a later sentence, so deleting clause 2 would leave
-    # it present (the #836 false-green shape the co-occurrence check exists
-    # to close).
+    # it present (the scattered-mentions false-green the co-occurrence check
+    # exists to close).
     for needle in (
         "a standing fact belongs in",            # clause 2: the transient/standing contrast
         "refuses any undeclared WARN row change",  # clause 3: gate refuses UNDECLARED change
