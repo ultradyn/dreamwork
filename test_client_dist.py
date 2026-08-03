@@ -430,7 +430,23 @@ def test_reviews_fixture_covers_loading_empty_and_distinct_multi_row_states():
 
 
 def test_reviews_wrapper_dom_strictly_equals_live_builder_for_every_state():
-    """Both sides pass through one real DOM parser/serializer before equality."""
+    """Both sides pass through one real DOM parser/serializer before equality.
+
+    IGC context: observe wrapper input effects in this browser equality guard,
+    over JSON companion fixtures, without changing legitimate wrapper behaviour.
+
+    | Idea                         | All | G1 | G2 | G3 | G4 |
+    |------------------------------|:---:|:--:|:--:|:--:|:--:|
+    | deep before/after comparison |  ✔  | ✔  | ✔  | ✔  | ✔  |
+    | recursive freeze             |  ✘  | ✔  | ✔  | ✘  | ✔  |
+    | shallow freeze               |  ✘  | ✘  | ✔  | ✘  | ✔  |
+    | identity assertion           |  ✘  | ✘  | ✔  | ✔  | ✔  |
+
+    G1 catches nested mutation; G2 permits deep reads and newly built objects;
+    G3 observes without changing the input's semantics; G4 automatically binds
+    every present and future companion-backed export. Freezing is intervention,
+    not observation; its shallow form and identity alone both miss nested writes.
+    """
     server = http.server.ThreadingHTTPServer(
         ("127.0.0.1", 0),
         watch.make_handler(str(ROOT), journal_shadow=False))
@@ -439,9 +455,14 @@ def test_reviews_wrapper_dom_strictly_equals_live_builder_for_every_state():
     base = "http://127.0.0.1:%d" % server.server_address[1]
     script = r"""
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
-import { readFileSync } from 'node:fs';
-const [base, designPath, nativePath, fixturePath] = process.argv.slice(1);
-const cases = JSON.parse(readFileSync(fixturePath, 'utf8'));
+import { readFileSync, readdirSync } from 'node:fs';
+const [base, designPath, nativePath, fixtureDir] = process.argv.slice(1);
+const fixtures = Object.fromEntries(
+  readdirSync(fixtureDir)
+    .filter(name => name.endsWith('.fixture.json'))
+    .map(name => [name.slice(0, -'.fixture.json'.length),
+      JSON.parse(readFileSync(fixtureDir + '/' + name, 'utf8'))]));
+const cases = fixtures.Reviews;
 const browser = await chromium.launch();
 const page = await browser.newPage();
 try {
@@ -480,7 +501,58 @@ try {
     }, { state, props });
     readings.push(result);
   }
-  console.log(JSON.stringify(readings));
+
+  const mutation = await page.evaluate(async fixtures => {
+    const sameInput = (left, right) => {
+      if (Object.is(left, right)) return true;
+      if (left === null || right === null ||
+          typeof left !== 'object' || typeof right !== 'object') return false;
+      if (Object.getPrototypeOf(left) !== Object.getPrototypeOf(right)) return false;
+      const leftKeys = Reflect.ownKeys(left);
+      const rightKeys = Reflect.ownKeys(right);
+      if (leftKeys.length !== rightKeys.length ||
+          leftKeys.some((key, i) => key !== rightKeys[i])) return false;
+      return leftKeys.every(key => sameInput(left[key], right[key]));
+    };
+    const control = { rows: [{ title: 'before' }] };
+    const controlBefore = structuredClone(control);
+    control.rows[0].title = 'after';
+    const nestedMutationDetected = !sameInput(controlBefore, control);
+
+    const mutationReadings = [];
+    for (const [name, fixture] of Object.entries(fixtures)) {
+      const component = DreamworkDesign[name];
+      if (typeof component !== 'function') {
+        mutationReadings.push({ name, state: 'fixture', missing: true });
+        continue;
+      }
+      const values = Object.values(fixture);
+      const isStateMatrix = values.length > 0 && values.every(value =>
+        value && typeof value === 'object' &&
+        Object.prototype.hasOwnProperty.call(value, 'data'));
+      const componentCases = isStateMatrix
+        ? Object.entries(fixture) : [['fixture', fixture]];
+      for (const [state, props] of componentCases) {
+        const handed = structuredClone(props);
+        const before = structuredClone(handed);
+        const root = document.createElement('div');
+        const reactRoot = dwNative.ReactDOM.createRoot(root);
+        reactRoot.render(dwNative.React.createElement(component, handed));
+        for (let i = 0; i < 100 && !root.firstElementChild; i++) {
+          await new Promise(resolve => setTimeout(resolve, 10));
+        }
+        mutationReadings.push({
+          name, state, mounted: Boolean(root.firstElementChild),
+          mutated: !sameInput(before, handed),
+        });
+        reactRoot.unmount();
+      }
+    }
+    return { mutationReadings, nestedMutationDetected };
+  }, fixtures);
+  console.log(JSON.stringify({
+    readings, ...mutation,
+  }));
 } finally {
   await browser.close();
 }
@@ -490,7 +562,7 @@ try {
             ["node", "--input-type=module", "-e", script, base,
              str(ROOT / client_dist.DS_DIR / "index.js"),
              str(ROOT / client_dist.NATIVE_REL),
-             str(ROOT / client_dist.DS_SOURCE_DIR / "Reviews.fixture.json")],
+             str(ROOT / client_dist.DS_SOURCE_DIR)],
             text=True, capture_output=True, timeout=60)
     finally:
         server.shutdown()
@@ -499,7 +571,23 @@ try {
     assert result.returncode == 0, (
         "Reviews wrapper equality browser failed before comparison:\n%s\n%s" %
         (result.stdout, result.stderr))
-    readings = json.loads(result.stdout.strip().splitlines()[-1])
+    payload = json.loads(result.stdout.strip().splitlines()[-1])
+    assert payload["nestedMutationDetected"], (
+        "wrapper input-mutation detector missed its nested positive control")
+    missing = ["%s.%s" % (r["name"], r["state"])
+               for r in payload["mutationReadings"] if r.get("missing")]
+    assert not missing, "fixture(s) have no design export: " + ", ".join(missing)
+    unmounted = ["%s.%s" % (r["name"], r["state"])
+                 for r in payload["mutationReadings"]
+                 if not r.get("missing") and not r["mounted"]]
+    assert not unmounted, (
+        "wrapper input-mutation checks never mounted: " + ", ".join(unmounted))
+    mutations = ["%s.%s" % (r["name"], r["state"])
+                 for r in payload["mutationReadings"] if r.get("mutated")]
+    assert not mutations, (
+        "design wrapper(s) mutated the fixture input they were handed: " +
+        ", ".join(mutations))
+    readings = payload["readings"]
     assert {r["state"] for r in readings} == {"loading", "empty", "multi"}
     for reading in readings:
         assert reading["expected"], (
