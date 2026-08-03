@@ -101,6 +101,16 @@ if (!target) {
       restoredDetails === originalDetails && restoredGoal === originalGoal);
     ok('Cancel edit preserves both goal-tree rows',
       rows.length === 2 && rows.includes('Healthy goal') && rows.includes('Broken goal'));
+
+    await page.getByRole('button', { name: 'Add goal' }).click();
+    const parentDescribedBy = await page.locator('#goal-new-parent')
+      .getAttribute('aria-describedby');
+    const parentHintExists = parentDescribedBy
+      ? await page.locator(`#${parentDescribedBy}`).count() === 1 : false;
+    notes.push(`parent aria-describedby=${JSON.stringify(parentDescribedBy)} ` +
+      `targetExists=${parentHintExists}`);
+    ok('the Parent select aria-describedby resolves to its visible hint',
+      parentDescribedBy === 'goal-new-parent-hint' && parentHintExists);
   }
 
   await browser.close();
