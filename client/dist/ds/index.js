@@ -1927,6 +1927,7 @@ var DreamworkDesign = (() => {
   var entry_exports = {};
   __export(entry_exports, {
     Expand: () => Expand,
+    FollowThread: () => FollowThread,
     Label: () => Label,
     PipBtn: () => PipBtn,
     QaCard: () => QaCard
@@ -8594,6 +8595,12 @@ var DreamworkDesign = (() => {
   });
   Expand.displayName = "Expand";
   Expand.dwBuilder = "expand";
+  var FollowThread = ({ follows, fold, ctx = {} }) => import_react.default.createElement(HOST, {
+    "data-dw-delegate": "followThread",
+    dangerouslySetInnerHTML: { __html: ambient(ctx, () => followThread(follows, fold)) }
+  });
+  FollowThread.displayName = "FollowThread";
+  FollowThread.dwBuilder = "followThread";
   return __toCommonJS(entry_exports);
 })();
 /*! Bundled license information:

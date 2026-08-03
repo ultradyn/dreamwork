@@ -67,3 +67,12 @@ export const Expand = ({ s, inner, cls = '', keep = '' }) =>
 
 Expand.displayName = 'Expand';
 Expand.dwBuilder = 'expand';
+
+export const FollowThread = ({ follows, fold, ctx = {} }) =>
+  React.createElement(HOST, {
+    'data-dw-delegate': 'followThread',
+    dangerouslySetInnerHTML: { __html: ambient(ctx, () => followThread(follows, fold)) },
+  });
+
+FollowThread.displayName = 'FollowThread';
+FollowThread.dwBuilder = 'followThread';

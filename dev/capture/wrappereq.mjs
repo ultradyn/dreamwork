@@ -58,6 +58,22 @@ const CASES = [
     fixture: fixture('Expand'),
     build: props => expand(props.s, props.inner, props.cls, props.keep),
   },
+  {
+    name: 'FollowThread', delegate: 'followThread', expectedClass: 'thread',
+    fixture: fixture('FollowThread'),
+    build: props => {
+      const previousData = data;
+      const previousView = view;
+      try {
+        data = (props.ctx && props.ctx.data) || {};
+        view = (props.ctx && props.ctx.view) || { name: null, param: null, q: null };
+        return followThread(props.follows, props.fold);
+      } finally {
+        data = previousData;
+        view = previousView;
+      }
+    },
+  },
 ];
 const hasContent = value => {
   if (typeof value === 'string') return value.trim().length > 0;

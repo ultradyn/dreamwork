@@ -1,0 +1,19 @@
+{
+  "follows": [
+    {
+      "author": "human",
+      "text": "Use the existing component vocabulary and keep one render authority.",
+      "when": "2026-08-01 08:20"
+    },
+    {
+      "author": "loop",
+      "text": "Kept the card's builder as the single source of the question surface.",
+      "when": "2026-08-01 09:00"
+    }
+  ],
+  "fold": true,
+  "ctx": {
+    "data": { "linkable_paths": [] },
+    "view": { "name": "questions", "param": null, "q": null }
+  }
+}
