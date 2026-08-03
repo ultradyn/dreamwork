@@ -779,7 +779,7 @@ def _batch_blobs(root: Path, commits: list[str],
             f"`git cat-file --batch` failed ({proc.returncode}): "
             f"{proc.stderr.decode('utf-8', 'replace').strip()}")
 
-    out, i, found = proc.stdout, 0, {}
+    out, i, found, missing = proc.stdout, 0, {}, []
     for spec in specs:
         nl = out.find(b"\n", i)
         if nl < 0:
@@ -788,14 +788,45 @@ def _batch_blobs(root: Path, commits: list[str],
                 f"records — the scan is incomplete and must not read as clean.")
         header = out[i:nl].decode("utf-8", "replace").split()
         i = nl + 1
-        if header[-1] in ("missing", "ambiguous"):
-            continue  # the path does not exist in that commit
+        if header[-1] == "ambiguous":
+            raise RedproofError(
+                f"`git cat-file --batch` could not resolve {spec[0]}:{spec[1]} "
+                "unambiguously; the scan is incomplete.")
+        if header[-1] == "missing":
+            missing.append(spec)
+            continue
         typ, size = header[1], int(header[2])
         payload = out[i:i + size]
         i += size + 1  # skip the record's trailing newline
         if typ == "blob":
             found[(spec[0], spec[1])] = _sha(payload)
+
+    # `cat-file` uses the same `missing` response for an absent tree path and
+    # for a tree entry whose object is corrupt. Only the former is legitimate.
+    # Ask each affected tree independently so unreadable bytes cannot become a
+    # false clean history result.
+    by_commit: dict[str, list[str]] = {}
+    for commit, path in missing:
+        by_commit.setdefault(commit, []).append(path)
+    for commit, missing_paths in by_commit.items():
+        present = set(_git(
+            root, "ls-tree", "-r", "--name-only", commit, "--",
+            *(f":(literal){path}" for path in missing_paths)).splitlines())
+        for path in missing_paths:
+            if path in present:
+                raise RedproofError(
+                    f"{commit}:{path} exists in its tree but its blob is "
+                    "unreadable; the history scan is incomplete.")
     return found
+
+
+def _history_match_is_armed(commit: str, *, boundary_survives: bool,
+                            preexisting: set[str],
+                            inherited_prefix: bool) -> bool:
+    """Classify one matching blob without trusting a rebased commit id."""
+    if boundary_survives:
+        return commit not in preexisting
+    return not inherited_prefix
 
 
 def scan_history(cwd: Path | None, entries: list[dict],
@@ -826,45 +857,81 @@ def scan_history(cwd: Path | None, entries: list[dict],
                 and (e.get("injected_sha")
                      or e.get("injected_kind") == ABSENT)]
     base_oid, base_ref = _resolve_base(root, base)
-    commits = [c for c in _git(root, "rev-list", f"{base_oid}..HEAD").split() if c]
+    current_history_list = _git(root, "rev-list", "HEAD").split()
+    current_history = set(current_history_list)
+    boundary_survives = {
+        id(e): bool(e.get("begun_head") in current_history) for e in recorded
+    }
+    # The merge base moves when a lane's work lands. Keep the ordinary branch
+    # range, but union in each surviving registration's own immutable boundary
+    # so advancing master cannot erase a committed injection from the audit.
+    candidates = set(_git(root, "rev-list", f"{base_oid}..HEAD").split())
+    surviving_boundaries = {
+        e["begun_head"] for e in recorded if boundary_survives[id(e)]
+    }
+    for begun_head in surviving_boundaries:
+        candidates.update(_git(
+            root, "rev-list", f"{begun_head}..HEAD").split())
+    commits = [c for c in current_history_list if c in candidates]
     paths = sorted({e["path"] for e in recorded})
     blobs = _batch_blobs(root, commits, paths)
+    base_blobs = _batch_blobs(root, [base_oid], paths)
 
-    # A matching blob is armed only when its commit did not already exist at
-    # begin.  Use immutable reachability, never dates: author and committer
-    # timestamps are freely rewritten, while a rebase gives rewritten commits
-    # new object ids that cannot become ancestors of the recorded old HEAD.
+    def matches(e: dict, sha: str | None) -> bool:
+        return ((e.get("injected_kind") == ABSENT and sha is None)
+                or (e.get("injected_kind", BYTES) == BYTES
+                    and sha == e.get("injected_sha")))
+
+    # Exact reachability is authoritative while the registration boundary is
+    # still in this history. A rebase rewrites every commit id, including that
+    # boundary, so fall back to the rebase-stable fact at the merge base: an
+    # injection already present there and merely inherited by the branch's
+    # leading commits was not introduced by this red-proof. Once the path
+    # differs, any later match was introduced on the branch and remains a hit.
     preexisting = {
         id(e): set(_git(root, "rev-list", e["begun_head"]).split())
-        if e.get("begun_head") else set()
+        if boundary_survives[id(e)] else set()
+        for e in recorded
+    }
+    inherited_prefix = {
+        id(e): matches(e, base_blobs.get((base_oid, e["path"])))
         for e in recorded
     }
     order = {c: n for n, c in enumerate(commits)}
     hits, excluded = [], []
-    for commit in commits:
+    for commit in reversed(commits):
         for path in paths:
             sha = blobs.get((commit, path))
+            path_records = [e for e in recorded if e["path"] == path]
+            for e in path_records:
+                if (not boundary_survives[id(e)] and inherited_prefix[id(e)]
+                        and not matches(e, sha)):
+                    inherited_prefix[id(e)] = False
             # Per (commit, path), not per record: two records can carry the same
             # injection, and one commit holding it is one finding.
-            matches = [e for e in recorded if e["path"] == path and (
-                (e.get("injected_kind") == ABSENT and sha is None)
-                or (e.get("injected_kind", BYTES) == BYTES
-                    and sha == e.get("injected_sha")))]
-            if not matches:
+            matching = [e for e in path_records if matches(e, sha)]
+            if not matching:
                 continue
-            armed_by = [e for e in matches if commit not in preexisting[id(e)]]
+            armed_by = [e for e in matching
+                        if _history_match_is_armed(
+                            commit,
+                            boundary_survives=boundary_survives[id(e)],
+                            preexisting=preexisting[id(e)],
+                            inherited_prefix=inherited_prefix[id(e)])]
             subject = _git(root, "log", "-1", "--format=%s", commit)
             if armed_by:
                 hits.append({"commit": commit, "path": path,
                              "hint": armed_by[0].get("injected_hint"),
                              "subject": subject})
             else:
-                # EVERY matching record was begun at a head that already
-                # contained this commit, so it predates registration.
+                reason = ("registration boundary"
+                          if boundary_survives[id(matching[0])]
+                          else "rebase-stable merge-base prefix")
                 excluded.append({"commit": commit, "path": path,
-                                 "hint": matches[0].get("injected_hint"),
+                                 "hint": matching[0].get("injected_hint"),
                                  "subject": subject,
-                                 "boundary": matches[0].get("begun_head")})
+                                 "boundary": matching[0].get("begun_head"),
+                                 "reason": reason})
     hits.sort(key=lambda h: (order[h["commit"]], h["path"]))
     excluded.sort(key=lambda h: (order[h["commit"]], h["path"]))
     return {"base_oid": base_oid, "base_ref": base_ref, "commits": len(commits),
@@ -902,15 +969,15 @@ def history_line(rep: dict) -> str:
                  f"(forgotten as live evidence, kept in history scope).")
     excluded = rep.get("excluded") or []
     if excluded:
-        line += (f"\nhistory: the registration boundary EXCLUDED {len(excluded)} "
+        line += (f"\nhistory: the history boundary EXCLUDED {len(excluded)} "
                  f"commit(s) that DO hold bytes recorded as an injection. Every "
-                 f"record of those bytes was begun at a head that already "
-                 f"contained the commit, so it predates this lane's "
-                 f"registration and is not blamed. That is a scan which looked "
+                 f"match either predates registration by exact reachability or "
+                 f"inherits the merge-base state through the branch's leading "
+                 f"pre-fix commits after a rebase. That is a scan which looked "
                  f"and declined to blame — not a scan that found nothing:")
         for x in excluded:
             line += (f"\n  {x['commit'][:12]} {x['path']} — {x['subject']!r} "
-                     f"(hint: {x['hint']!r}; boundary "
+                     f"(hint: {x['hint']!r}; {x.get('reason', 'boundary')} "
                      f"{(x.get('boundary') or '?')[:12]})")
     return line
 
