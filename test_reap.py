@@ -139,7 +139,7 @@ def test_non_disposable_ignored_file_refuses_removal_and_names_path(lane):
     assert str(worktree.resolve()) in _git(root, "worktree", "list", "--porcelain")
 
 
-def test_empty_ignored_regular_file_is_disposable(lane):
+def test_empty_ledger_is_disposable_by_exact_lifecycle_path(lane):
     _, worktree = lane
     ledger = worktree / ".dreamwork" / "ledger.sqlite3"
     ledger.parent.mkdir()
@@ -149,6 +149,36 @@ def test_empty_ignored_regular_file_is_disposable(lane):
 
     assert result.returncode == 0, result.stderr
     assert "ignored: examined 1 file; 1 disposable, 0 NOT disposable" in result.stdout
+
+
+def test_empty_ledger_ownership_is_held_through_removal(lane, monkeypatch):
+    root, worktree = lane
+    ledger = worktree / ".dreamwork" / "ledger.sqlite3"
+    ledger.parent.mkdir()
+    ledger.touch()
+    reap = _load_reap()
+    real_git = reap._git
+    lock_probe = (
+        "import fcntl, os, sys; "
+        "fd = os.open(sys.argv[1], os.O_RDWR); "
+        "\ntry: fcntl.lockf(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)"
+        "\nexcept BlockingIOError: raise SystemExit(75)"
+    )
+    observed = {}
+
+    def probe_at_remove(cwd, *args):
+        if args[:3] == ("worktree", "remove", "--force"):
+            probe = subprocess.run([sys.executable, "-c", lock_probe, str(ledger)])
+            observed["during_remove"] = probe.returncode
+            return subprocess.CompletedProcess(args, 0, b"", b"")
+        return real_git(cwd, *args)
+
+    monkeypatch.setattr(reap, "_git", probe_at_remove)
+
+    assert reap.reap(str(worktree)) == 0
+    assert observed == {"during_remove": 75}
+    assert subprocess.run([sys.executable, "-c", lock_probe, str(ledger)]).returncode == 0
+    assert str(worktree.resolve()) in _git(root, "worktree", "list", "--porcelain")
 
 
 def test_empty_ignored_sentinel_refuses_removal_and_names_path(lane):
