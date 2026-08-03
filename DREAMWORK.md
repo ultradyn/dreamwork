@@ -11,6 +11,22 @@ before the session log? then we can do the session log thing entirely in react."
 webui features, we should implement them after react micration. make react migration the main
 near-term goal"*.
 
+**ORDERING WITHIN THAT FOCUS (his, 2026-08-03 16:06, via watch): *"Claude design comes AFTER
+react."*** Asked whether to run the built QaCard wrapper through claude.ai/design before continuing
+— the checkpoint `#1136` recorded as the React chain's single choke point — he re-sequenced rather
+than picking any of the three options offered. **The claude.ai/design ingestion is not a
+prerequisite for the migration; it follows it.** So the migration proceeds on the local build alone,
+and `#1136` is later work rather than a gate to clear.
+
+Two consequences worth stating, because both are easy to get backwards:
+
+- The `#1136` dependency on the `#1060` chain is **dissolved**, not satisfied. Nothing was
+  verified against the design tool; the requirement moved.
+- His answer did **not** authorise the offered alternative of running the ingestion from a loop
+  session against his account. That offer was scoped to unblocking the chain, and there is now
+  nothing to unblock, so it lapses rather than carrying forward. An external publish against his
+  account still needs its own ask.
+
 The reasoning is his and it generalises: **a surface built before the migration is built twice**,
 and the second build is not a port but a rewrite — the thing "One fact, one owner" refuses. So a
 new webui feature that lands now buys a few days of use and costs a full re-implementation.

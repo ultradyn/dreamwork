@@ -2,45 +2,6 @@
 
 ## Open
 
-- **P1 · 2026-08-03 — the React port's main chain is blocked on ONE action only you can take:
-  pushing the QaCard wrapper through claude.ai/design (#630 P5 stage 2, #1060)**
-  You ruled that the React migration is the main near-term goal, and told me to plan it out and
-  file it all. That is done — 27 tasks, `#1057`–`#1083`. I then resolved the dependency graph,
-  and it has a single choke point that is yours, not the loop's.
-  - **22 of the 24 still-open tasks sit behind `#1060`**, whose stated dependency is
-    *"authenticated QaCard ingestion checkpoint recorded on `#630`"*. Exact, after resolving the
-    planner's numbering by hand (task N = `#1056+N` — the bodies say "tasks 9 and 11", not ledger
-    ids, which is why `ledger.py counts` reports this chain as carrying **no** blocker at all):
-    `#1060` `#1061` `#1062` `#1063` `#1064` `#1065` `#1066` `#1067` `#1069` `#1070` `#1071` `#1072`
-    `#1073` `#1074` `#1075` `#1076` `#1077` `#1078` `#1079` `#1080` `#1081` `#1082`.
-    (`#1082` also wants `#1047`/`#1048` or an explicit grandfather decision.)
-  - **A lane physically cannot do it.** It needs authentication and it *uploads to an external
-    service*. That is outward-facing and your call. `#630`'s own note says so in terms, and says
-    the lane must not describe the local half as if it were the end-to-end proof.
-  - **The local half is already built and landed.** P5 stage 1 landed `client/tokens.css` as a
-    six-line entrypoint over `style.css` (one palette, no derived artifact to go stale), proven
-    byte-identical on two ephemeral ports. Stage 2 authored the QaCard wrapper. `§6-R5` deliberately
-    scoped it to ONE wrapper so exactly this question gets answered before the other eight are
-    written — so this is the checkpoint working as designed, not a stall.
-  - **What I need:** either run that one wrapper through claude.ai/design and tell me whether it
-    renders acceptably, or tell me to proceed on the assumption it does and accept the rework risk
-    across nine wrappers if it does not.
-  - **CORRECTION 2026-08-03 (coordinator): the "meanwhile work" this entry named is now done, so
-    the reassurance below has expired.** `#1057` has landed (`3e33e0ed`) and so has `#1068`. Of the
-    27, three are landed (`#1057`, `#1058`, `#1068`); of the 24 open, **exactly two are dispatchable
-    without you** — `#1059` and `#1083` — and both are *scoping* tasks whose lanes have already
-    delivered and whose branches are sitting in my merge-gate queue right now. When those two land,
-    the React port has **no remaining work I can dispatch**. I am keeping the fleet busy on the
-    tool/infrastructure backlog (`#1054`, `#1115`, `#1119`, `#1120`, `#1114`, `#1118`), which is
-    real work but is not the goal you named.
-  - **The cheapest unblock, if you'd rather not do it by hand: authorise me to run the ingestion
-    from my session** against your claude.ai/design account. I have the tooling. I would create a
-    new project for it, report exactly what ingested and what degraded, and touch nothing else. I
-    have not done it unasked because it is an external publish against your account. Otherwise:
-    run it yourself and tell me the verdict, or tell me to proceed and accept the rework risk
-    (`react-migration-increments.md:304` says the correct response to a bad ingestion is to *stop*,
-    so proceeding anyway is an override I'd record as one, not a quiet exception).
-
 - **P1 · 2026-08-03 — do I widen the native-agent sandbox to reach `../.worktrees/`, or route your
   "use an Opus 5 subagent" instructions to a different agent? (#1009)**
   **Two of your own standing decisions now contradict each other, and the effect is that you have
@@ -88,6 +49,9 @@
     what landed. Overturning it is still cheap — the retarget is a handful of hrefs and one test.
   - **What I actually need:** is `tasks2` finished enough to own `/tasks`? That is the only part the
     code cannot tell me.
+  - **Answer (via watch, 2026-08-03 16:09):** well /tasks doesn't exist
+    and since /tasks2 does, sure that's 'finished enough'. anyway I
+    choose (1)
 
 - **P2 · 2026-07-25 — how should an answer reach a loop on another machine?** **DEFERRED by him
   2026-07-29 16:14 — revisit once dreamhub is stable and the primary way we access dreamworkers.** Until
@@ -97,6 +61,57 @@
     primary way we access dreamworkers
 
 ## Answered
+
+- **P1 · 2026-08-03 — the React port's main chain is blocked on ONE action only you can take:
+  pushing the QaCard wrapper through claude.ai/design (#630 P5 stage 2, #1060)**
+  You ruled that the React migration is the main near-term goal, and told me to plan it out and
+  file it all. That is done — 27 tasks, `#1057`–`#1083`. I then resolved the dependency graph,
+  and it has a single choke point that is yours, not the loop's.
+  - **22 of the 24 still-open tasks sit behind `#1060`**, whose stated dependency is
+    *"authenticated QaCard ingestion checkpoint recorded on `#630`"*. Exact, after resolving the
+    planner's numbering by hand (task N = `#1056+N` — the bodies say "tasks 9 and 11", not ledger
+    ids, which is why `ledger.py counts` reports this chain as carrying **no** blocker at all):
+    `#1060` `#1061` `#1062` `#1063` `#1064` `#1065` `#1066` `#1067` `#1069` `#1070` `#1071` `#1072`
+    `#1073` `#1074` `#1075` `#1076` `#1077` `#1078` `#1079` `#1080` `#1081` `#1082`.
+    (`#1082` also wants `#1047`/`#1048` or an explicit grandfather decision.)
+  - **A lane physically cannot do it.** It needs authentication and it *uploads to an external
+    service*. That is outward-facing and your call. `#630`'s own note says so in terms, and says
+    the lane must not describe the local half as if it were the end-to-end proof.
+  - **The local half is already built and landed.** P5 stage 1 landed `client/tokens.css` as a
+    six-line entrypoint over `style.css` (one palette, no derived artifact to go stale), proven
+    byte-identical on two ephemeral ports. Stage 2 authored the QaCard wrapper. `§6-R5` deliberately
+    scoped it to ONE wrapper so exactly this question gets answered before the other eight are
+    written — so this is the checkpoint working as designed, not a stall.
+  - **What I need:** either run that one wrapper through claude.ai/design and tell me whether it
+    renders acceptably, or tell me to proceed on the assumption it does and accept the rework risk
+    across nine wrappers if it does not.
+  - **CORRECTION 2026-08-03 (coordinator): the "meanwhile work" this entry named is now done, so
+    the reassurance below has expired.** `#1057` has landed (`3e33e0ed`) and so has `#1068`. Of the
+    27, three are landed (`#1057`, `#1058`, `#1068`); of the 24 open, **exactly two are dispatchable
+    without you** — `#1059` and `#1083` — and both are *scoping* tasks whose lanes have already
+    delivered and whose branches are sitting in my merge-gate queue right now. When those two land,
+    the React port has **no remaining work I can dispatch**. I am keeping the fleet busy on the
+    tool/infrastructure backlog (`#1054`, `#1115`, `#1119`, `#1120`, `#1114`, `#1118`), which is
+    real work but is not the goal you named.
+  - **The cheapest unblock, if you'd rather not do it by hand: authorise me to run the ingestion
+    from my session** against your claude.ai/design account. I have the tooling. I would create a
+    new project for it, report exactly what ingested and what degraded, and touch nothing else. I
+    have not done it unasked because it is an external publish against your account. Otherwise:
+    run it yourself and tell me the verdict, or tell me to proceed and accept the rework risk
+    (`react-migration-increments.md:304` says the correct response to a bad ingestion is to *stop*,
+    so proceeding anyway is an override I'd record as one, not a quiet exception).
+  - **Answer (via watch, 2026-08-03 16:06):** Claude design comes AFTER
+    react.
+  - **Follow-up (loop, 2026-08-03 16:1x):** FOLDED — his answer re-sequences rather than
+    choosing among the three options offered. The claude.ai/design ingestion is **not a
+    prerequisite** for the React migration; it comes after. So `#1136` is not a choke point
+    to clear — it is later work, and the `#1060` dependency on it is dissolved. Acted on:
+    the `#1136` depends-edges are removed from the React chain, `#1136` is re-scoped to
+    post-migration, and the ordering is recorded in `DREAMWORK.md` because it is a durable
+    sequencing decision, not a one-off unblock. Note what he did NOT authorise: running the
+    ingestion from my session against his account. That offer lapses rather than carrying
+    forward — it was scoped to unblocking now, and now there is nothing to unblock.
+
 
 - **P1 · 2026-08-02 21:20 — #859: the info you asked for, and your "pip separately" remark already answers half of it**
   → **resolved (2026-08-02 21:36):** retitled to "convert popouts/PiP to React as a separable surface" and kept in goal #1 — his *"that live behavior is going to need to be implemented anyway"* refuted my caution, since #74/#459/Document-PiP work is owed whenever popouts convert. His *"plan it out and add it all as tasks"* dispatched as a full planning pass.
