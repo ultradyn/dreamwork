@@ -1926,6 +1926,7 @@ var DreamworkDesign = (() => {
   // entry.mjs
   var entry_exports = {};
   __export(entry_exports, {
+    Label: () => Label,
     QaCard: () => QaCard
   });
   var import_react = __toESM(require_react(), 1);
@@ -8573,6 +8574,12 @@ var DreamworkDesign = (() => {
   });
   QaCard.displayName = "QaCard";
   QaCard.dwBuilder = "qaCard";
+  var Label = ({ text }) => import_react.default.createElement(HOST, {
+    "data-dw-delegate": "label",
+    dangerouslySetInnerHTML: { __html: label(text) }
+  });
+  Label.displayName = "Label";
+  Label.dwBuilder = "label";
   return __toCommonJS(entry_exports);
 })();
 /*! Bundled license information:

@@ -7,9 +7,8 @@
 // appended into the same lexical scope, so it can name `qaCard`, `agePair`,
 // `label` &c. directly.
 //
-// #630 P5 stage 2 exports ONE wrapper before the rest: QaCard is the
-// cheapest-early-signal probe required by the plan's §6-R5. It is a CALL into
-// the builder above, never a second statement of the markup. That is enforced rather than
+// Each export is a CALL into the builder above, never a second statement of
+// the markup. That is enforced rather than
 // remembered: `test_client_dist.py` refuses any HTML tag literal in this file,
 // and proves its own detector by first finding tag literals in
 // client/components.js — so it cannot pass by being broken.
@@ -43,3 +42,11 @@ export const QaCard = ({ q, k, ctx = {} }) => React.createElement(HOST, {
 
 QaCard.displayName = 'QaCard';
 QaCard.dwBuilder = 'qaCard';
+
+export const Label = ({ text }) => React.createElement(HOST, {
+  'data-dw-delegate': 'label',
+  dangerouslySetInnerHTML: { __html: label(text) },
+});
+
+Label.displayName = 'Label';
+Label.dwBuilder = 'label';

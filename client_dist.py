@@ -38,11 +38,7 @@ MANIFEST_REL = DIST_DIR + "/manifest.json"
 # the question: the question is whether it agrees with the TREE.
 WRAPPER_EXPORTS_REL = "dev/build/wrapper-exports.js"
 DS_SOURCE_DIR = "dev/build/ds-src"
-DS_SOURCE_RELS = (
-    DS_SOURCE_DIR + "/QaCard.d.ts",
-    DS_SOURCE_DIR + "/QaCard.fixture.json",
-    DS_SOURCE_DIR + "/QaCard.prompt.md",
-)
+DS_SOURCE_SUFFIXES = (".d.ts", ".fixture.json", ".prompt.md")
 
 # #630 P2: the native runtime's sources. A DIRECTORY rather than a tuple of
 # names, deliberately — the native runtime will grow a file per converted
@@ -150,6 +146,22 @@ def native_sources(root):
     return [os.path.relpath(p, root).replace(os.sep, "/") for p in found]
 
 
+def ds_sources(root):
+    """Every design-wrapper companion under ``DS_SOURCE_DIR``, sorted.
+
+    The directory is the source of truth: adding an export's companion triad
+    makes it a manifest input without adding its basename to a second list.
+    The export/triad completeness test owns the stronger shape requirement.
+    """
+    found = sorted(
+        path for path in glob.glob(os.path.join(root, DS_SOURCE_DIR, "*"))
+        if any(path.endswith(suffix) for suffix in DS_SOURCE_SUFFIXES)
+    )
+    if not found:
+        return None
+    return [os.path.relpath(p, root).replace(os.sep, "/") for p in found]
+
+
 def expected_inputs(root):
     """Every file the build reads, or None.
 
@@ -171,8 +183,11 @@ def expected_inputs(root):
     native = native_sources(root)
     if native is None:
         return None
+    companions = ds_sources(root)
+    if companions is None:
+        return None
     return (["client/" + name for name in order]
-            + [WRAPPER_EXPORTS_REL] + native)
+            + [WRAPPER_EXPORTS_REL] + companions + native)
 
 
 def read_manifest(root):
@@ -217,10 +232,14 @@ def check(root):
             out["note"] = ("cannot read watch._CLIENT_ASSETS as a "
                            "module-level literal, so the build inputs cannot "
                            "be derived")
-        else:
+        elif native_sources(root) is None:
             out["note"] = ("%s holds no .js file — the native runtime has no "
                            "source, so `client/dist/native.js` cannot be "
                            "checked against anything" % NATIVE_SRC_DIR)
+        else:
+            out["note"] = ("%s holds no wrapper companions — the design "
+                           "bundle's contract surface cannot be checked "
+                           "against anything" % DS_SOURCE_DIR)
         return out
 
     manifest, note = read_manifest(root)

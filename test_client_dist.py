@@ -31,6 +31,7 @@ pass for the wrong reason:
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 
@@ -261,22 +262,45 @@ def test_wrapper_exports_states_no_markup_of_its_own():
             "thing that can diverge from it" % (rel, sorted(set(hits))))
 
 
-def test_qacard_is_the_only_design_wrapper_and_its_companion_files_ship():
+def test_every_design_wrapper_has_one_complete_companion_triad_and_vice_versa():
     wrapper = (ROOT / client_dist.WRAPPER_EXPORTS_REL).read_text(
         encoding="utf-8")
-    assert wrapper.count("export const QaCard") == 1, (
-        "QaCard is not exported exactly once")
-    assert "export const " not in wrapper.replace("export const QaCard", ""), (
-        "P5 stage 2 must stop after QaCard's early-signal wrapper")
+    exports = re.findall(r"^export const ([A-Za-z_$][\w$]*)\s*=", wrapper,
+                         re.MULTILINE)
+    assert exports, "wrapper-exports.js exports no design wrappers"
+    assert len(exports) == len(set(exports)), (
+        "design wrapper export(s) are repeated: %r" % exports)
 
-    for rel in client_dist.DS_SOURCE_RELS:
+    companions = client_dist.ds_sources(str(ROOT))
+    assert companions, "%s holds no companions" % client_dist.DS_SOURCE_DIR
+    by_export = {}
+    for rel in companions:
+        name = pathlib.Path(rel).name
+        suffix = next(s for s in client_dist.DS_SOURCE_SUFFIXES
+                      if name.endswith(s))
+        by_export.setdefault(name[:-len(suffix)], set()).add(suffix)
+
+    required = set(client_dist.DS_SOURCE_SUFFIXES)
+    for export in exports:
+        missing = sorted(required - by_export.get(export, set()))
+        assert not missing, "%s export is missing companion(s): %s" % (
+            export, ", ".join(missing))
+    for export, present in sorted(by_export.items()):
+        missing = sorted(required - present)
+        assert not missing, "%s companion set is missing companion(s): %s" % (
+            export, ", ".join(missing))
+        assert export in exports, (
+            "%s companion triad has no matching wrapper export" % export)
+
+    for rel in companions:
         source = ROOT / rel
         shipped = ROOT / client_dist.DS_DIR / source.name
         assert source.stat().st_size > 40, "%s is an empty-looking contract" % rel
         assert source.read_bytes() == shipped.read_bytes(), (
             "%s is not shipped byte-for-byte at %s" % (rel, shipped))
 
-    fixture = json.loads((ROOT / client_dist.DS_SOURCE_RELS[1]).read_text(
+    fixture = json.loads((ROOT / client_dist.DS_SOURCE_DIR /
+                          "QaCard.fixture.json").read_text(
         encoding="utf-8"))
     assert fixture["q"]["title"] and fixture["q"]["body"], (
         "QaCard fixture props do not exercise a real question")
