@@ -190,11 +190,13 @@ def _typed_blocker_ref(value):
 def _blocked_on_states(records):
     """Resolve task and question blockers against their distinct stores.
 
-    ``depends_on`` is intrinsically task-typed by its FK. ``blocked_on`` must
-    carry an exact prefix; legacy prose is UNTYPED rather than silently
-    defaulting to task state. Only ``question.status == 'answered'`` is clear.
-    ``answered_pending_fold`` stays distinct and blocking: a ruling that has
-    not been folded is not yet incorporated into the durable answer.
+    ``depends_on`` is intrinsically task-typed by its FK. Exact ``task:`` and
+    ``question:`` values in ``blocked_on`` resolve against their named store.
+    Legacy prose containing ``#N`` remains task-typed for compatibility, but
+    is also reported as untyped so it can be migrated. Only
+    ``question.status == 'answered'`` is clear. ``answered_pending_fold``
+    stays distinct and blocking: a ruling that has not been folded is not yet
+    incorporated into the durable answer.
 
     A task is "carrying a blocker" when it has non-empty ``blocked_on``
     prose OR a structured ``depends_on`` edge (#1054 — ``block`` writes the
@@ -210,7 +212,7 @@ def _blocked_on_states(records):
     states = {
         "landed": [], "still_open": [], "question_answered": [],
         "question_pending_fold": [], "question_unanswered": [],
-        "question_missing": [], "untyped": [],
+        "question_missing": [], "unknown": [], "untyped": [],
     }
     for record in carrying:
         blocker_ids = list(record.get("depends_on") or ())
@@ -219,13 +221,20 @@ def _blocked_on_states(records):
         if blocked_on:
             referent = _typed_blocker_ref(blocked_on)
             if referent is None:
-                states["untyped"].append(record["id"])
-                continue
-            kind, referent_id = referent
-            if kind == "task":
-                blocker_ids.append(referent_id)
+                legacy_ids = _named_blocker_ids(blocked_on)
+                if not legacy_ids and not blocker_ids:
+                    states["unknown"].append(record["id"])
+                    continue
+                if legacy_ids:
+                    states["untyped"].append(record["id"])
+                    blocker_ids.extend(legacy_ids)
             else:
-                question_status = record.get("question_statuses", {}).get(referent_id)
+                kind, referent_id = referent
+                if kind == "task":
+                    blocker_ids.append(referent_id)
+                else:
+                    question_status = record.get("question_statuses", {}).get(
+                        referent_id)
 
         if any(task_id not in landed_ids for task_id in blocker_ids):
             states["still_open"].append(record["id"])
@@ -269,7 +278,9 @@ def _blocked_on_report(records, expected_open=None):
         f"question answer pending fold: {ids_or_none('question_pending_fold')}\n"
         f"question unanswered: {ids_or_none('question_unanswered')}\n"
         f"question referent missing, unknown: {ids_or_none('question_missing')}\n"
-        f"untyped blocker referent, refused: {ids_or_none('untyped')}\n"
+        f"no id parseable, unknown: {ids_or_none('unknown')}\n"
+        f"WARNING legacy untyped blocker resolved as task: "
+        f"{ids_or_none('untyped')}\n"
     )
 
 

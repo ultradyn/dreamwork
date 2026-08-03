@@ -2304,6 +2304,9 @@ def test_answered_question_blocker_is_reported_as_answered_not_open(tmp_path, ca
             tx.questions.fold(
                 question_id, why="ruling incorporated", actor="test",
                 at="2026-08-03T00:02:00Z")
+    assert question_id == task_id, (
+        "precondition: the same integer names an open task and an answered "
+        "question, so only the typed referent can choose the right state")
 
     rc = ledger.main([
         "block", str(task_id), "--on", f"question:{question_id}",
@@ -2347,9 +2350,9 @@ def test_answered_pending_fold_remains_a_distinct_blocking_state(tmp_path, capsy
     assert f"WARNING question blocker answered: #{task_id}" not in report
 
 
-def test_untyped_new_blocker_is_refused_and_legacy_text_never_defaults_to_task(
+def test_untyped_new_blocker_is_refused_but_legacy_text_resolves_as_task(
         tmp_path, capsys):
-    """Close both routes for the silent task-default false green."""
+    """New ambiguity refuses; legacy task prose resolves and warns."""
     ledger_path = _cut_over_store(tmp_path)
     ledger.main(["file", "referent task", "--ledger", str(ledger_path)])
     ledger.main(["file", "blocked task", "--ledger", str(ledger_path)])
@@ -2368,15 +2371,21 @@ def test_untyped_new_blocker_is_refused_and_legacy_text_never_defaults_to_task(
     with ledger.open_database(
             ledger.task_store_spec(sp), access=ledger.Access.WRITE) as store:
         with store.transaction() as tx:
+            tx.tasks.land(
+                referent_task, note="legacy task blocker landed", actor="test",
+                at="2026-08-03T00:00:00Z")
             question_id = tx.questions.post(
                 title="Answered ruling", body_markdown="body", actor="test",
-                at="2026-08-03T00:00:00Z")
+                at="2026-08-03T00:00:01Z")
             tx.questions.answer(
                 question_id, body_markdown="yes", author="human",
-                at="2026-08-03T00:01:00Z")
+                at="2026-08-03T00:00:02Z")
             tx.questions.fold(
                 question_id, why="folded", actor="test",
-                at="2026-08-03T00:02:00Z")
+                at="2026-08-03T00:00:03Z")
+    assert question_id == referent_task, (
+        "precondition: the same integer names a landed task and an answered "
+        "question, so only the referent kind can determine the result")
     import sqlite3
     conn = sqlite3.connect(str(sp))
     conn.execute(
@@ -2387,8 +2396,12 @@ def test_untyped_new_blocker_is_refused_and_legacy_text_never_defaults_to_task(
 
     ledger.main(["counts", "--ledger", str(ledger_path)])
     report = capsys.readouterr().err
-    assert f"untyped blocker referent, refused: #{blocked_task}" in report
+    assert f"WARNING every named blocker landed: #{blocked_task}" in report
+    assert (
+        f"WARNING legacy untyped blocker resolved as task: #{blocked_task}"
+        in report)
     assert f"some named blocker still open: #{blocked_task}" not in report
+    assert f"question blocker answered: #{blocked_task}" not in report
 
 
 def test_reprioritise_cli_nonexistent_id_is_exit1(tmp_path, capsys):
