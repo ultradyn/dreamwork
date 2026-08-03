@@ -5584,3 +5584,62 @@ continuing a branch shows its own subject files, a lane starting from master
 shows `__pycache__` from importing, and a wedged lane shows nothing.
 
 **When a probe returns the same number for every subject, suspect the probe.**
+
+**A FILTERED LIST IS A CHECK, AND A FILTER THAT SILENTLY RETURNS A SUBSET FAILS
+THE SAME WAY A CHECK THAT EXAMINES NOTHING DOES.** Measured 2026-08-03, three
+times in one hour, all mine. (1) A lane-activity probe keyed on
+`<worktree>/lane.lock`; the file is at `<worktree>/.dreamwork/lane.lock`, so
+every lane read "no lane.lock yet" — a uniform verdict produced by finding no
+subject, and it was itself the *fix* for an earlier non-discriminating version
+of the same probe. (2) A follow-up listing of react-port tasks carried no state
+filter at all, so already-landed tasks were presented to me as dispatch
+candidates; I began writing a dependency edge against one before the ledger
+refused for an unrelated missing argument. (3) `ledger.py list --unblocked`
+OMITS blocked tasks rather than marking them, so a range query returned 2 of 27
+react-port ids and I nearly reported the React port — the declared main
+near-term goal — as one task from complete. The true count was 21 open. The
+tell is the same in all three and it is NOT "the number looked wrong": the
+number looked PLAUSIBLE. What distinguishes them is asking, before reading any
+result, **what would make this list come back short, and would I be able to
+tell?** `land_lane`'s own selection check states the general form better than I
+can — "an empty selection is indistinguishable from broken derivation" — and on
+the same afternoon it REFUSED one of my dispatches on exactly that ground.
+
+**CORRECTION TO THE ENTRY ABOVE ABOUT `lane.lock` AS "the honest reference": it
+is not.** Measured the same day, in both directions. `glm-1153ident` sat ELEVEN
+MINUTES with `lane.lock` as its newest file and zero commits — it was reading
+the codebase, and went on to deliver 151 passing tests. `glm-1066label` showed a
+ZERO-BYTE runner transcript after nine minutes — the transcript is written at
+completion, not streamed — while `ps` showed 31 seconds of accumulated CPU. So
+worktree mtime, commit count, and transcript size ALL fail to separate "wedged"
+from "thinking". The signal that did work was **accumulated CPU time**: a
+permission-wedged runner is blocked, not computing. A lane that has written
+nothing is not evidence of a lane that is doing nothing.
+
+**A FOLD NOTE CITING A PRE-REBASE SHA IS REFUSED, AND THE REFUSAL IS
+LOAD-BEARING.** The pre-gate rebase rewrites every commit on the branch, so a
+sha quoted from a lane's report — written BEFORE its final rebase — no longer
+exists on master. Twice on 2026-08-03 the reach hook caught me citing one. The
+fix is to describe the commit rather than name it, or cite the preservation TAG,
+which is a ref and survives. In a fold note, cite only the MERGE sha the gate
+printed, plus tags; anything a lane quoted about its own history is pre-rebase
+by construction.
+
+**A BRIEF IS A CLAIM ABOUT THE TREE, AND IT GOES STALE AS FAST AS THE TREE
+MOVES.** `#1006` was dispatched 2026-08-03 with a Lane-owns line reused from a
+brief written the previous day. The lane refused to work and reported that the
+`/goals` renderer had moved to `dev/build/src/goals.js`; `client/views.js` held
+only the dashboard chip. It was right, and it cost a dispatch. **The React port
+is currently the thing moving the tree fastest, so a day-old brief for any
+react-adjacent surface must have its paths re-verified before dispatch.** The
+brief's own instruction — "if a premise here does not hold, STOP and say so;
+stopping is a successful delivery" — is what produced the clean outcome instead
+of confidently wrong work.
+
+**A SECTION HEADING CAN BE LOAD-BEARING FOR A TOOL, NOT ONLY FOR A READER.** A
+lane reported that the briefs' "Direction 2" heading reads as *how to pass
+review* when every bullet is a thing NOT to do. I renamed it and both next
+dispatches were REFUSED: `dev/brief.py` walks the authored core looking for a
+direction-2 construction and finds it BY THAT NAME. Keep the token and add the
+polarity after it. Before renaming anything that appears in a template, grep for
+what parses it.
