@@ -6349,3 +6349,37 @@ Two things to carry:
   `+` while being substantively landed). So let `-` authorise and keep refusing on `+`: the common case
   clears and no new deletion authority is created. A widened check that starts saying yes on weak
   evidence would be strictly worse than today's over-refusal.
+
+## A test that reads production source and asserts a substring is a prose check wearing behaviour's clothes
+
+Occasioned by `#1155` round 10's review, 2026-08-04.
+
+D3 was meant to pin a boundary statement so it could not drift. It called `inspect.getsource` — which
+reads as behavioural, because it genuinely opens the production module — and then asserted that
+`_descends_from` **appears somewhere** in that text, plus its own copied list of gap phrases.
+
+The reviewer ran the separating experiment in a disposable worktree, and both halves matter:
+
+- **`_descends_from` changed to return `False`** → D3 green. The real descendant fixture went red.
+- **Descendant selection disabled with the call left in unreachable code** → D3 green, `2 passed`.
+
+The second injection is the one to remember. It defeats every substring check by construction: the
+token is still in the file, so any assertion about the *text* still holds, while the *behaviour* is
+gone. **That is the discriminating injection for this whole class**, and it is cheap — leave the call
+site textually intact and make it unreachable.
+
+So the reusable test is: **to find out whether a source-inspecting test is behavioural, disable the
+behaviour without changing the text.** If the test stays green, it guards prose. That is not
+necessarily wrong — a drift check for documentation is a legitimate job — but it must not be named,
+described, or counted as verification of the mechanism it quotes.
+
+Two related shapes already recorded, and this is the third face of the same thing:
+
+- `#1175` — a fix whose tests were built from its own docstring tested the docstring.
+- `#1177` — a check asking sha identity where the workflow required patch identity.
+- Here — a check reading the source text where the claim was about what the code *does*.
+
+Each is a substitute standing in for the production path: the docstring for the data, the sha for the
+patch, the source text for the behaviour. The separating question does not change — **would this go red
+if the thing it claims to guard were broken?** — but the substitutes are inventive enough that asking
+it in the abstract is not enough. Construct the break.
