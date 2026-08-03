@@ -416,17 +416,28 @@ any other `doc-map.md` WARN is a real finding.
   path and let it be folded" this morning and it is not survivable advice on its own — followed
   literally, it guarantees a refusal.
 
-  **The resolution is about WHEN, not WHO.** The row is still the coordinator's, and lanes still must
-  not edit the file — two lanes each appended one slug to that single enumerated line on 2026-08-03,
-  both correctly, and collided at the merge gate; the merge left a stray diff3 marker on master that
-  a full lint run passed clean over (`#1126`). **Two lanes cannot append to the same line.** What was
-  missing is that the coordinator must add the slug **immediately before gating that branch**, in the
-  same adjacency window as the rebase (`#1055`) — not "at merge" in some unspecified later sense.
+  **THE SLUG AND THE PLAN FILE MUST LAND IN THE SAME COMMIT.** I tried "coordinator adds the row
+  just before gating" and measured it wrong within the hour: adding the slug while the file is not
+  yet on master makes the SAME test fail from the other side —
+  `plans row names 1 plan(s) with no file: gate-worktree — landed and pruned, or a typo`. **Both
+  orderings redden master**, because the check is symmetric:
 
-  So: name your new doc path prominently in your completion report, and expect the gate to be run
-  only after the row lands. If a brief tells you to add the slug yourself, say so in your report; the
-  file has two kinds of row — a per-plan *description* row and the single enumerated *plan-slug
-  list* — and it is the second, which looks like a harmless one-word append, that collides.
+  | on master | lint says | test |
+  |---|---|---|
+  | file, no slug | `plans row omits N plan(s) that exist` | FAILS |
+  | slug, no file | `plans row names N plan(s) with no file` | FAILS |
+  | both, or neither | clean | passes |
+
+  So there is no safe coordinator-only window, and no safe lane-only window either. **If your branch
+  adds a file under `.dreamwork/docs/plans/`, add your slug to the enumerated list in that same
+  branch** — alphabetically, one word, touching nothing else in the file. This is the one deliberate
+  exception to "do not edit `doc-map.md`", and it exists because the alternative is a red master.
+
+  Expect a CONFLICT on that line if another docs lane is in flight: on 2026-08-03 two lanes each
+  appended one slug to it and collided, and the hand-merge left a stray diff3 marker that a full lint
+  run passed clean over (`#1126`). **Resolve it by taking the union of the slugs and re-sorting** —
+  never by taking one side, which silently drops the other lane's plan. The per-plan *description*
+  rows remain the coordinator's; only the enumerated slug list is yours.
 
 **Lane bars are command-, snapshot-, and interpreter-relative.** Run `python3 lint.py`: require
 NO ERRORs and compare the complete WARN row set against the measured baseline, not only the trailer
