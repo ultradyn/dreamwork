@@ -2982,7 +2982,8 @@ class BatchOutcome:
     """The verdict for one entry, carried to the summary table unchanged.
 
     States must not collapse (#136): landed / landed-not-retired / refused /
-    rebase-conflict / abort-failed / skipped are six outcomes. ``rebase-conflict`` means the
+    rebase-conflict / abort-failed / skipped are six outcomes.
+    ``rebase-conflict`` means the
     rebase conflicted AND the abort restored the worktree's attachment and
     clean state; ``abort-failed``
     means a partial rebase was left that the abort could NOT clean up — a
@@ -3458,13 +3459,18 @@ def land_batch(
     conflicts = sum(1 for o in outcomes if o.state == "rebase-conflict")
     abort_failed = sum(1 for o in outcomes if o.state == "abort-failed")
     skipped = sum(1 for o in outcomes if o.state == "skipped")
+    merge_shas = ",".join(
+        o.base_after
+        for o in outcomes
+        if o.state in {"landed", "landed-not-retired"}
+    ) or "none"
 
     print(f"\n{'=' * 60}")
     print(
         f"batch summary: attempted={len(outcomes)} landed={landed} "
         f"landed-not-retired={landed_not_retired} refused={refused} "
         f"rebase-conflict={conflicts} "
-        f"abort-failed={abort_failed} skipped={skipped}"
+        f"abort-failed={abort_failed} skipped={skipped} merges={merge_shas}"
     )
     print(f"{'=' * 60}")
     markers = {

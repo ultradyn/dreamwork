@@ -4096,9 +4096,9 @@ def test_batch_post_advance_retirement_failure_names_merge_and_distinct_outcome(
     #1197 IGC, context: a post-advance cleanup failure must remain loud.
 
     | Idea | All | summary-only next action | exit-code script | loud cleanup debt |
-    | distinct state + exit 2 | yes | clean retained worktree | stop distinctly | yes |
-    | distinct state + exit 1 | no | clean retained worktree | re-gate risk | yes |
-    | advisory exit 0 | no | clean retained worktree | false success | no |
+    | distinct state + exit 2 | ✔ | clean retained worktree | stop distinctly | ✔ |
+    | distinct state + exit 1 | ✘ | clean retained worktree | re-gate risk | ✔ |
+    | advisory exit 0 | ✘ | clean retained worktree | false success | ✔ |
     """
     root, lane = landing_repo
     _write(
@@ -4120,6 +4120,7 @@ def test_batch_post_advance_retirement_failure_names_merge_and_distinct_outcome(
     assert "landed=0" in summary
     assert "landed-not-retired=1" in summary
     assert "refused=0" in summary
+    assert f"merges={merged}" in summary
     branch_line = next(l for l in result.stdout.splitlines() if l.startswith("  lane:"))
     assert "LANDED-NOT-RETIRED" in branch_line
     assert f"merge={merged}" in branch_line
@@ -4142,6 +4143,7 @@ def test_batch_premerge_gate_refusal_stays_refused_without_merge_sha(tmp_path: P
     assert "landed=0" in summary
     assert "landed-not-retired=0" in summary
     assert "refused=1" in summary
+    assert "merges=none" in summary
     branch_line = next(l for l in result.stdout.splitlines() if l.startswith("  lane:"))
     assert "REFUSED" in branch_line
     assert "merge=" not in branch_line
@@ -4173,8 +4175,8 @@ def test_batch_summary_reports_all_six_outcomes_distinguishably(tmp_path: Path):
     """#136: the batch has SIX outcomes (landed / landed-not-retired /
     refused / rebase-conflict / abort-failed / skipped), kept distinguishable.
     This test constructs a batch that exercises four of them in one run and
-    asserts the fifth (abort-failed) is stated at zero, so a pass is never
-    silent about whether a worktree was stranded.
+    asserts the other two are stated at zero, so a pass is never silent about
+    whether cleanup debt or a stranded worktree exists.
 
     Entries: (1) a doc-only lane that lands; (2) a doc-only lane that conflicts
     with #1 on rebase; (3) a code lane with no tests that refuses at selection;
