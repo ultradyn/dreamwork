@@ -152,6 +152,7 @@ class TestTracksTheFile:
         assert "2 open" in few
         assert "39 open" in many
 
+
     def test_live_counts_follow_the_process_table(self, tmp_path,
                                                   monkeypatch):
         target = make_target(tmp_path, posture=HOT)
@@ -191,6 +192,50 @@ class TestTracksTheFile:
         out = tick_line.facts(target)
         assert "recorded" not in out
         assert "stale-" not in out
+
+
+class TestWorktreeSizeDirection:
+    """Growth is loud; shrinkage and an expected nonzero floor are calm."""
+
+    @staticmethod
+    def _target(tmp_path):
+        target = Path(make_target(tmp_path / "repo", posture=HOT))
+        root = tmp_path / ".worktrees"
+        root.mkdir()
+        return target, root
+
+    def test_growth_flags_regression_and_shrink_does_not(self, tmp_path):
+        grow_target, grow_root = self._target(tmp_path / "grow")
+        payload = grow_root / "payload"
+        payload.write_bytes(b"a" * 4096)
+        before = tick_line._worktrees_size_fact(str(grow_target))
+        payload.write_bytes(b"b" * (1024 * 1024))
+        growth = tick_line._worktrees_size_fact(str(grow_target))
+
+        shrink_target, shrink_root = self._target(tmp_path / "shrink")
+        payload = shrink_root / "payload"
+        payload.write_bytes(b"c" * (1024 * 1024))
+        tick_line._worktrees_size_fact(str(shrink_target))
+        payload.write_bytes(b"d" * 4096)
+        shrink = tick_line._worktrees_size_fact(str(shrink_target))
+
+        assert "REGRESSION" not in before
+        assert "WORKTREE-SIZE-REGRESSION +" in growth
+        assert "REGRESSION" not in shrink
+        assert "new durable low-water" in shrink
+
+    def test_unreadable_root_is_unmeasured_not_zero(self, tmp_path,
+                                                    monkeypatch):
+        target, _root = self._target(tmp_path)
+
+        def unreadable(_root):
+            raise PermissionError("fixture root is unreadable")
+
+        monkeypatch.setattr(tick_line, "_allocated_worktree_bytes", unreadable)
+        out = tick_line.facts(str(target))
+        assert "WORKTREES UNRESOLVED (PermissionError: " \
+               "fixture root is unreadable)" in out
+        assert "worktrees 0" not in out
 
 
 class TestNoUnqualifiedFleetSize:
