@@ -220,6 +220,19 @@ def test_preflight_property_also_catches_git_work_tree(
     assert lane.is_dir()
 
 
+def test_preflight_refuses_when_git_cannot_resolve_a_worktree(landing_repo):
+    root, lane = landing_repo
+    _git(root, "config", "core.bare", "true")
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 1
+    assert "REFUSE phase=preflight: Git could not resolve a worktree" in result.stderr
+    assert f"invoked={root.resolve()}; resolved=UNRESOLVED" in result.stderr
+    assert "base: UNTRUSTED (repository identity was not established)" in result.stderr
+    assert lane.is_dir()
+
+
 @pytest.mark.parametrize(
     ("generator", "message"),
     [
