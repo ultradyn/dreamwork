@@ -6423,3 +6423,43 @@ count. All three, because the summary line can be stale from a previous run and 
 prints `no tests ran` and exits 0. This is now in `briefs/boilerplate.md` rather than in whichever
 brief I happened to remember it in — the old wording survived as long as it did because it lived only
 in hand-written briefs, so it was re-typed rather than re-examined.
+
+## I measured the input, predicted the output, and filed the prediction as a finding
+
+Occasioned by `#1177`, closed 2026-08-04 as a false premise by its own lane's premise-stop.
+
+I filed a P2 saying `dev/reap.py` asks **sha** identity where this loop's carry-forward workflow
+requires **patch** identity, and that this was why 37 worktrees could not be reaped. I wrote up the
+asymmetric fix in detail: let `-` authorise, keep refusing on `+`, report the counts either way.
+
+`reap.py:85` has called `git cherry` since `db6078e8`. The design I specified is the design it already
+implements. The lane read the code, stopped with zero changes, and was right.
+
+**The evidence I had was real, and every refusal I saw was correct.** I ran `reap.py` against several
+worktrees, got `REFUSE: unmerged commit would become easier to delete unseen`, and wrote *"refuses
+every one of them."* Those worktrees genuinely held `+` commits; the tool was doing its job.
+
+**And I had already found the separating case, and did not run it.** The task text itself records
+`cx-1006r2rev` at 6 `-` and calls it *"provably safe to reap and `reap.py` cannot say so."* That last
+clause is the whole error. I measured `git cherry` — the **input** — computed what the tool ought to
+say, and asserted that as what it **did** say. One `reap.py --check` on that path would have printed
+`reap gate OK` and ended it. It took ten seconds when I finally ran it.
+
+**A tool's behaviour is measured by running the tool.** Reasoning from its inputs to its verdict is
+building a model and then reporting the model's output as an observation. When the claim is *"the tool
+gets this wrong"*, the only evidence is the tool getting it wrong, on the case you say it gets wrong.
+
+This is the same family as the four substitutes recorded above — `#1175`, `#1177`, `#1155` D3, `#1178`
+— a cheap observable standing in for the property. Here the substitute was **my model of the tool
+standing in for the tool**, which is the one that feels least like a substitute, because the model was
+correct about everything except the conclusion.
+
+Two things that worked and should be repeated:
+
+- **The premise-stop paid for itself.** A brief that says *"if a premise here is false, STOP and
+  report"* turned a wasted implementation round into a ten-minute correction. Keep writing it.
+- **Acting on the false task still produced the real deliverable.** Sweeping all 121 worktrees with
+  `--check` found 39 that passed the gate cleanly; reaping them freed **1499 MB** (4694 → 3195 MB) with
+  no `--force` and no policy change, while 80 correctly refused. The goal behind the task was reachable
+  the whole time — by *using* the tool I had wrongly accused. Filed the real growth driver as `#1180`:
+  nothing ever calls the reaper.
