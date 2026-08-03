@@ -33,7 +33,9 @@ sys.path.insert(0, str(ROOT))
 
 from dreamwork_db import Access, DatabaseError, StoreSpec, open_database  # noqa: E402
 from dreamwork_db.tasks import TaskRepository  # noqa: E402
+import lane_liveness  # noqa: E402
 from lane_liveness import LivenessUnknown, pid_matches_lane  # noqa: E402
+from worktree_paths import worktree_roots  # noqa: E402
 
 
 CONTRACT_PATH = ROOT / "briefs" / "boilerplate.md"
@@ -545,6 +547,139 @@ def persist_prompt(prompt: str, briefs_dir: Path | None = None) -> Path:
     return brief
 
 
+# --- Review dispatch: liveness + sha pin (#1056) ---------------------------
+#
+# A review dispatched against a still-working lane freezes a mid-flight commit
+# and reports fixed findings as unfixed: the lane commits throughout its work
+# (that is the point of small increments), so commit presence carries no
+# information about completion.  Two halves, both named in the filing:
+#
+# 1. PROCESS ABSENCE, not commit presence.  Before persisting a review, scan
+#    for a live RUNNER process whose cwd is inside the branch's worktree.  This
+#    WARNS rather than refuses — a genuinely hung lane must still be reviewable,
+#    and a refuse with no escape hatch gets worked around (worse than a warning,
+#    #1056 Direction 2).  The sha pin below is the always-on backstop, so a
+#    coordinator that proceeds past the warn still leaves staleness discoverable.
+#    Reads /proc/<pid>/cwd NEVER argv: a ccc runner's argv embeds the whole
+#    brief, so any argv search for a path matches the lane itself (#729 trap,
+#    bitten four times this session).  Reuses lane_liveness's classifier
+#    (_is_lane_runner, _ancestor_pids, read_proc_cwd) so this cannot diverge
+#    from the lock/cwd channels; #1113 relocates that logic but re-exports the
+#    old names, so importing from lane_liveness works either way.
+# 2. PIN THE SHA.  Capture git rev-parse <branch> at dispatch, inject it into
+#    the prompt head, and record it in the receipt.  Then a mid-flight commit
+#    produces a VISIBLE mismatch (the reviewer states the sha it reviewed; the
+#    receipt records what was pinned) instead of a silently stale verdict.
+#    Liveness can race; a sha mismatch is discovered every time, after the fact.
+
+
+def _coordinator_root() -> Path:
+    """The main checkout root (parent of its .dreamwork dir)."""
+    return _briefs_dir().parent.parent.parent
+
+
+def _worktrees_for_branch(branch: str, coordinator_root: Path) -> tuple[Path, ...]:
+    """Canonical worktree paths for ``branch`` under both worktree roots.
+
+    A path that does not exist is still returned: a reaped worktree has no live
+    runner, so the scan examines it and finds nothing (#136 — no lane / lane
+    live / lane finished are distinct, and "worktree exists" collapses them).
+    """
+    roots = worktree_roots(coordinator_root.resolve())
+    return tuple(root / branch for root in roots)
+
+
+def _resolve_pinned_sha(branch: str, coordinator_root: Path) -> str | None:
+    """``git rev-parse <branch>`` at dispatch; None if it cannot be resolved.
+
+    A review from a different machine, or of a branch not present in this
+    checkout, resolves nothing — the pin is best-effort and the caller warns
+    that the backstop is absent for that dispatch rather than refusing.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(coordinator_root), "rev-parse", "--verify", branch],
+            capture_output=True, text=True, check=False,
+        )
+    except OSError:
+        return None
+    if result.returncode != 0:
+        return None
+    sha = result.stdout.strip()
+    return sha if re.fullmatch(r"[0-9a-f]{7,40}", sha) else None
+
+
+_PINNED_SHA_LINE = (
+    "Review sha (pinned at dispatch, #1056): {sha} — "
+    "review THIS commit; state the sha you actually reviewed in your verdict, "
+    "and report (do not silently resolve) any mismatch with the branch tip.\n\n"
+)
+
+
+def _inject_pinned_sha(prompt: str, review_frame: str, sha: str | None) -> str:
+    """Insert the pinned-sha line into the prompt head, before the review frame.
+
+    The review frame must remain the final prompt section (validate_review_prompt
+    enforces that), so the line is inserted immediately before it, never after.
+    Returns the prompt unchanged when there is no sha or no frame to anchor to.
+    """
+    if not sha:
+        return prompt
+    idx = prompt.find(review_frame)
+    if idx < 0:
+        return prompt
+    return prompt[:idx] + _PINNED_SHA_LINE.format(sha=sha) + prompt[idx:]
+
+
+def _review_lane_live(
+        branch: str, coordinator_root: Path, *,
+        process_entries: list[str] | None = None,
+        read_cwd=None, read_cmdline=None, skip_pids: set[int] | None = None,
+) -> tuple[bool, int, tuple[Path, ...]]:
+    """Whether a live lane runner's cwd is inside ``branch``'s worktree (#1056).
+
+    Process absence, not commit presence.  A live runner is a known RUNNER
+    process (ccc/claude/grok/codex via lane_liveness._is_lane_runner) holding a
+    worktree as its cwd — the same notion the lock/cwd channels use, reused so
+    this cannot diverge.  Reads /proc/<pid>/cwd (never argv); excludes self and
+    ancestors (lane_liveness._ancestor_pids, #729); returns the count of
+    processes examined so "probed nothing" cannot read as "found none" (#868).
+
+    Returns ``(live, examined, worktrees)``: live is True only when a
+    non-ancestor runner's cwd is inside one of the branch's worktree paths.
+    A liveness check cannot prove a lane is *done*, only that no runner is
+    present (#651) — the caller words its message as the latter.
+    """
+    candidates = _worktrees_for_branch(branch, coordinator_root)
+    cand = tuple(str(p) for p in candidates)
+    try:
+        entries = process_entries if process_entries is not None else os.listdir("/proc")
+    except OSError as exc:
+        raise DispatchFault(
+            f"could not scan for a live review lane: cannot enumerate /proc: {exc}"
+        ) from exc
+    pids = [int(entry) for entry in entries if entry.isdigit()]
+    cwd_reader = read_cwd or lane_liveness.read_proc_cwd
+    cmd_reader = read_cmdline or (lambda pid: Path("/proc/%d/cmdline" % pid).read_bytes())
+    skip = skip_pids if skip_pids is not None else lane_liveness._ancestor_pids()
+    examined = 0
+    for pid in pids:
+        if pid in skip:
+            continue
+        examined += 1
+        cwd = cwd_reader(pid)
+        if cwd is None or cwd.endswith(" (deleted)"):
+            continue
+        if not any(cwd == c or cwd.startswith(c + os.sep) for c in cand):
+            continue
+        try:
+            if lane_liveness._is_lane_runner(cmd_reader(pid)):
+                return True, examined, candidates
+        except OSError:
+            continue
+    return False, examined, candidates
+
+
 # --- Review dispatch persistence (#1112) -----------------------------------
 #
 # Lane dispatches are bound at three points: brief.py emits frame.md,
@@ -603,12 +738,15 @@ def persist_review_prompt(
     prompt: str, branch: str, round_num: int, *,
     review_frame: str | None = None,
     dispatches_dir: Path | None = None,
+    pinned_sha: str | None = None,
 ) -> Path:
     """Write a validated review dispatch prompt and its JSON receipt (#1112).
 
     Returns the path of the persisted ``.prompt.md``.  The companion ``.json``
-    carries branch, round, the prompt digest, and the frame digest so a guard
-    can verify the frame that was validated at persistence time.
+    carries branch, round, the prompt digest, the frame digest, and the
+    pinned review sha (#1056) so a guard can verify the frame that was
+    validated at persistence time and compare the pinned sha to the sha a
+    reviewer later states it reviewed.
 
     Idempotent: re-persisting the identical prompt for the same branch/round is
     a no-op (returns the existing path); a byte mismatch is a refusal.
@@ -629,6 +767,7 @@ def persist_review_prompt(
         "prompt_sha256": digest,
         "prompt_bytes": len(prompt.encode("utf-8")),
         "frame_sha256": hashlib.sha256(review_frame.encode("utf-8")).hexdigest(),
+        "pinned_sha": pinned_sha,
     }
     try:
         dispatches_dir.mkdir(parents=True, exist_ok=True)
@@ -744,15 +883,50 @@ def main(argv: list[str] | None = None) -> int:
         try:
             prompt = _read(args.review_prompt, "review prompt")
             review_frame = _read(REVIEW_FRAME_PATH, "review frame")
+            coordinator_root = _coordinator_root()
+            # #1056: pin the review to an explicit sha and check the lane is
+            # finished by process absence, not commit presence.  A lane commits
+            # throughout its work, so commit presence carries no information
+            # about completion; a review dispatched mid-flight freezes a
+            # mid-flight commit and reports fixed findings as unfixed.
+            pinned_sha = _resolve_pinned_sha(branch, coordinator_root)
+            if pinned_sha is None:
+                print(
+                    f"review dispatch warning: could not resolve sha for branch "
+                    f"{branch}; the pinned-sha backstop is ABSENT for this "
+                    f"dispatch — a mid-flight commit would not be detectable (#1056)",
+                    file=sys.stderr,
+                )
+            prompt = _inject_pinned_sha(prompt, review_frame, pinned_sha)
+            live, examined, worktrees = _review_lane_live(
+                branch, coordinator_root)
+            if live:
+                present = ", ".join(str(p) for p in worktrees if p.is_dir()) or str(worktrees[0])
+                print(
+                    f"review dispatch warning: a live lane runner is present in "
+                    f"{present} (branch {branch}); the lane may still be "
+                    f"committing — examined {examined} process(es), #1056. "
+                    f"Dispatch proceeds (warn, not refuse): the pinned sha is "
+                    f"the backstop. Re-dispatch once the lane exits for a clean verdict.",
+                    file=sys.stderr,
+                )
+            elif examined == 0:
+                print(
+                    f"review dispatch warning: liveness scan examined 0 "
+                    f"processes for branch {branch} — NO VERDICT on whether a "
+                    f"lane is live (#868); the pinned sha is the backstop (#1056)",
+                    file=sys.stderr,
+                )
             persist_review_prompt(prompt, branch, args.review_round,
-                                  review_frame=review_frame)
+                                  review_frame=review_frame, pinned_sha=pinned_sha)
         except DispatchFault as exc:
             print(f"review dispatch refused: {exc}", file=sys.stderr)
             return 2
         digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
         print(
             f"review dispatch persisted: branch={branch}; round={args.review_round}; "
-            f"digest={digest}; exact prompt bytes preserved"
+            f"digest={digest}; pinned_sha={pinned_sha}; "
+            f"exact prompt bytes preserved"
         )
         return 0
 
