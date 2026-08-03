@@ -1127,6 +1127,49 @@ def _requirement_line(diff: Diff) -> str:
     )
 
 
+def _redproof_authority_note(required: int) -> str:
+    """State plainly that the gate's DERIVED requirement is the authority and the
+    lane's prose report was NOT an input (#1140, #651).
+
+    The gate derives the requirement from the branch diff — the same
+    ``_classify_diff`` that ``dev/redproof.py handoff`` calls — and runs
+    ``check --require <derived>`` against the lane worktree's registry. What it
+    does NOT do is read the lane's prose hand-off: ``.dreamwork/inbox.md`` is
+    gitignored and does not travel to the gate worktree (#1131 found no transport
+    at either launch-lane or brief-build, and the gate worktree confirms it: the
+    only inputs are the branch commits and the lane worktree's filesystem).
+
+    So the gate cannot establish WHICH command produced the lane's quoted number.
+    This line says so rather than letting the gate's silence read as a
+    verification it did not perform (#651 — a guard whose silence names a failure
+    mode it cannot detect). The substantive verification is the registry: a lane
+    that did real red-proof work (begin/observe/restore) passes whether or not it
+    ran ``handoff``, because the registry reflects the work; a lane that skipped
+    red-proof entirely is refused at ``require > 0``. The residual hole is that a
+    correct-by-luck prose claim is not caught — but it cannot affect the landing
+    decision, because the prose is not an input to it.
+    """
+    if required == 0:
+        return (
+            "red-proof authority: 0 injections were REQUIRED (derived from the "
+            "branch diff) and dev/redproof.py check confirmed none was owed; "
+            "the lane's prose hand-off report was NOT an input to this gate "
+            "(it is gitignored and does not travel to the gate worktree), so "
+            "the gate cannot establish which command produced the lane's quoted "
+            "number"
+        )
+    return (
+        f"red-proof authority: {required} injection(s) were REQUIRED (derived "
+        "from the branch diff — not taken from the lane's prose) and "
+        "dev/redproof.py check verified the registry against the lane worktree; "
+        "the lane's prose hand-off report was NOT an input to this gate (it is "
+        "gitignored and does not travel to the gate worktree), so the gate "
+        "cannot establish which command produced the lane's quoted number — a "
+        "matching integer from a stale paste or from recollection is not "
+        "detected by the gate"
+    )
+
+
 def _derived_tests_line(
     diff: Diff,
     *,
@@ -2209,6 +2252,11 @@ def land(
             + f"; preflight tip={branch_sha}; branch now={audited_branch_sha or 'UNREADABLE'}",
         )
     print(f"red-proof-history: PASS; {population}")
+    # State plainly what the red-proof gate DID and DID NOT verify, so its
+    # silence does not read as a prose verification it never performed (#651).
+    # The requirement is derived from the diff (the same _classify_diff handoff
+    # uses) and checked against the registry; the lane's prose is not an input.
+    print(_redproof_authority_note(required))
     passed.append("red-proof-history")
 
     update_gate_breadcrumb("provisional-merge")

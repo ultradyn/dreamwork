@@ -3139,3 +3139,58 @@ def test_real_sigkill_leaves_exact_scratch_and_recovery_removes_it(landing_repo)
     assert f"removed exact registered gate worktree {scratch}" in result.stderr
     assert not scratch.exists()
     assert not crumb.exists()
+
+
+# ---------------------------------------------------------------------------
+# #1140: the gate derives the requirement and runs check, but never ingests the
+# lane's prose hand-off. Its silence read as a prose verification it never
+# performed (#651). The authority note states plainly what the gate verified
+# (the registry against a derived requirement) and what it did NOT (the prose,
+# which is gitignored and does not travel). These tests pin that line so a
+# regression that lets the gate read as a prose verification is caught.
+def test_gate_prints_authority_note_that_prose_was_not_an_input(doc_only_repo):
+    """A doc-only lane (require 0) lands, and the gate prints a line stating the
+    prose hand-off was NOT an input. #1140/#651: without this line the gate's
+    silence reads as 'the lane's quoted number was verified', which it was not —
+    the requirement was derived from the diff and checked against the registry."""
+    root, lane = doc_only_repo
+    result = _run(root, "test_named.py")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "red-proof requirement: 0 injections REQUIRED" in result.stdout
+    # The discriminating authority line: it names BOTH what was derived and what
+    # was not consulted. A bare "verified" string would not satisfy either half.
+    assert "red-proof authority: 0 injections were REQUIRED (derived from the" in result.stdout
+    assert "prose hand-off report was NOT an input to this gate" in result.stdout
+
+
+def test_authority_note_responds_to_a_stale_paste_without_affecting_the_landing(
+    landing_repo,
+):
+    """A binding lane (require 1) with a real, restored red-proof lands, and the
+    authority note names the residual hole: a matching integer from a stale paste
+    or recollection is not detected by the gate. The lane still LANDS — the note
+    is a statement of the gate's authority boundary, not a new refusal."""
+    root, lane = landing_repo
+    result = _run(root, "test_named.py")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "red-proof requirement: 1 injection required" in result.stdout
+    # The require>0 variant of the authority note names the residual hole
+    # explicitly (#1140 direction 2): a stale paste is the open false-green.
+    assert "1 injection(s) were REQUIRED (derived from the branch diff" in result.stdout
+    assert "stale paste or from recollection is not detected by the gate" in result.stdout
+
+
+def test_authority_note_does_not_claim_to_have_verified_the_lane_ran_handoff(doc_only_repo):
+    """#651: the authority note must NOT name a failure mode it cannot detect.
+    The gate cannot establish which command produced the lane's prose, so the
+    note says so. A claim like 'the lane ran handoff' would be #651's shape."""
+    root, lane = doc_only_repo
+    result = _run(root, "test_named.py")
+    assert result.returncode == 0, result.stdout + result.stderr
+    note_lines = [
+        line for line in result.stdout.splitlines()
+        if line.startswith("red-proof authority:")
+    ]
+    assert len(note_lines) == 1, f"expected exactly one authority line, got {note_lines}"
+    # It must name what it CANNOT establish, not assert it did.
+    assert "cannot establish which command produced" in note_lines[0]

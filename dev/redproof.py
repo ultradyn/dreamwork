@@ -2058,6 +2058,12 @@ def handoff(cwd: Path | None, *, base: str | None = None,
     require = derived["require"]
     binding = derived["binding"]
     print("=== redproof handoff — derive the requirement, then check ===")
+    # Carry HEAD identity so a reader of the quoted block can detect a stale
+    # paste: if this HEAD is not the branch tip (the lane committed again after
+    # running handoff), the block describes a tree that no longer exists (#1131).
+    # This is a read aid, not a gate input — the gate derives its own number and
+    # never consults this block (#1140).
+    print(f"audited HEAD: {head}")
     print(f"derived requirement: {require} injection(s) owed; "
           f"{len(derived['changed'])} changed path(s), "
           f"{len(binding)} binding, {len(derived['inert'])} inert doc.")
