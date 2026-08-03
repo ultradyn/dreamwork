@@ -5,9 +5,9 @@ the current route/state/event/motion ownership, and chooses the cut line for a
 native QaCard family. It does not convert a surface, propose markup, or claim a
 browser behaviour was verified.
 
-**Pinned to sha `f5c44ee84b2a640f9acefabf1da18a8b18e470fe` (branch tip ==
-local `master` when measured, 2026-08-04).** Every line number below is against
-that sha. Re-resolve them before implementing this scope.
+**Pinned to sha `0ea95d68bebfd1822a2970d1319a79b7a4adf8c6` (local `master`
+after the final rebase, 2026-08-04).** Every line number below is against that
+sha. Re-resolve them before implementing this scope.
 
 ## Premise verification
 
