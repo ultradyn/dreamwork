@@ -6383,3 +6383,43 @@ Each is a substitute standing in for the production path: the docstring for the 
 patch, the source text for the behaviour. The separating question does not change — **would this go red
 if the thing it claims to guard were broken?** — but the substitutes are inventive enough that asking
 it in the abstract is not enough. Construct the break.
+
+## The instruction I added to close a false green was itself a false green
+
+Occasioned by `#1178`, filed 2026-08-04 off `#1042` round 8's dogfood report.
+
+`#1169` twice left a **zero-byte** log when a backgrounded pytest subshell vanished. My correction was
+to put a line in every brief: background the long test, and **check the log is non-empty**. It read as
+exactly the right shape of fix — name the observable, make the lane quote it.
+
+Round 8 measured what it actually buys: *"the first background full-test launch produced a non-empty
+7-byte dots-only log and vanished without a verdict, despite satisfying the brief's non-empty-log
+check."* pytest emits progress dots the moment it starts, so a job that dies mid-run leaves a
+**non-empty** log with no verdict and no exit status. The check passes on precisely the failure it was
+written to catch — it only ever excluded the narrower case of a job that died before writing its first
+byte.
+
+**File non-emptiness stands in for job completion.** Non-emptiness proves the file was opened and
+written to. It does not prove the job survived, finished, or recorded a result.
+
+That makes four measured faces of one defect in two days, and this is the one worth keeping, because
+the other three were in code a lane wrote and **this one was in my own instrument**:
+
+- `#1175` — a docstring standing in for the data.
+- `#1177` — a sha standing in for the patch.
+- `#1155` D3 — source text standing in for behaviour.
+- `#1178` — file non-emptiness standing in for job completion, in the boilerplate I hand to every lane.
+
+Two things follow.
+
+**A fix for a false green inherits the burden of proof it was invented to enforce.** I never asked my
+own correction the question I make every lane answer: *would this go red if the thing it guards were
+broken?* It felt exempt because it was the remedy. The remedy is where the next substitute hides —
+nobody red-proofs the check they just added to catch a missing red-proof.
+
+**Require the completion record, not the file.** The job writes its exit code as its last act, or a
+retained waiter `wait`s for it; then quote the final summary line, the exit code, and the collected
+count. All three, because the summary line can be stale from a previous run and a mistyped node id
+prints `no tests ran` and exits 0. This is now in `briefs/boilerplate.md` rather than in whichever
+brief I happened to remember it in — the old wording survived as long as it did because it lived only
+in hand-written briefs, so it was re-typed rather than re-examined.

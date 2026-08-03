@@ -462,6 +462,27 @@ difference off to satisfy an impossible brief.
 Likewise, judge targeted pytest by its own before/after collected count; a whole-repo total quoted
 in a moving brief head is not that run's bar.
 
+**A background job's log being non-empty does NOT mean the job finished** (`#1178`). Briefs used to
+say "background the long test and check the log is non-empty", which was added to catch `#1169`'s
+zero-byte logs from vanished subshells. It does not do that job: pytest emits progress dots
+immediately, so a run that dies mid-way leaves a **non-empty, dots-only log with no verdict and no
+exit status** — and the check passes on it. `#1042` round 8 measured exactly that (a 7-byte
+dots-only log from a job that had vanished). File non-emptiness proves the file was opened and
+written to; it does not prove the job survived, finished, or recorded a result, which is the only
+thing the check exists to establish.
+
+So require the **completion record**, not the file:
+
+- write the exit code to a file as the job's **last act** (`…; echo "exit=$?" > done.txt`), or
+- keep a **retained waiter** and `wait` for it,
+
+then quote **the final summary line AND the exit code AND the collected count.** All three: the
+summary line alone can be stale from a previous run, and **a mistyped node id prints `no tests ran`
+and exits 0**, so a green exit with no collected count is not evidence a test ran.
+
+**Never take an exit status through a pipe.** `$?` after a pipeline is the *last* command's status,
+so `cmd | tail -1` reports 0 over a FAULT. Redirect to a regular file and read the file.
+
 **Filesystem measurements need a measured substrate and an exact positive control.** Use
 `M="$(dev/lane_scratch.py measure)" || true` followed by `[ -n "$M" ] || exit 1` as the one
 lane-private location — **capture the refusal, do not let the assignment swallow it.** In
