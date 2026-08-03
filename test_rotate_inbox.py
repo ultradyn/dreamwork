@@ -47,6 +47,9 @@ def _extract_append_command(boilerplate: str) -> str:
         "expected exactly one designated inbox append recipe; "
         f"got starts={boilerplate.count(RECIPE_START)}, ends={boilerplate.count(RECIPE_END)}"
     )
+    assert boilerplate.index(RECIPE_START) < boilerplate.index(RECIPE_END), (
+        "inbox append recipe start marker must precede end marker"
+    )
     body = boilerplate.split(RECIPE_START, 1)[1].split(RECIPE_END, 1)[0]
     logical_lines: list[str] = []
     pending = ""
@@ -115,6 +118,16 @@ class TestAppendRecipeExtraction:
     def test_missing_designated_recipe_fails_distinctly(self):
         with pytest.raises(AssertionError, match="exactly one designated inbox append recipe"):
             _extract_append_command("The append guidance was removed.\n")
+
+    def test_reversed_markers_fail_distinctly(self):
+        boilerplate = f"""
+{RECIPE_END}
+unrelated prose
+{RECIPE_START}
+flock {LIVE_INBOX}.lock -c 'cat >> {LIVE_INBOX}' <<'EOF'
+"""
+        with pytest.raises(AssertionError, match="start marker must precede end marker"):
+            _extract_append_command(boilerplate)
 
     def test_retargeting_refuses_changed_live_paths(self, tmp_path: Path):
         boilerplate = f"""
@@ -415,7 +428,12 @@ def _run_cli_at_observation(
             appender.stdin.write(appended_entry)
             appender.stdin.close()
             appender.stdin = None
-            lock_inode = (inbox.parent / "inbox.md.lock").stat().st_ino
+            lock_stat = (inbox.parent / "inbox.md.lock").stat()
+            lock_identity = (
+                os.major(lock_stat.st_dev),
+                os.minor(lock_stat.st_dev),
+                lock_stat.st_ino,
+            )
             deadline = time.monotonic() + 10
             while True:
                 if appender.poll() is not None:
@@ -423,12 +441,7 @@ def _run_cli_at_observation(
                     appender_blocked = False
                     break
                 locks = Path("/proc/locks").read_text()
-                waiting = re.search(
-                    rf"^\d+:\s+->\s+FLOCK\s+ADVISORY\s+WRITE\s+\d+\s+\S+:{lock_inode}\s+",
-                    locks,
-                    re.MULTILINE,
-                )
-                if waiting:
+                if lock_identity in _waiting_flock_identities(locks):
                     appender_blocked = True
                     break
                 if time.monotonic() >= deadline:
@@ -466,6 +479,33 @@ def _run_cli_at_observation(
         appender_status,
         appender_blocked,
     )
+
+
+def _waiting_flock_identities(locks: str) -> set[tuple[int, int, int]]:
+    """Parse device and inode identities for blocked advisory flock waiters."""
+    identities = set()
+    for line in locks.splitlines():
+        fields = line.split()
+        if len(fields) < 7 or fields[1:5] != ["->", "FLOCK", "ADVISORY", "WRITE"]:
+            continue
+        try:
+            major, minor, inode = fields[6].rsplit(":", 2)
+            identities.add((int(major, 16), int(minor, 16), int(inode)))
+        except (ValueError, IndexError):
+            continue
+    return identities
+
+
+def test_waiting_flock_identity_binds_device_and_inode():
+    locks = """\
+12: -> FLOCK ADVISORY WRITE 123 08:01:456 0 EOF
+13: -> FLOCK ADVISORY WRITE 124 00:2a:789 0 EOF
+14: FLOCK ADVISORY WRITE 125 08:01:456 0 EOF
+"""
+    identities = _waiting_flock_identities(locks)
+    assert (0x08, 0x01, 456) in identities
+    assert (0x09, 0x01, 456) not in identities
+    assert (0x00, 0x2A, 789) in identities
 
 
 class TestConcurrentAppenderHarness:
@@ -508,6 +548,9 @@ class TestConcurrentAppenderHarness:
             (dw / "inbox-archive").glob("*.md")
         ).read_text()
         assert appended in combined, f"raced entry lost: {appended.splitlines()[0]}"
+        for index in range(10):
+            original = _make_entry(index)
+            assert original in combined, f"retained entry lost: {original.splitlines()[0]}"
         assert appender_blocked, "locking shell cat did not block while rotation held the lock"
         print(
             f"raced-entry={appended.splitlines()[0]!r} "
@@ -570,6 +613,19 @@ class TestCliContract:
 
         assert mod.main(["rotate", "--target", str(target)]) == 2
         assert "error: I/O failed:" in capsys.readouterr().err
+
+    def test_unexpected_oserror_is_not_mislabeled_as_operational(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        mod = _load()
+        target = tmp_path / "coordinator"
+
+        def fail_outside_rotation_boundary(*_args, **_kwargs):
+            raise OSError("synthetic non-operational failure")
+
+        monkeypatch.setattr(mod, "rotate", fail_outside_rotation_boundary)
+        with pytest.raises(OSError, match="synthetic non-operational failure"):
+            mod.main(["rotate", "--target", str(target)])
 
 
 class TestReconciliation:
