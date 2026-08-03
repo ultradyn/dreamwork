@@ -39,6 +39,8 @@ def launch_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
            "# Tasks\n\n## Open\n\n- **#832** launch it\n\n"
            "  Measured launcher composition.\n\n## Recently landed\n")
     _write(root / "dev" / "launch_lane.py", TOOL.read_text(encoding="utf-8"))
+    _write(root / "dev" / "thing.py", "VALUE = 1\n")
+    _write(root / "test_thing.py", "def test_thing(): pass\n")
     _write(root / "worktree_paths.py", (REPO / "worktree_paths.py").read_text(encoding="utf-8"))
     # launch_lane shares brief.py's placeholder predicate (#881); the real
     # module, not a stub, so a change to it is exercised here too.
@@ -225,6 +227,32 @@ def test_a_concise_real_core_is_still_accepted(launch_repo: Path):
     result = _run(launch_repo, head)
     assert "entirely placeholder" not in result.stderr
     assert "no substantive task content" not in result.stderr
+
+
+def test_space_separated_lane_owns_is_refused_before_worktree_creation(
+    launch_repo: Path,
+):
+    head = _head(
+        launch_repo,
+        "# Task #832 — launch it\n\n"
+        "Lane-owns: dev/brief.py dev/launch_lane.py\n\n"
+        "Fix the ownership declaration before dispatch.\n\n"
+        "## Direction 2\n\n"
+        "A missing-path declaration must not look like a doc-only lane.\n",
+    )
+    before = _worktree_rows(launch_repo)
+
+    result = _run(launch_repo, head)
+
+    assert result.returncode == 1, (
+        "space-separated Lane-owns resolved zero files but dispatch was accepted: "
+        f"stderr={result.stderr!r}"
+    )
+    assert "REFUSE phase=brief-generation: 1 violation(s)" in result.stderr
+    assert "scope derivation FAULT: resolved 0 existing files" in result.stderr
+    assert "check comma separation and path spelling" in result.stderr
+    assert _worktree_rows(launch_repo) == before
+    assert not (launch_repo / ".dreamwork" / "launch-attempts").exists()
 
 
 def test_selection_failure_leaves_git_worktree_inventory_unchanged(launch_repo: Path):

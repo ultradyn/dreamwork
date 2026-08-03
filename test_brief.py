@@ -285,14 +285,43 @@ def test_scope_report_reports_an_irrelevant_import_without_refusing(tmp_path):
     assert "This is a report, not an edit grant" in report, report
 
 
-@pytest.mark.parametrize("owns", [["pkg/"], ["pkg/*.py"]])
-def test_scope_report_does_not_treat_a_directory_or_glob_as_a_gate_diff(
+@pytest.mark.parametrize("owns", [["pkg/"], ["pkg/*.py"], ["dev/newthing.py"]])
+def test_scope_report_refuses_ownership_that_resolves_to_no_files(
     tmp_path, owns,
 ):
     _scope_fixture(tmp_path)
-    report = brief._scope_derivation_report(tmp_path, owns)
+    with pytest.raises(brief.BriefFault) as excinfo:
+        brief._scope_derivation_report(tmp_path, owns)
+    message = str(excinfo.value)
+    assert "scope derivation FAULT: resolved 0 existing files" in message, message
+    assert "check comma separation and path spelling" in message, message
+
+
+def test_scope_report_distinguishes_an_existing_doc_only_lane(tmp_path):
+    notes = tmp_path / ".dreamwork" / "docs" / "notes.md"
+    notes.parent.mkdir(parents=True)
+    notes.write_text("# Notes\n", encoding="utf-8")
+
+    report = brief._scope_derivation_report(
+        tmp_path, [".dreamwork/docs/notes.md"]
+    )
+
     assert report.startswith("scope derivation NOT CHECKED"), report
-    assert "found 0 existing non-inert files" in report, report
+    assert "resolved 1 existing Lane-owns file(s), all inert documentation" in report
+    assert "doc-only lane declared explicitly" in report
+
+
+def test_scope_report_allows_a_new_file_beside_an_existing_owned_test(tmp_path):
+    (tmp_path / "test_newthing.py").write_text(
+        "def test_newthing(): pass\n", encoding="utf-8"
+    )
+
+    report = brief._scope_derivation_report(
+        tmp_path, ["dev/newthing.py", "test_newthing.py"]
+    )
+
+    assert "selected 1 existing test(s)" in report, report
+    assert "from 1 existing non-inert Lane-owns file(s)" in report, report
 
 
 # --- direction 2, construction 1: an EMPTY authored core still emits --------

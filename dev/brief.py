@@ -402,15 +402,22 @@ def substantive_lines(text: str) -> list[str]:
 
 def _scope_derivation_report(checkout: Path, owns: list[str]) -> str:
     """Report tests the gate derives from existing, non-inert owned files."""
+    resolved = tuple(path for path in owns if (checkout / path).is_file())
+    if not resolved:
+        raise BriefFault(
+            f"scope derivation FAULT: resolved 0 existing files from "
+            f"{len(owns)} Lane-owns entrie(s); check comma separation and path "
+            "spelling. Lanes creating only new files must also name an existing "
+            "owned file."
+        )
     changed = tuple(
-        path for path in owns
-        if (checkout / path).is_file() and not land_lane._is_inert_doc(path)
+        path for path in resolved if not land_lane._is_inert_doc(path)
     )
     if not changed:
         return (
-            f"scope derivation NOT CHECKED: examined {len(owns)} Lane-owns "
-            "entrie(s), found 0 existing non-inert files; directories, globs, "
-            "missing paths, and inert documentation are not a gate diff"
+            f"scope derivation NOT CHECKED: resolved {len(resolved)} existing "
+            "Lane-owns file(s), all inert documentation; doc-only lane declared "
+            "explicitly by naming its documentation, so there is no gate diff"
         )
 
     named = tuple(
