@@ -1,23 +1,12 @@
 #!/usr/bin/env python3
-"""Merge one rebased lane, gate it, then retire it through ``dev/reap.py``.
+"""Merge and gate one rebased lane in a detached scratch worktree.
 
-Every gate runs on a DETACHED HEAD holding the merge; ``refs/heads/master`` is
-fast-forwarded onto it only once all of them have passed (#882). On 2026-08-01
-this tool printed ``REFUSE phase=named-tests`` directly above ``examined:
-merge=69fc8e9b``: it had already merged, and master carried a red merge while
-the log said refused. A gate whose verdict arrives after its action is not a
-gate.
-
-Detaching beats merge-then-revert-on-refusal, and the difference is what
-happens when the *recovery* fails. Here ``refs/heads/master`` never points at
-an ungated merge at all, so a failed restore leaves the ref correct and only
-the working tree detached — loud, local, and invisible to a lane rebasing onto
-master. Revert-on-refusal fails the other way: interrupt it and master keeps
-the bad merge, which is the incident this replaces.
-
-The gates need the merged tree and its history, not the branch's — ``lint.py``
-reads ``git log`` — so they run where HEAD *is* the merge commit, and
-``merge-identity`` proves that before any of them are believed.
+The main checkout remains attached to ``master`` for the whole run. A detached
+registered scratch starts at the captured base, holds the provisional merge,
+and is the cwd for every gate command. Only after all gates pass does one short
+compare-before-advance section fast-forward ``master`` exactly once (#882,
+#1128). The whole-run gate mutex remains: a scratch location does not make the
+single ``master`` ref multiwriter.
 """
 
 from __future__ import annotations
@@ -26,6 +15,7 @@ import argparse
 import ast
 from dataclasses import dataclass
 import errno
+import fcntl
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -65,25 +55,19 @@ GATES = (
 # ---------------------------------------------------------------------------
 # The gate-in-flight breadcrumb (#1120).
 #
-# ``land_lane`` detaches the main checkout, builds the merge, runs the gates,
-# and only then fast-forwards ``master``. Interrupted anywhere after the
-# detach it leaves HEAD on a merge commit NO GATE PHASE EXAMINED, while
-# ``master`` is correctly unmoved — and ``git log`` follows HEAD, so a
-# detached HEAD sitting on ``Merge glm-XXXX`` reads exactly like a landed
-# branch to any reader that asks "what is the latest commit" without first
-# asking "am I on a branch". This breadcrumb is the record that makes the
-# state DISCOVERABLE rather than merely rarer.
+# ``land_lane`` builds the merge in a registered detached scratch. Interrupted
+# after creation, that registration keeps the provisional commit reachable
+# while main remains attached and ``master`` remains unmoved. This breadcrumb
+# names the exact residue and makes it DISCOVERABLE rather than merely rarer.
 #
 # The breadcrumb is the piece that matters most because the ``finally``
-# reattach cannot cover SIGKILL, ``os._exit``, or a segfault — all of which
-# skip ``finally`` (#651: say plainly which signals are covered and which
-# are not, rather than implying the hole is closed). The handler covers
-# SIGTERM/SIGINT and an unexpected exception; the breadcrumb covers what
-# those cannot. A reader (the next run's preflight, below) distinguishes
+# cleanup cannot cover SIGKILL, ``os._exit``, or a segfault — all of which
+# skip Python cleanup (#651: say plainly which signals are covered and which
+# are not, rather than implying the hole is closed). The breadcrumb covers
+# those paths. A reader (the next run's preflight, below) distinguishes
 # THREE states (#136: three zero-states, not two): no file / file with a
 # LIVE pid / file with a DEAD pid. A live pid means a gate is running RIGHT
-# NOW and the checkout is detached by design; a dead pid means a gate died
-# mid-flight and the checkout must be recovered.
+# NOW; a dead pid means the exact scratch registration must be recovered.
 GATE_IN_FLIGHT_PATH = Path(".dreamwork") / "gate-in-flight.json"
 
 
@@ -117,6 +101,11 @@ class GateInFlight:
 
     path: Path | None
     branch: str
+    gate_worktree: str
+    common_git_dir: str
+    base_ref: str
+    base_sha: str
+    branch_sha: str
     merge_sha: str
     phase: str
     pid: int
@@ -140,7 +129,7 @@ def _read_gate_in_flight(repo: Path) -> GateInFlight:
     """
     path = repo / GATE_IN_FLIGHT_PATH
     if not path.is_file():
-        return GateInFlight(None, "", "", "", 0)
+        return GateInFlight(None, "", "", "", "", "", "", "", "", 0)
     try:
         record = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -148,21 +137,35 @@ def _read_gate_in_flight(repo: Path) -> GateInFlight:
         # breadcrumb was half-written reads exactly like no gate to a
         # reader that treats parse failure as absence (#136). Surface it
         # as a dead gate so the refusal below names it.
-        return GateInFlight(path, "<unreadable>", "<unreadable>", "<unreadable>", 0)
+        return GateInFlight(
+            path, "<unreadable>", "<unreadable>", "<unreadable>",
+            "<unreadable>", "<unreadable>", "<unreadable>",
+            "<unreadable>", "<unreadable>", 0,
+        )
     try:
         return GateInFlight(
             path,
             str(record.get("branch", "")),
+            str(record.get("gate_worktree", "")),
+            str(record.get("common_git_dir", "")),
+            str(record.get("base_ref", "")),
+            str(record.get("base_sha", "")),
+            str(record.get("branch_sha", "")),
             str(record.get("merge_sha", "")),
             str(record.get("phase", "")),
             int(record.get("pid", 0)),
         )
     except (TypeError, ValueError):
-        return GateInFlight(path, "<unreadable>", "<unreadable>", "<unreadable>", 0)
+        return GateInFlight(
+            path, "<unreadable>", "<unreadable>", "<unreadable>",
+            "<unreadable>", "<unreadable>", "<unreadable>",
+            "<unreadable>", "<unreadable>", 0,
+        )
 
 
 def _write_gate_in_flight(
-    repo: Path, *, branch: str, base: str, merge_sha: str, phase: str
+    repo: Path, *, branch: str, gate_worktree: Path, common_git_dir: Path,
+    base: str, base_sha: str, branch_sha: str, merge_sha: str, phase: str
 ) -> None:
     """Write (or update) the gate-in-flight breadcrumb naming this phase.
 
@@ -174,7 +177,11 @@ def _write_gate_in_flight(
     path = repo / GATE_IN_FLIGHT_PATH
     record = {
         "branch": branch,
-        "base": base,
+        "gate_worktree": str(gate_worktree.resolve()),
+        "common_git_dir": str(common_git_dir.resolve()),
+        "base_ref": base,
+        "base_sha": base_sha,
+        "branch_sha": branch_sha,
         "merge_sha": merge_sha,
         "phase": phase,
         "pid": os.getpid(),
@@ -190,6 +197,57 @@ def _clear_gate_in_flight(repo: Path) -> None:
         path.unlink()
     except FileNotFoundError:
         pass
+
+
+def _common_git_dir(repo: Path) -> Path | None:
+    value = _git_text(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    return Path(value).resolve() if value else None
+
+
+def _try_lock(common_git_dir: Path, name: str):
+    """Acquire one repository-local process mutex without waiting."""
+    path = common_git_dir / name
+    handle = path.open("a+", encoding="utf-8")
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.close()
+        return None
+    return handle
+
+
+def _registered_worktree_paths(repo: Path) -> tuple[Path, ...] | None:
+    result = _git(repo, "worktree", "list", "--porcelain")
+    if result.returncode:
+        _relay(result)
+        return None
+    return tuple(
+        Path(line.partition(" ")[2]).resolve()
+        for line in result.stdout.splitlines()
+        if line.startswith("worktree ")
+    )
+
+
+def _cleanup_gate_worktree(repo: Path, gate_worktree: Path) -> str | None:
+    """Remove and verify only the exact registered scratch gate worktree."""
+    registered = _registered_worktree_paths(repo)
+    target = gate_worktree.resolve()
+    if registered is None:
+        return "could not read git worktree registrations before cleanup"
+    if target not in registered:
+        return f"recorded gate worktree is not registered: {target}"
+    removed = _git(repo, "worktree", "remove", "--force", str(target))
+    after = _registered_worktree_paths(repo)
+    faults: list[str] = []
+    if removed.returncode:
+        faults.append(f"git worktree remove exited {removed.returncode}")
+    if after is None:
+        faults.append("could not read git worktree registrations after cleanup")
+    elif target in after:
+        faults.append("exact gate worktree remains registered after cleanup")
+    if target.exists():
+        faults.append("exact gate worktree path remains after cleanup")
+    return "; ".join(faults) or None
 
 
 def _gate_coverage_line(passed: Sequence[str]) -> str:
@@ -1495,30 +1553,6 @@ def _base_state(repo: Path, base: str, base_sha: str | None) -> str:
     )
 
 
-def _restore(repo: Path, base: str, base_sha: str) -> str | None:
-    """Put the checkout back on ``base`` and PROVE it, or say how it did not.
-
-    The checkout's exit status is not the evidence — it says only that git
-    believed it worked. Reading the branch, HEAD and the tree back is. A
-    restore that is performed but not verified is the same defect class as a
-    merge that is performed but not gated.
-    """
-    checkout = _git(repo, "checkout", base)
-    current = _git_text(repo, "branch", "--show-current")
-    head = _git_text(repo, "rev-parse", "HEAD")
-    dirty = _git(repo, "status", "--porcelain=v1", "--untracked-files=no")
-    faults = []
-    if checkout.returncode:
-        faults.append(f"git checkout {base} exited {checkout.returncode}")
-    if current != base:
-        faults.append(f"checkout is on {current or 'a detached commit'}, not {base}")
-    if head != base_sha:
-        faults.append(f"HEAD is {head or 'UNREADABLE'}, not the pre-merge {base_sha}")
-    if dirty.returncode or dirty.stdout:
-        faults.append(f"{len(dirty.stdout.splitlines())} tracked path(s) still differ from {base}")
-    return "; ".join(faults) or None
-
-
 def _dirty_tree_line(label: str, path: Path, result: subprocess.CompletedProcess[str]) -> str:
     """One greppable line naming a tree and whether its tracked state is clean.
 
@@ -1547,7 +1581,7 @@ def _refuse(
 ) -> int:
     print(f"REFUSE phase={phase}: {reason}", file=sys.stderr)
     if alert:
-        print(f"RESTORE FAILED: {alert}", file=sys.stderr)
+        print(f"RECOVERY FAILED: {alert}", file=sys.stderr)
     print(f"examined: {examined}", file=sys.stderr)
     print(f"base: {base_state}", file=sys.stderr)
     print(f"retained: {retained}", file=sys.stderr)
@@ -1556,28 +1590,82 @@ def _refuse(
 
 
 def _refuse_dead_gate(repo: Path, crumb: GateInFlight, base: str) -> int:
-    """Refuse on a dead gate-in-flight breadcrumb, naming the state (#1120).
-
-    Refuses on the breadcrumb, NOT on detachment alone: someone may detach
-    the main checkout for their own reasons, and a refusal that fires on
-    any detached HEAD would false-alarm on that. The breadcrumb is this
-    tool's OWN record that IT left the checkout detached mid-gate, so
-    reading it is reading our own state, not inferring from a symptom.
-    """
+    """Refuse on a live gate, or recover one exact dead scratch gate."""
     path_text = str(crumb.path) if crumb.path else "<none>"
     pid_state = "LIVE" if crumb.pid_live else "DEAD"
     print(
         f"gate-in-flight: {pid_state} breadcrumb at {path_text} "
-        f"(branch={crumb.branch}; merge={crumb.merge_sha}; phase={crumb.phase}; pid={crumb.pid})",
+        f"(branch={crumb.branch}; scratch={crumb.gate_worktree}; merge={crumb.merge_sha}; "
+        f"phase={crumb.phase}; pid={crumb.pid})",
         file=sys.stderr,
     )
+    recovery = "not attempted while the recorded pid is live"
+    retained = (
+        f"branch={crumb.branch}; gate-worktree={crumb.gate_worktree}; "
+        f"gate-breadcrumb={path_text}"
+    )
+    if not crumb.pid_live:
+        common = _common_git_dir(repo)
+        fields_valid = all(
+            value and value != "<unreadable>"
+            for value in (
+                crumb.gate_worktree, crumb.common_git_dir, crumb.base_ref,
+                crumb.base_sha, crumb.branch_sha,
+            )
+        )
+        if not fields_valid or common is None:
+            recovery = "not attempted because the breadcrumb schema or common git directory is unreadable"
+        elif Path(crumb.common_git_dir).resolve() != common:
+            recovery = (
+                "not attempted because recorded common_git_dir does not match this repository: "
+                f"recorded={crumb.common_git_dir}; actual={common}"
+            )
+        else:
+            target = Path(crumb.gate_worktree).resolve()
+            target_common = _common_git_dir(target) if target.is_dir() else None
+            target_branch = _git_text(target, "branch", "--show-current") if target.is_dir() else None
+            target_head = _git_text(target, "rev-parse", "HEAD") if target.is_dir() else None
+            identity_faults: list[str] = []
+            if not target.name.startswith(".gate-"):
+                identity_faults.append("recorded path does not have the gate-scratch name prefix")
+            if target_common != common:
+                identity_faults.append("recorded path does not belong to the recorded common Git directory")
+            if target_branch != "":
+                identity_faults.append(
+                    f"recorded path is not detached (branch={target_branch or 'UNREADABLE'})"
+                )
+            if re.fullmatch(r"[0-9a-f]{40}", crumb.merge_sha) and target_head != crumb.merge_sha:
+                identity_faults.append(
+                    f"recorded merge {crumb.merge_sha} does not match scratch HEAD {target_head or 'UNREADABLE'}"
+                )
+            if identity_faults:
+                recovery = "not attempted and breadcrumb retained: " + "; ".join(identity_faults)
+            else:
+                cleanup_fault = _cleanup_gate_worktree(repo, target)
+                if cleanup_fault is None:
+                    _clear_gate_in_flight(repo)
+                    current_base = _git_text(repo, "rev-parse", "--verify", f"refs/heads/{crumb.base_ref}")
+                    base_fact = (
+                        f"{crumb.base_ref} still={crumb.base_sha}"
+                        if current_base == crumb.base_sha
+                        else f"{crumb.base_ref} moved to {current_base or 'UNREADABLE'} from {crumb.base_sha}"
+                    )
+                    recovery = (
+                        f"removed exact registered gate worktree {target}, verified registration/path absent, "
+                        f"then cleared {path_text}; {base_fact}"
+                    )
+                    retained = f"branch={crumb.branch}; recovered-gate-worktree={target}; breadcrumb=cleared"
+                else:
+                    recovery = f"FAILED and breadcrumb retained: {cleanup_fault}"
     return _refuse(
         "gate-in-flight",
-        f"a previous land_lane died mid-flight leaving a {pid_state} gate-in-flight breadcrumb",
-        f"breadcrumb={path_text}; branch={crumb.branch}; merge_sha={crumb.merge_sha}; "
+        f"a previous land_lane left a {pid_state} scratch-gate breadcrumb",
+        f"breadcrumb={path_text}; branch={crumb.branch}; gate_worktree={crumb.gate_worktree}; "
+        f"base_ref={crumb.base_ref}; base_sha={crumb.base_sha}; branch_sha={crumb.branch_sha}; "
+        f"merge_sha={crumb.merge_sha}; "
         f"phase_reached={crumb.phase}; pid={crumb.pid} ({pid_state}); "
-        f"recovery: `git switch {base}` in {repo}, then delete {path_text}",
-        f"branch={crumb.branch}; dead-gate-breadcrumb={path_text}",
+        f"recovery: {recovery}",
+        retained,
         base_state=_base_state(repo, base, None),
     )
 
@@ -1615,6 +1703,22 @@ def land(
             base_state=_base_state(repo, base, None),
         )
 
+    common_git_dir = _common_git_dir(repo)
+    if common_git_dir is None:
+        return _refuse(
+            "preflight", "could not resolve the repository common git directory",
+            f"repo={repo}", retained, base_state=_base_state(repo, base, None),
+        )
+    # Held by this frame until land() returns. This is the whole-run gate
+    # mutex: moving the provisional workspace does not make master multiwriter.
+    gate_lock = _try_lock(common_git_dir, "dreamwork-gate.lock")
+    if gate_lock is None:
+        return _refuse(
+            "gate-mutex", "another landing gate owns the whole-run mutex",
+            f"lock={common_git_dir / 'dreamwork-gate.lock'}", retained,
+            base_state=_base_state(repo, base, None),
+        )
+
     current = _git_text(repo, "branch", "--show-current")
     base_sha = _git_text(repo, "rev-parse", "--verify", f"refs/heads/{base}")
     branch_sha = _git_text(repo, "rev-parse", "--verify", f"refs/heads/{branch}")
@@ -1627,11 +1731,8 @@ def land(
             retained,
             base_state=_base_state(repo, base, None),
         )
-    # #1120: refuse on OUR OWN dead gate-in-flight breadcrumb, not on a
-    # detached checkout in general. A dead breadcrumb means a previous
-    # land_lane left the main checkout detached at an ungated merge; a live
-    # one means another land_lane is running right now. Either way, running
-    # again would detach over a checkout whose state we did not establish.
+    # #1120/#1128: a dead breadcrumb names an exact registered scratch to
+    # recover; a live one means another land_lane is running right now.
     existing_crumb = _read_gate_in_flight(repo)
     if existing_crumb.present:
         return _refuse_dead_gate(repo, existing_crumb, base)
@@ -1685,23 +1786,123 @@ def land(
     for row in lane_all.stdout.splitlines():
         print(f"pre-merge lane-status: {row}")
 
-    _, baseline = _lint(repo)
-    if baseline is None:
+    gate_worktree = (
+        repo.parent / ".worktrees" /
+        f".gate-{os.getpid()}-{base_sha[:12]}"
+    ).resolve()
+    _write_gate_in_flight(
+        repo, branch=branch, gate_worktree=gate_worktree,
+        common_git_dir=common_git_dir, base=base, base_sha=base_sha,
+        branch_sha=branch_sha, merge_sha="<pre-merge>",
+        phase="worktree-creation",
+    )
+    state_lock = _try_lock(common_git_dir, "dreamwork-repo-state.lock")
+    if state_lock is None:
+        _clear_gate_in_flight(repo)
         return _refuse(
+            "worktree-creation", "repository-state mutex is busy",
+            f"lock={common_git_dir / 'dreamwork-repo-state.lock'}; base={base_sha}",
+            retained, base_state=_base_state(repo, base, base_sha),
+        )
+    added = _git(repo, "worktree", "add", "--detach", str(gate_worktree), base_sha)
+    state_lock.close()
+    registered = _registered_worktree_paths(repo)
+    scratch_head = _git_text(gate_worktree, "rev-parse", "HEAD") if gate_worktree.is_dir() else None
+    main_branch = _git_text(repo, "branch", "--show-current")
+    main_head = _git_text(repo, "rev-parse", "HEAD")
+    if (
+        added.returncode
+        or registered is None
+        or gate_worktree not in registered
+        or scratch_head != base_sha
+        or main_branch != base
+        or main_head != base_sha
+    ):
+        _relay(added)
+        cleanup_fault = None
+        if registered is not None and gate_worktree in registered:
+            cleanup_fault = _cleanup_gate_worktree(repo, gate_worktree)
+        if cleanup_fault is None:
+            _clear_gate_in_flight(repo)
+        return _refuse(
+            "worktree-creation",
+            "could not create and prove an exact-base detached scratch worktree",
+            f"add-exit={added.returncode}; scratch={gate_worktree}; "
+            f"scratch-head={scratch_head or 'UNREADABLE'}; expected={base_sha}; "
+            f"main-branch={main_branch or 'DETACHED'}; main-head={main_head or 'UNREADABLE'}; "
+            f"cleanup={cleanup_fault or 'verified'}",
+            retained, base_state=_base_state(repo, base, base_sha),
+            alert=cleanup_fault,
+        )
+    print(
+        f"gate-worktree: registered detached scratch={gate_worktree} "
+        f"at exact base={base_sha}; main remains {base}@{main_head}"
+    )
+    _write_gate_in_flight(
+        repo, branch=branch, gate_worktree=gate_worktree,
+        common_git_dir=common_git_dir, base=base, base_sha=base_sha,
+        branch_sha=branch_sha, merge_sha="<pre-merge>", phase="lint-baseline",
+    )
+
+    _prev_sig: dict[str, signal.Handlers] = {}
+
+    def _gate_signal_handler(signum: int, frame: object) -> None:
+        # Leave the exact scratch registration and breadcrumb discoverable.
+        # SIGKILL cannot run this handler; it leaves the same durable shape.
+        raise SystemExit(
+            f"land_lane interrupted by signal {signum}; main stayed on {base}; "
+            f"scratch retained at {gate_worktree}"
+        )
+
+    def _install_gate_signals() -> None:
+        _prev_sig["SIGTERM"] = signal.signal(signal.SIGTERM, _gate_signal_handler)
+        _prev_sig["SIGINT"] = signal.signal(signal.SIGINT, _gate_signal_handler)
+
+    def _restore_gate_signals() -> None:
+        for name in ("SIGTERM", "SIGINT"):
+            if name in _prev_sig:
+                signal.signal(getattr(signal, name), _prev_sig[name])
+                del _prev_sig[name]
+
+    _install_gate_signals()
+
+    merged_sha = "not-created"
+
+    def update_gate_breadcrumb(phase: str, merge_sha: str = "<pre-merge>") -> None:
+        _write_gate_in_flight(
+            repo, branch=branch, gate_worktree=gate_worktree,
+            common_git_dir=common_git_dir, base=base, base_sha=base_sha,
+            branch_sha=branch_sha, merge_sha=merge_sha, phase=phase,
+        )
+
+    def refuse_gated(phase: str, reason: str, examined: str) -> int:
+        """Clean the exact scratch before clearing its breadcrumb."""
+        cleanup_fault = _cleanup_gate_worktree(repo, gate_worktree)
+        if cleanup_fault is None:
+            _clear_gate_in_flight(repo)
+        _restore_gate_signals()
+        return _refuse(
+            phase, reason, examined, retained,
+            base_state=_base_state(repo, base, base_sha),
+            alert=(
+                None if cleanup_fault is None else
+                f"{cleanup_fault}; breadcrumb and exact scratch retained at {gate_worktree}"
+            ),
+        )
+
+    _, baseline = _lint(gate_worktree)
+    if baseline is None:
+        return refuse_gated(
             "lint-baseline",
             "WARN baseline was not captured (lint failed or emitted no clean trailer)",
-            f"lint.py in {repo}; base={base_sha}; branch={branch_sha}",
-            retained,
-            base_state=_base_state(repo, base, base_sha),
+            f"lint.py in {gate_worktree}; base={base_sha}; branch={branch_sha}",
         )
     _print_rows("baseline", baseline)
     if not baseline:
-        return _refuse(
+        return refuse_gated(
             "lint-baseline",
             "WARN baseline population is empty; zero rows examined is not a comparison",
-            f"lint.py in {repo}; base={base_sha}; branch={branch_sha}; baseline=0 rows examined",
-            retained,
-            base_state=_base_state(repo, base, base_sha),
+            f"lint.py in {gate_worktree}; base={base_sha}; branch={branch_sha}; baseline=0 rows examined",
         )
 
     # Coordinator authorisation for an intended WARN row-set change (#1040).
@@ -1716,12 +1917,10 @@ def land(
     declared_added_index, add_fault = _declared_warn_index(expect_warn_add)
     declared_removed_index, remove_fault = _declared_warn_index(expect_warn_remove)
     if add_fault or remove_fault:
-        return _refuse(
+        return refuse_gated(
             "lint-baseline",
             add_fault or remove_fault,
             f"declared_add={len(expect_warn_add)}; declared_remove={len(expect_warn_remove)}",
-            retained,
-            base_state=_base_state(repo, base, base_sha),
         )
     declared_added_ids = set(declared_added_index)
     declared_removed_ids = set(declared_removed_index)
@@ -1739,23 +1938,19 @@ def land(
         commits_examined = -1
     if branch_commits.returncode or commits_examined < 0:
         _relay(branch_commits)
-        return _refuse(
+        return refuse_gated(
             "red-proof-history",
             "could not count the branch commits the red-proof scan must examine",
             f"base={base_sha}; branch={branch_sha}; rev-list exit={branch_commits.returncode}",
-            retained,
-            base_state=_base_state(repo, base, base_sha),
         )
 
     diff = _classify_diff(repo, base_sha, branch_sha)
     if diff is None:
-        return _refuse(
+        return refuse_gated(
             "diff-classification",
             "could not read the branch diff, so neither the red-proof requirement "
             "nor the required tests could be derived from it",
             f"base={base_sha}; branch={branch_sha}",
-            retained,
-            base_state=_base_state(repo, base, base_sha),
         )
     print(
         f"diff-classification: {len(diff.changed)} changed path(s); "
@@ -1781,7 +1976,7 @@ def land(
                 "--require",
                 str(required),
             ],
-            repo,
+            gate_worktree,
             env=redproof_env,
         )
 
@@ -1804,12 +1999,10 @@ def land(
                 if squashed.differing_paths
                 else ""
             )
-            return _refuse(
+            return refuse_gated(
                 "squash-verification",
                 squashed.error or "squash produced no commit",
                 f"original={original_sha}; preserved={squashed.tag_ref}{differing}",
-                retained,
-                base_state=_base_state(repo, base, base_sha),
             )
         branch_sha = squashed.new_sha
         did_squash = True
@@ -1828,12 +2021,10 @@ def land(
             commits_examined = -1
         if branch_commits.returncode or commits_examined < 0:
             _relay(branch_commits)
-            return _refuse(
+            return refuse_gated(
                 "red-proof-history",
                 "could not count the squashed branch commits the red-proof scan must examine",
                 f"base={base_sha}; branch={branch_sha}; rev-list exit={branch_commits.returncode}",
-                retained,
-                base_state=_base_state(repo, base, base_sha),
             )
         redproof = run_redproof()
     else:
@@ -1899,133 +2090,48 @@ def land(
                 "were owed, and dev/redproof.py faulted during its own "
                 f"audit because {cause}, not because a required injection "
                 "is missing")
-        return _refuse(
+        return refuse_gated(
             "red-proof-history",
             f"dev/redproof.py check refused or faulted with exit {redproof.returncode}"
             + note,
             population,
-            retained,
-            base_state=_base_state(repo, base, base_sha),
         )
     if commits_examined == 0:
-        return _refuse(
+        return refuse_gated(
             "red-proof-history",
             "EXAMINED NO COMMIT; an empty history range is not an all-clear",
             population,
-            retained,
-            base_state=_base_state(repo, base, base_sha),
         )
     if audited_lane_head != branch_sha or audited_branch_sha != branch_sha:
-        return _refuse(
+        return refuse_gated(
             "red-proof-history",
             "branch tip moved while its red-proof history was being audited",
             population
             + f"; preflight tip={branch_sha}; branch now={audited_branch_sha or 'UNREADABLE'}",
-            retained,
-            base_state=_base_state(repo, base, base_sha),
         )
     print(f"red-proof-history: PASS; {population}")
     passed.append("red-proof-history")
 
-    detach = _git(repo, "checkout", "--detach", base_sha)
-    if detach.returncode:
-        _relay(detach)
-        return _refuse(
-            "detach",
-            f"could not detach HEAD at {base} to build the merge off-branch (exit {detach.returncode})",
-            f"base={base_sha}; branch={branch_sha}; worktree={lane}",
-            retained,
-            base_state=_base_state(repo, base, base_sha),
-        )
-    print(f"detached at {base_sha}: {base} does not move until every gate in {list(GATES)!r} passes")
-
-    # #1120: the checkout is now DETACHED. From here until the fast-forward,
-    # an interruption (SIGTERM/SIGINT/exception) would leave HEAD on an
-    # ungated merge that reads as a landed branch to anything following HEAD.
-    # Two guards: a breadcrumb naming the state (discoverable) and signal
-    # handlers that reattach (silent recovery for the common case).
-    #
-    # The breadcrumb is the load-bearing piece: the signal handler covers
-    # SIGTERM/SIGINT but NOT SIGKILL, ``os._exit``, or a segfault — all of
-    # which skip Python's signal machinery entirely (#651). ``finally``
-    # also does not run under those. The breadcrumb survives all of them
-    # because it is a file, and the next run's preflight reads it.
-    _write_gate_in_flight(
-        repo, branch=branch, base=base, merge_sha="<pre-merge>", phase="post-detach",
-    )
-
-    _prev_sig: dict[str, signal.Handlers] = {}
-
-    def _gate_signal_handler(signum: int, frame: object) -> None:
-        """Reattach the checkout on interruption, then die.
-
-        LEAVES the breadcrumb: reattaching is recovery, the breadcrumb is the
-        record. A reader finding a dead breadcrumb with a reattached checkout
-        can still tell 'a gate died at phase X' from 'no gate ran' (#1120
-        Direction 2). Raising propagates the exit so no later phase runs.
-        """
-        _restore(repo, base, base_sha)
-        raise SystemExit(f"land_lane interrupted by signal {signum}; checkout reattached to {base}")
-
-    def _install_gate_signals() -> None:
-        _prev_sig["SIGTERM"] = signal.signal(signal.SIGTERM, _gate_signal_handler)
-        _prev_sig["SIGINT"] = signal.signal(signal.SIGINT, _gate_signal_handler)
-
-    def _restore_gate_signals() -> None:
-        for name in ("SIGTERM", "SIGINT"):
-            if name in _prev_sig:
-                signal.signal(getattr(signal, name), _prev_sig[name])
-                del _prev_sig[name]
-
-    _install_gate_signals()
-
-    merged_sha = "not-created"
-
-    def refuse_gated(phase: str, reason: str, examined: str) -> int:
-        """Refuse a post-merge phase, restoring the checkout first.
-
-        A clean refusal is NOT a gate death: the gate ran, examined something,
-        and refused — the checkout was restored to base and master is unmoved.
-        So the breadcrumb is CLEARED here (no death to record) and the signal
-        handlers are restored to their defaults. Only the crash path (signal
-        or unexpected exception) leaves the breadcrumb behind.
-        """
-        _clear_gate_in_flight(repo)
-        _restore_gate_signals()
-        faults = _restore(repo, base, base_sha)
-        return _refuse(
-            phase,
-            reason,
-            examined,
-            retained,
-            base_state=_base_state(repo, base, base_sha),
-            alert=None
-            if faults is None
-            else (
-                f"{faults}; the checkout may still hold the ungated merge {merged_sha} — "
-                f"run `git checkout {base}` in {repo}"
-            ),
-        )
-
-    merge = _git(repo, "merge", "--no-ff", branch_sha, "-m", f"Merge {branch}")
+    update_gate_breadcrumb("provisional-merge")
+    merge = _git(gate_worktree, "merge", "--no-ff", branch_sha, "-m", f"Merge {branch}")
     _relay(merge)
     if merge.returncode:
-        _git(repo, "merge", "--abort")
+        _git(gate_worktree, "merge", "--abort")
         return refuse_gated(
             "merge",
             f"git merge --no-ff exited {merge.returncode}",
             f"base={base_sha}; branch={branch_sha}; worktree={lane}",
         )
-    merged_sha = _git_text(repo, "rev-parse", "HEAD") or "UNKNOWN"
-    _write_gate_in_flight(
-        repo, branch=branch, base=base, merge_sha=merged_sha, phase="merge-identity",
-    )
+    merged_sha = _git_text(gate_worktree, "rev-parse", "HEAD") or "UNKNOWN"
+    update_gate_breadcrumb("merge-identity", merged_sha)
 
     # The gates below examine whatever HEAD is; prove it is the merge of the
     # two shas preflight read, so no gate can pass against the branch tree, a
     # stale merge, or a base that moved. The parents come from git, which the
     # tree under test cannot rewrite.
-    parents = (_git_text(repo, "rev-list", "--parents", "-n", "1", "HEAD") or "").split()[1:]
+    parents = (
+        _git_text(gate_worktree, "rev-list", "--parents", "-n", "1", "HEAD") or ""
+    ).split()[1:]
     if parents != [base_sha, branch_sha]:
         return refuse_gated(
             "merge-identity",
@@ -2036,7 +2142,7 @@ def land(
 
     def compare_lint(phase: str, reading: str) -> int | None:
         """Compare one merged-tree lint reading with the pre-merge baseline."""
-        _, after = _lint(repo)
+        _, after = _lint(gate_worktree)
         if after is None:
             return refuse_gated(
                 phase,
@@ -2132,9 +2238,7 @@ def land(
     # live or derived artifact that lint.py reads; only the post-gate reading
     # can catch a WARN introduced by that refresh. The cheap duplicate closes
     # the common case before either pytest invocation spends the lane's budget.
-    _write_gate_in_flight(
-        repo, branch=branch, base=base, merge_sha=merged_sha, phase="lint-precheck",
-    )
+    update_gate_breadcrumb("lint-precheck", merged_sha)
     lint_precheck = compare_lint("lint-precheck", "post-merge precheck")
     if lint_precheck is not None:
         return lint_precheck
@@ -2159,7 +2263,7 @@ def land(
     # the changed module — which only the merged tree (HEAD, below) holds. Each
     # rule is RUN, never just reported (#949's IGC ruling: REPORT was refuted by
     # #936, where a true "not run" line was read past for two hours).
-    deriv = _derive_tests_from_diff(repo, diff)
+    deriv = _derive_tests_from_diff(gate_worktree, diff)
     name_tests = deriv.name
     import_tests = deriv.imported
     direct_import_tests = deriv.imported_direct
@@ -2202,12 +2306,10 @@ def land(
         absent=absent,
     ))
     selection = tuple(dict.fromkeys((*tests, *unnamed)))
-    print(_test_relevance_line(repo, selection, diff.changed, data_tests=data_tests))
+    print(_test_relevance_line(gate_worktree, selection, diff.changed, data_tests=data_tests))
 
-    _write_gate_in_flight(
-        repo, branch=branch, base=base, merge_sha=merged_sha, phase="named-tests",
-    )
-    named = _run(["just", "pytest", *selection], repo)
+    update_gate_breadcrumb("named-tests", merged_sha)
+    named = _run(["just", "pytest", *selection], gate_worktree)
     _relay(named)
     if named.returncode:
         return refuse_gated(
@@ -2218,10 +2320,10 @@ def land(
         )
     passed.append("named-tests")
 
-    _write_gate_in_flight(
-        repo, branch=branch, base=base, merge_sha=merged_sha, phase="guard-selection",
+    update_gate_breadcrumb("guard-selection", merged_sha)
+    guard_list = _run(
+        [sys.executable, "dev/repo_wide_guards.py", "list"], gate_worktree
     )
-    guard_list = _run([sys.executable, "dev/repo_wide_guards.py", "list"], repo)
     _relay(guard_list)
     guards = guard_list.stdout.split()
     if guard_list.returncode or not guards:
@@ -2237,10 +2339,8 @@ def land(
         )
     passed.append("guard-selection")
     print(f"repo-wide guard selection: {len(guards)} test path(s): {' '.join(guards)}")
-    _write_gate_in_flight(
-        repo, branch=branch, base=base, merge_sha=merged_sha, phase="repo-wide-guards",
-    )
-    guarded = _run(["just", "pytest", *guards], repo)
+    update_gate_breadcrumb("repo-wide-guards", merged_sha)
+    guarded = _run(["just", "pytest", *guards], gate_worktree)
     _relay(guarded)
     if guarded.returncode:
         return refuse_gated(
@@ -2250,9 +2350,7 @@ def land(
         )
     passed.append("repo-wide-guards")
 
-    _write_gate_in_flight(
-        repo, branch=branch, base=base, merge_sha=merged_sha, phase="lint-comparison",
-    )
+    update_gate_breadcrumb("lint-comparison", merged_sha)
     lint_comparison = compare_lint("lint-comparison", "post-gates")
     if lint_comparison is not None:
         return lint_comparison
@@ -2267,36 +2365,59 @@ def land(
         )
     print(_gate_coverage_line(passed))
 
-    back = _restore(repo, base, base_sha)
-    if back is not None:
-        _restore_gate_signals()
-        # Restore FAILED: the checkout may still be detached at the gated
-        # merge. LEAVE the breadcrumb so the next run names the state rather
-        # than reading a detached HEAD as clean.
-        return _refuse(
-            "advance",
-            f"could not return to {base} to fast-forward it onto the gated merge",
-            f"merge={merged_sha}; faults={back}",
-            retained,
-            base_state=_base_state(repo, base, base_sha),
-            alert=f"{back}; the checkout may still hold the gated merge {merged_sha}",
+    update_gate_breadcrumb("compare-before-advance", merged_sha)
+    state_lock = _try_lock(common_git_dir, "dreamwork-repo-state.lock")
+    if state_lock is None:
+        return refuse_gated(
+            "advance", "repository-state mutex is busy",
+            f"merge={merged_sha}; lock={common_git_dir / 'dreamwork-repo-state.lock'}",
         )
-    # Restore succeeded: the checkout is safely on base. All gates passed, so
-    # the merge was gated and the state is safe — clear the breadcrumb.
-    _clear_gate_in_flight(repo)
-    _restore_gate_signals()
+    current_base = _git_text(repo, "rev-parse", "--verify", f"refs/heads/{base}")
+    current_branch = _git_text(repo, "branch", "--show-current")
+    current_head = _git_text(repo, "rev-parse", "HEAD")
+    current_dirty = _git(repo, "status", "--porcelain=v1", "--untracked-files=no")
+    cas_faults: list[str] = []
+    if current_base != base_sha:
+        cas_faults.append(f"{base} moved from captured {base_sha} to {current_base or 'UNREADABLE'}")
+    if current_branch != base:
+        cas_faults.append(f"main checkout is on {current_branch or 'DETACHED'}, not {base}")
+    if current_head != base_sha:
+        cas_faults.append(f"main HEAD is {current_head or 'UNREADABLE'}, not captured {base_sha}")
+    if current_dirty.returncode or current_dirty.stdout:
+        cas_faults.append(
+            f"main tracked state has {len(current_dirty.stdout.splitlines())} changed path(s)"
+        )
+    if cas_faults:
+        state_lock.close()
+        return refuse_gated(
+            "advance",
+            "compare-before-advance refused; " + "; ".join(cas_faults),
+            f"merge={merged_sha}; captured-base={base_sha}; current-base={current_base or 'UNREADABLE'}; "
+            f"main-branch={current_branch or 'DETACHED'}; main-head={current_head or 'UNREADABLE'}",
+        )
     forward = _git(repo, "merge", "--ff-only", merged_sha)
     landed = _git_text(repo, "rev-parse", "--verify", f"refs/heads/{base}")
+    state_lock.close()
     if forward.returncode or landed != merged_sha:
         _relay(forward)
-        return _refuse(
+        return refuse_gated(
             "advance",
             f"fast-forward of {base} onto the gated merge did not land",
             f"merge={merged_sha}; ff-exit={forward.returncode}; {base}={landed or 'UNREADABLE'}",
-            retained,
-            base_state=_base_state(repo, base, base_sha),
         )
     print(f"advance: {base} {base_sha} -> {merged_sha} after {len(passed)} gate(s)")
+
+    cleanup_fault = _cleanup_gate_worktree(repo, gate_worktree)
+    if cleanup_fault is not None:
+        _restore_gate_signals()
+        return _refuse(
+            "scratch-cleanup", cleanup_fault,
+            f"merge={merged_sha}; gate_worktree={gate_worktree}; breadcrumb retained",
+            retained, base_state=_base_state(repo, base, base_sha),
+            alert=f"master advanced safely, but exact scratch cleanup failed: {cleanup_fault}",
+        )
+    _clear_gate_in_flight(repo)
+    _restore_gate_signals()
 
     reap = _run(
         [sys.executable, str(Path(__file__).with_name("reap.py")), str(lane), "--base", base],

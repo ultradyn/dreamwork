@@ -244,7 +244,7 @@ longer enters that state during a gate.
 ### Increment 1 — move the gate, preserve the refusal
 
 **Files:** `dev/land_lane.py`, `dev/launch_lane.py`, `test_land_lane.py`,
-`test_launch_lane.py`, and `.dreamwork/docs/file-formats.md` for the breadcrumb
+`test_launch_lane.py`, and `file-formats.md` for the breadcrumb
 schema. Do not change `dispatch_lane` or lint corpus semantics yet.
 
 **Implementation:** add the whole-run gate mutex and short repository-state

@@ -234,6 +234,36 @@ def test_selection_failure_leaves_git_worktree_inventory_unchanged(launch_repo: 
     assert _worktree_rows(launch_repo) == before
 
 
+def test_live_gate_explicitly_preserves_dispatch_refusal(launch_repo: Path):
+    crumb = launch_repo / ".dreamwork" / "gate-in-flight.json"
+    common = Path(_git(
+        launch_repo, "rev-parse", "--path-format=absolute", "--git-common-dir"
+    )).resolve()
+    base = _git(launch_repo, "rev-parse", "master")
+    crumb.write_text(json.dumps({
+        "gate_worktree": str((launch_repo.parent / ".worktrees" / ".gate-live").resolve()),
+        "common_git_dir": str(common),
+        "base_ref": "master",
+        "base_sha": base,
+        "branch": "other-lane",
+        "branch_sha": base,
+        "merge_sha": "<pre-merge>",
+        "phase": "named-tests",
+        "pid": os.getpid(),
+    }), encoding="utf-8")
+    before = _worktree_rows(launch_repo)
+
+    result = _run(launch_repo, _head(launch_repo))
+
+    assert result.returncode == 1
+    assert "REFUSE phase=gate-in-flight" in result.stderr
+    assert "shared brief corpus is still the gate lint subject" in result.stderr
+    assert "state=LIVE" in result.stderr
+    assert "phase=named-tests" in result.stderr
+    assert _worktree_rows(launch_repo) == before
+    assert not (launch_repo / ".dreamwork" / "launch-attempts").exists()
+
+
 def test_foreground_refusal_names_phase_and_creates_nothing(
     launch_repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ):
