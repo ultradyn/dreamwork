@@ -1,0 +1,12 @@
+{
+  "r": {
+    "name": "review-2026-08-01.md",
+    "created": 1722500000,
+    "created_known": true,
+    "mtime": 1722600000,
+    "show_modified": true,
+    "decision": "accepted",
+    "question_title": "Should the wrapper remain derived?"
+  },
+  "kind": "review"
+}

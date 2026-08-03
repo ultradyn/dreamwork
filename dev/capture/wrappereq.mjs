@@ -48,6 +48,55 @@ const CASES = [
     fixture: fixture('Label'),
     build: props => label(props.text),
   },
+  {
+    name: 'PipBtn', delegate: 'pipBtn', expectedClass: 'pipbtn',
+    fixture: fixture('PipBtn'),
+    build: props => pipBtn(props.url, props.label),
+  },
+  {
+    name: 'Expand', delegate: 'expand', expectedClass: 'peek',
+    fixture: fixture('Expand'),
+    build: props => expand(props.s, props.inner, props.cls, props.keep),
+  },
+  {
+    name: 'FollowThread', delegate: 'followThread', expectedClass: 'thread',
+    fixture: fixture('FollowThread'),
+    build: props => {
+      const previousData = data;
+      const previousView = view;
+      try {
+        data = (props.ctx && props.ctx.data) || {};
+        view = (props.ctx && props.ctx.view) || { name: null, param: null, q: null };
+        return followThread(props.follows, props.fold);
+      } finally {
+        data = previousData;
+        view = previousView;
+      }
+    },
+  },
+  {
+    name: 'QaCompose', delegate: 'qaCompose', expectedClass: 'qcompose',
+    fixture: fixture('QaCompose'),
+    build: props => qaCompose(props.ck, props.st, props.title),
+  },
+  {
+    name: 'ArtifactRow', delegate: 'artifactRow', expectedClass: 'rdecision',
+    fixture: fixture('ArtifactRow'),
+    build: props => artifactRow(props.r, props.kind),
+  },
+  {
+    name: 'ArtifactRow', delegate: 'artifactRow', expectedClass: 'rdecision',
+    fixture: {
+      r: {
+        name: 'research-claude-design.md',
+        created: 1722400000, created_known: true,
+        mtime: 1722550000, show_modified: false,
+        decision: 'rejected', question_title: null,
+      },
+      kind: 'research',
+    },
+    build: props => artifactRow(props.r, props.kind),
+  },
 ];
 const hasContent = value => {
   if (typeof value === 'string') return value.trim().length > 0;
@@ -123,7 +172,7 @@ for (const testCase of CASES) {
   ok(`${testCase.name} builder precondition: fixture output is non-empty`,
      builder.length > 0);
   ok(`${testCase.name} builder precondition: output carries class="${testCase.expectedClass}"`,
-     new RegExp(`class="${testCase.expectedClass}(?:\\s|\")`).test(builder));
+     new RegExp(`class="[^"]*\\b${testCase.expectedClass}\\b`).test(builder));
   ok(`${testCase.name} wrapper precondition: mounted output clears the runtime-derived floor`,
      readings.actual.length > floor);
   ok(`${testCase.name} wrapper serialization strictly equals ${testCase.delegate} builder serialization`,

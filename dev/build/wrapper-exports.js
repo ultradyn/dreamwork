@@ -50,3 +50,45 @@ export const Label = ({ text }) => React.createElement(HOST, {
 
 Label.displayName = 'Label';
 Label.dwBuilder = 'label';
+
+export const PipBtn = ({ url, label }) => React.createElement(HOST, {
+  'data-dw-delegate': 'pipBtn',
+  dangerouslySetInnerHTML: { __html: pipBtn(url, label) },
+});
+
+PipBtn.displayName = 'PipBtn';
+PipBtn.dwBuilder = 'pipBtn';
+
+export const Expand = ({ s, inner, cls = '', keep = '' }) =>
+  React.createElement(HOST, {
+    'data-dw-delegate': 'expand',
+    dangerouslySetInnerHTML: { __html: expand(s, inner, cls, keep) },
+  });
+
+Expand.displayName = 'Expand';
+Expand.dwBuilder = 'expand';
+
+export const FollowThread = ({ follows, fold, ctx = {} }) =>
+  React.createElement(HOST, {
+    'data-dw-delegate': 'followThread',
+    dangerouslySetInnerHTML: { __html: ambient(ctx, () => followThread(follows, fold)) },
+  });
+
+FollowThread.displayName = 'FollowThread';
+FollowThread.dwBuilder = 'followThread';
+
+export const QaCompose = ({ ck, st, title }) => React.createElement(HOST, {
+  'data-dw-delegate': 'qaCompose',
+  dangerouslySetInnerHTML: { __html: qaCompose(ck, st, title) },
+});
+
+QaCompose.displayName = 'QaCompose';
+QaCompose.dwBuilder = 'qaCompose';
+
+export const ArtifactRow = ({ r, kind }) => React.createElement(HOST, {
+  'data-dw-delegate': 'artifactRow',
+  dangerouslySetInnerHTML: { __html: artifactRow(r, kind) },
+});
+
+ArtifactRow.displayName = 'ArtifactRow';
+ArtifactRow.dwBuilder = 'artifactRow';
