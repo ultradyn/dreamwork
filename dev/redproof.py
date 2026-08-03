@@ -213,6 +213,18 @@ _EXPECTATION_DRIFT_REARM = (
     "a clean restore, so repeat that cycle after the final rebase."
 )
 
+# A carry-forward lane owns the carried production bytes and can repeat the
+# same causal observation.  Name that legitimate remedy whenever the
+# cumulative gate finds no current-lane proof, while explicitly rejecting an
+# unrelated injection performed only to satisfy the count.
+_CARRY_FORWARD_REARM = (
+    " A carry-forward round must repeat the causal observation: re-arm the "
+    "ancestor's injection on the same carried production path with the same "
+    "expectation and test; do not invent an unrelated injection. Recover the "
+    "prior seam from its hand-off, or from the prior registry's `path` and "
+    "`injected_hint` fields."
+)
+
 
 def _now() -> str:
     return _dt.datetime.now(_dt.timezone.utc).astimezone().isoformat(timespec="seconds")
@@ -1559,200 +1571,6 @@ def _reach_report(restored: list[dict]) -> tuple[str, list[str], bool]:
     )
 
 
-def _entry_sha(entry: dict) -> str:
-    """Stable digest binding an adoption to one exact source receipt."""
-    source = {key: value for key, value in entry.items()
-              if key not in ("_source", "adoption")}
-    encoded = json.dumps(
-        source, sort_keys=True, separators=(",", ":"), ensure_ascii=True,
-    ).encode()
-    return _sha(encoded)
-
-
-def _binding_diff(root: Path, base: str | None):
-    """Use the gate's one diff classifier; adoption must not invent another."""
-    parent = str(Path(__file__).resolve().parent)
-    if parent not in sys.path:
-        sys.path.insert(0, parent)
-    try:
-        import land_lane as _ll  # noqa: E402
-    except Exception as exc:  # pragma: no cover - sibling import is installed
-        raise RedproofError(
-            f"cannot import land_lane to validate adoption coverage: {exc}") from exc
-    base_oid, _ = _resolve_base(root, base)
-    head = _git(root, "rev-parse", "HEAD")
-    diff = _ll._classify_diff(root, base_oid, head)
-    if diff is None:
-        raise RedproofError(
-            f"land_lane._classify_diff could not read {base_oid[:12]}.."
-            f"{head[:12]} while validating adoption coverage")
-    return base_oid, head, diff
-
-
-def _adoption_faults(root: Path, entries: list[dict], base: str | None) -> list[str]:
-    """Independently re-prove every claimed registry adoption.
-
-    The current lane's JSON is never authority for inherited evidence. Each
-    adopted entry must still exist byte-for-byte in the named source registry,
-    have a causal CAUGHT receipt begun at the named sha, and bind a diff whose
-    production paths are unchanged between that sha and this branch. Thus an
-    adoption can carry proof forward, but cannot cover this round's new code.
-    """
-    adopted = [entry for entry in entries if "adoption" in entry]
-    if not adopted:
-        return []
-    base_oid, head, diff = _binding_diff(root, base)
-    binding = tuple(diff.redproof_binding)
-    branch = _git(root, "branch", "--show-current") or "<detached>"
-    faults: list[str] = []
-    repo_scratch = (_ls.SCRATCH_ROOT / _ls.repo_key(root)).resolve()
-    blobs: dict[tuple[str, str], str] = {}
-
-    for entry in adopted:
-        claim = entry.get("adoption")
-        lane_name = claim.get("source_lane") if isinstance(claim, dict) else "?"
-        source_sha = claim.get("source_sha") if isinstance(claim, dict) else None
-        source_path = claim.get("source_registry") if isinstance(claim, dict) else None
-        source_entry_sha = (
-            claim.get("source_entry_sha") if isinstance(claim, dict) else None)
-        prefix = f"adoption from lane {lane_name!r}"
-        problem = None
-        if not all(isinstance(value, str) and value
-                   for value in (lane_name, source_sha, source_path,
-                                 source_entry_sha)):
-            problem = "has incomplete provenance fields"
-        else:
-            registry = Path(source_path).resolve()
-            try:
-                registry.relative_to(repo_scratch)
-            except ValueError:
-                problem = (
-                    f"names registry outside this repository's lane-private "
-                    f"scratch root: {registry}")
-            if problem is None and registry.name != "registry.json":
-                problem = f"does not name a registry.json: {registry}"
-            if problem is None:
-                try:
-                    source_entries, source_state = _read_registry_at(registry)
-                except RedproofError as exc:
-                    problem = f"cannot read its source registry: {exc}"
-                else:
-                    candidates = [candidate for candidate in source_entries
-                                  if "adoption" not in candidate
-                                  and _entry_sha(candidate) == source_entry_sha
-                                  and candidate.get("state") in RESTORED_STATES
-                                  and candidate.get("begun_head") == source_sha
-                                  and isinstance(candidate.get("reach"), dict)
-                                  and candidate["reach"].get("status") == "caught"]
-                    if not candidates:
-                        problem = (
-                            f"has no verifiable caught proof in {registry} "
-                            f"(population={len(source_entries)}, "
-                            f"state={source_state}) at sha {source_sha[:12]}")
-            if problem is None:
-                try:
-                    resolved_sha = _git(
-                        root, "rev-parse", "--verify", f"{source_sha}^{{commit}}")
-                except RedproofError as exc:
-                    problem = f"names an unresolvable source sha: {exc}"
-                else:
-                    if resolved_sha != source_sha:
-                        problem = (
-                            f"source sha is not the full independently resolved "
-                            f"commit id ({resolved_sha})")
-            if problem is None and not binding:
-                problem = "cannot satisfy a diff with zero red-proof binding paths"
-            if problem is None and entry.get("path") not in binding:
-                problem = (
-                    f"proof target {entry.get('path')!r} is not one of the "
-                    f"branch's binding paths")
-            if problem is None:
-                blobs = _batch_blobs(root, [source_sha, head], list(binding))
-                changed = [path for path in binding
-                           if blobs.get((source_sha, path)) != blobs.get((head, path))]
-                if changed:
-                    problem = (
-                        "does not cover this round's own binding changes; "
-                        f"paths differ from source sha: {changed!r}")
-        if problem is not None:
-            faults.append(
-                f"{prefix} supplies no verifiable caught proof; branch "
-                f"{branch!r} would land without proof for binding paths "
-                f"{list(binding)!r}: {problem}")
-    return faults
-
-
-def adopt(cwd: Path | None, *, source_registry: str, source_lane: str,
-          source_sha: str, base: str | None = None,
-          lane: str | None = None) -> int:
-    """Carry direct causal receipts from a named prior registry into this lane.
-
-    The copied bytes are not trusted. ``check`` reopens the source registry,
-    binds each copy to its exact entry digest and begun-head sha, and proves the
-    current binding diff is byte-identical at that sha.
-    """
-    root = _ls.worktree_root(cwd)
-    if not source_registry or not source_lane or not source_sha:
-        sys.stderr.write(
-            "adopt: REFUSED — --from-registry, --from-lane and --at-sha are "
-            "all required; an unnamed adoption is not auditable\n")
-        return 1
-    try:
-        resolved_sha = _git(
-            root, "rev-parse", "--verify", f"{source_sha}^{{commit}}")
-        registry = Path(source_registry).resolve()
-        current_registry = _registry_path(cwd, lane).resolve()
-        if registry == current_registry:
-            raise RedproofError(
-                "source registry resolves to this lane's destination registry")
-        source_entries, source_state = _read_registry_at(registry)
-        candidates = [entry for entry in source_entries
-                      if "adoption" not in entry
-                      and entry.get("state") in RESTORED_STATES
-                      and entry.get("begun_head") == resolved_sha
-                      and isinstance(entry.get("reach"), dict)
-                      and entry["reach"].get("status") == "caught"]
-        if not candidates:
-            sys.stderr.write(
-                f"adopt: REFUSED — lane {source_lane!r} has no verifiable "
-                f"caught proof in {registry} (population={len(source_entries)}, "
-                f"state={source_state}) begun at sha {resolved_sha[:12]}\n")
-            return 1
-        current, _ = _read_registry(cwd, lane)
-        adopted = []
-        existing = {(entry.get("adoption") or {}).get("source_entry_sha")
-                    for entry in current if isinstance(entry.get("adoption"), dict)}
-        for source in candidates:
-            digest = _entry_sha(source)
-            if digest in existing:
-                continue
-            copied = json.loads(json.dumps(source))
-            copied["adoption"] = {
-                "source_lane": source_lane,
-                "source_sha": resolved_sha,
-                "source_registry": str(registry),
-                "source_entry_sha": digest,
-            }
-            adopted.append(copied)
-        proposed = [*current, *adopted]
-        faults = _adoption_faults(root, proposed, base)
-        if faults:
-            sys.stderr.write(
-                "adopt: REFUSED — source evidence does not cover this "
-                "carry-forward branch:\n  " + "\n  ".join(faults) + "\n")
-            return 1
-        if adopted:
-            _write_registry(cwd, proposed, lane)
-    except (OSError, RedproofError) as exc:
-        sys.stderr.write(f"adopt: FAULT — {exc}\n")
-        return 2
-    print(
-        f"adopt: OK — {len(adopted)} direct caught proof(s) adopted from lane "
-        f"{source_lane!r} at {resolved_sha}; source registry {registry}; "
-        "check will re-verify the source entry and carried binding paths")
-    return 0
-
-
 def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
           lane: str | None = None) -> int:
     """Hand-off gate: refuse if a registered injection survives in tree OR history.
@@ -1840,22 +1658,6 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
     registries_found = identity_registries + (1 if legacy_found else 0)
 
     identity_dirs = len(_ls.lane_identity_dirs(cwd)) if coordinator_mode else None
-
-    try:
-        adoption_faults = _adoption_faults(root, entries, base)
-    except RedproofError as exc:
-        _check_error(
-            identity_scope,
-            f"check: FAULT — could not validate adopted red-proof evidence: {exc}",
-        )
-        return 2
-    if adoption_faults:
-        _check_error(
-            identity_scope,
-            "check: REFUSED — adopted red-proof evidence is not independently "
-            "verifiable:\n  " + "\n  ".join(adoption_faults),
-        )
-        return 1
 
     if not entries and registries_found == 0:
         # The blind case (#895/#1038): NO registry could be located. The verdict
@@ -1979,7 +1781,7 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
                 f"read; its absence means the proof cannot be verified, not "
                 f"that it passed. If the lane ran, pass "
                 f"`--lane <DREAMWORK_LANE_ID>` or inspect its scratch by "
-                f"hand.")
+                f"hand." + _CARRY_FORWARD_REARM)
         else:
             # Name the identity actually audited (#651): "the named lane" when
             # no --lane was passed is how instance 1's FAULT read as a proof
@@ -1993,6 +1795,7 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
                 f"{label} (role: {role}). A required red-proof must leave a "
                 f"registry this audit can read; its absence means the proof "
                 f"cannot be verified, not that it passed.{hint}")
+            sys.stderr.write(_CARRY_FORWARD_REARM.lstrip() + "\n")
         return 2
 
     # RETIRED records are history-scan evidence and nothing else (#942), so
@@ -2022,7 +1825,8 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
             _check_error(identity_scope,
                 f"check: REFUSED — {label} (role: {role}), but --require "
                 f"{require} was set. A hand-off that the brief mandated "
-                f"red-proofing must show at least one registered injection.")
+                f"red-proofing must show at least one registered injection."
+                + _CARRY_FORWARD_REARM)
             return 1
         if not retired:
             print(f"check: no evidence — {label} (role: {role}); injection "
@@ -2071,7 +1875,8 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
             f"check: REFUSED — {len(active)} injection(s) registered, but "
             f"--require {require} was set."
             + (f" ({len(retired)} retired registration(s) are in history scope "
-               f"but are not live evidence.)" if retired else ""))
+               f"but are not live evidence.)" if retired else "")
+            + _CARRY_FORWARD_REARM)
         return 1
 
     # Unknown states are refused FIRST and distinctly (#950). They are the
@@ -2349,13 +2154,11 @@ def _parser() -> argparse.ArgumentParser:
         prog="redproof.py",
         description="Red-proof injection registry + hand-off gate (#683). "
                     "Turns the red-proof restore discipline into a check.")
-    ap.add_argument("verb", choices=["begin", "observe", "restore", "forget",
-                                     "adopt", "check", "handoff"],
+    ap.add_argument("verb", choices=["begin", "observe", "restore", "forget", "check", "handoff"],
                     help="begin PATH = snapshot original; "
                          "observe PATH = run and persist the injected-red check; "
                          "restore PATH = record injected + restore original; "
                          "forget PATH = drop an entry; "
-                         "adopt = carry a named prior registry's caught proof; "
                          "check = hand-off gate; "
                          "handoff = derive the diff's requirement then check (#1086)")
     ap.add_argument("path", nargs="?", help="repo-relative path confined to the resolved "
@@ -2372,13 +2175,6 @@ def _parser() -> argparse.ArgumentParser:
     ap.add_argument("--base", default=None,
                     help=f"check: base ref for the history scan (default: first "
                          f"of {', '.join(DEFAULT_BASES)} that resolves)")
-    ap.add_argument("--from-registry", default="", metavar="PATH",
-                    help="adopt: absolute source registry.json printed by the "
-                         "prior lane")
-    ap.add_argument("--from-lane", default="", metavar="LANE",
-                    help="adopt: auditable name of the source lane")
-    ap.add_argument("--at-sha", default="", metavar="SHA",
-                    help="adopt: full source commit where the proof began")
     ap.add_argument("--lane", default=None,
                     help="resolve a NAMED launch identity for every verb; an "
                          "explicit value wins over DREAMWORK_LANE_ID. Without "
@@ -2452,15 +2248,6 @@ def main(argv: list[str] | None = None) -> int:
             return check(cwd, require=args.require, base=args.base, lane=args.lane)
         if args.verb == "handoff":
             return handoff(cwd, base=args.base, lane=args.lane)
-        if args.verb == "adopt":
-            return adopt(
-                cwd,
-                source_registry=args.from_registry,
-                source_lane=args.from_lane,
-                source_sha=args.at_sha,
-                base=args.base,
-                lane=args.lane,
-            )
         if args.path is None:
             ap.error(f"{args.verb} requires a path argument")
         if args.verb == "begin":

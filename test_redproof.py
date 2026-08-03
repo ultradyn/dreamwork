@@ -256,178 +256,6 @@ class TestRestoredInjectionPasses:
         assert _check(repo) == 0
 
 
-class TestAdoptedRegistryMustBeIndependentlyVerifiable:
-    """An adoption is evidence linkage, never a lane-authored exemption."""
-
-    def test_empty_ancestor_registry_cannot_satisfy_a_carry_forward_diff(
-            self, repo, monkeypatch, capsys):
-        base = _git(repo, "rev-parse", "HEAD")
-        _git(repo, "checkout", "-qb", "carry-forward-no-proof")
-        (repo / "router.js").write_text(
-            "export function route() { return true && guarded; }\n")
-        _git(repo, "add", "router.js")
-        _git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit",
-             "-qm", "carry production change")
-        source_sha = _git(repo, "rev-parse", "HEAD")
-
-        # Direction 2: the named ancestor armed NOTHING. Its registry exists
-        # and is independently readable, but contains no proof to adopt.
-        source_registry = (
-            rp._ls.SCRATCH_ROOT / rp._ls.repo_key(repo) /
-            "ancestor-empty" / "lane-ancestor-empty" / rp.SUB / "registry.json"
-        )
-        source_registry.parent.mkdir(parents=True)
-        source_registry.write_text("[]\n")
-
-        # Model the forgeable implementation this regression forbids: a lane
-        # hand-writes a normal-looking caught entry plus an adoption claim. The
-        # evidence bytes are lane-authored too; only checking the named source
-        # registry can distinguish this from a real ancestor proof.
-        evidence = repo.parent / "forged.reach.txt"
-        evidence.write_text("lane-authored claim, not an ancestor observation\n")
-        entry = {
-            "path": "router.js",
-            "state": rp.RESTORED,
-            "begun_head": source_sha,
-            "begun_base": base,
-            "expectation_base_shas": {},
-            "expectation_sources": [{
-                "path": "expectation.txt",
-                "sha": rp._sha((repo / "expectation.txt").read_bytes()),
-            }],
-            "injected_sha": rp._sha(b"SABOTAGE THAT NEVER RAN\n"),
-            "injected_kind": rp.BYTES,
-            "injected_hint": "SABOTAGE THAT NEVER RAN",
-            "reach": {
-                "status": "caught",
-                "command": ["false"],
-                "failure": "invented failure",
-                "evidence": str(evidence),
-                "evidence_sha": rp._sha(evidence.read_bytes()),
-            },
-            "adoption": {
-                "source_lane": "ancestor-that-armed-nothing",
-                "source_sha": source_sha,
-                "source_registry": str(source_registry),
-                "source_entry_sha": "absent-by-construction",
-            },
-        }
-        rp._write_registry(repo, [entry])
-
-        exit = rp.check(repo, require=1, base=base)
-        out, err = capsys.readouterr()
-
-        assert exit == 1, (
-            "branch carry-forward-no-proof would have LANDED without proof for "
-            f"binding paths ['router.js']:\n{out}{err}")
-        assert "carry-forward-no-proof" in err, err
-        assert "router.js" in err, err
-        assert "ancestor-that-armed-nothing" in err, err
-        assert "no verifiable caught proof" in err, err
-        assert "population=0, state=empty" in err, err
-
-    def test_direct_caught_proof_covers_an_unchanged_carried_binding_path(
-            self, repo, monkeypatch, capsys):
-        base = _git(repo, "rev-parse", "HEAD")
-        _git(repo, "checkout", "-qb", "carry-forward-with-proof")
-        (repo / "router.js").write_text(
-            "export function route() { return true && guarded; }\n")
-        _git(repo, "add", "router.js")
-        _git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit",
-             "-qm", "carry production change")
-        source_sha = _git(repo, "rev-parse", "HEAD")
-
-        source_lane = "ancestor-with-caught-proof"
-        monkeypatch.setenv(rp._ls.IDENTITY_ENV, source_lane)
-        assert _begin(repo, "router.js") == 0
-        (repo / "router.js").write_text("ADOPTION_SABOTAGE\n")
-        command = [
-            sys.executable, "-c",
-            "import pathlib,sys; seen='ADOPTION_SABOTAGE' in "
-            "pathlib.Path('router.js').read_text(); "
-            "print('adoption-sabotage-seen' if seen else 'control-clean'); "
-            "sys.exit(1 if seen else 0)",
-        ]
-        assert _observe(
-            repo, "router.js", "adoption-sabotage-seen", command) == 0
-        assert _restore(repo, "router.js") == 0
-        source_registry = rp._registry_path(repo)
-
-        docs = repo / ".dreamwork" / "docs"
-        docs.mkdir(parents=True)
-        (docs / "round-note.md").write_text("review-only round\n")
-        _git(repo, "add", ".dreamwork/docs/round-note.md")
-        _git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit",
-             "-qm", "document review round")
-
-        current_lane = "carry-forward-current-round"
-        monkeypatch.setenv(rp._ls.IDENTITY_ENV, current_lane)
-        assert rp.adopt(
-            repo,
-            source_registry=str(source_registry),
-            source_lane=source_lane,
-            source_sha=source_sha,
-            base=base,
-            lane=current_lane,
-        ) == 0
-        out, err = capsys.readouterr()
-        assert "adopt: OK" in out, out + err
-        assert source_lane in out
-        assert source_sha in out
-
-        assert rp.check(repo, require=1, base=base, lane=current_lane) == 0
-        out, err = capsys.readouterr()
-        assert "red-proof reach: OK" in out, out + err
-        assert "router.js" in out
-
-    def test_adoption_cannot_cover_a_binding_path_changed_after_source_sha(
-            self, repo, monkeypatch, capsys):
-        base = _git(repo, "rev-parse", "HEAD")
-        _git(repo, "checkout", "-qb", "carry-forward-with-own-code")
-        (repo / "router.js").write_text(
-            "export function route() { return true && guarded; }\n")
-        _git(repo, "add", "router.js")
-        _git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit",
-             "-qm", "source production change")
-        source_sha = _git(repo, "rev-parse", "HEAD")
-
-        source_lane = "ancestor-proof-before-own-change"
-        monkeypatch.setenv(rp._ls.IDENTITY_ENV, source_lane)
-        assert _begin(repo, "router.js") == 0
-        (repo / "router.js").write_text("OWN_CHANGE_SABOTAGE\n")
-        command = [
-            sys.executable, "-c",
-            "import pathlib,sys; seen='OWN_CHANGE_SABOTAGE' in "
-            "pathlib.Path('router.js').read_text(); "
-            "print('own-change-sabotage-seen' if seen else 'control-clean'); "
-            "sys.exit(1 if seen else 0)",
-        ]
-        assert _observe(
-            repo, "router.js", "own-change-sabotage-seen", command) == 0
-        assert _restore(repo, "router.js") == 0
-        source_registry = rp._registry_path(repo)
-
-        (repo / "router.js").write_text(
-            "export function route() { return true && newly_changed; }\n")
-        _git(repo, "add", "router.js")
-        _git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit",
-             "-qm", "this round changes production again")
-
-        current_lane = "current-round-with-own-code"
-        monkeypatch.setenv(rp._ls.IDENTITY_ENV, current_lane)
-        assert rp.adopt(
-            repo,
-            source_registry=str(source_registry),
-            source_lane=source_lane,
-            source_sha=source_sha,
-            base=base,
-            lane=current_lane,
-        ) == 1
-        _, err = capsys.readouterr()
-        assert "router.js" in err, err
-        assert "paths differ from source sha" in err, err
-
-
 # ── the three zero-states (#136) ───────────────────────────────────────
 
 class TestZeroStatesAreDistinct:
@@ -2312,6 +2140,9 @@ class TestCoordinatorAuditSeesTheLane:
             "must FAULT, not pass (#671)")
         assert "1 injection(s) were required" in err1, err1
         assert "cannot be verified" in err1, err1
+        assert "re-arm the ancestor's injection" in err1, err1
+        assert "same carried production path" in err1, err1
+        assert "do not invent an unrelated injection" in err1, err1
         # THE discrimination: one fixture, two flags, two different verdicts.
         assert exit0 != exit1, (
             "the two flags produced the same verdict — the fix does not "
@@ -2545,6 +2376,20 @@ class TestCoordinatorModeBlindCaseViaCli:
             capture_output=True, text=True, env=env)
         assert r.returncode == 2, r.stdout + r.stderr
         assert "1 injection(s) were required" in r.stderr, r.stderr
+        assert "re-arm the ancestor's injection" in r.stderr, r.stderr
+        assert "`path` and `injected_hint` fields" in r.stderr, r.stderr
+
+    def test_adoption_is_not_a_cli_proof_path(self, repo, tmp_path):
+        """A candidate-authored foreign registry has no adoption entrypoint."""
+        env = dict(__import__("os").environ)
+        env["REDPROOF_SCRATCH_ROOT"] = str(tmp_path / "cli-scratch")
+        r = subprocess.run(
+            ["python3", str(CLI_PATH), "adopt", "--cwd", str(repo),
+             "--from-registry", str(tmp_path / "forged-registry.json")],
+            capture_output=True, text=True, env=env)
+
+        assert r.returncode == 2, r.stdout + r.stderr
+        assert "invalid choice: 'adopt'" in r.stderr, r.stderr
 
     def test_named_lane_absent_registry_agrees_with_coordinator_both_flags(
             self, repo, tmp_path):
