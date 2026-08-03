@@ -16,6 +16,7 @@ import importlib.machinery
 import importlib.util
 import hashlib
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -710,3 +711,97 @@ class TestVerbDirectoryDisambiguation:
             "would assign an empty string and could carry on")
         assert measured
         assert Path(measured).name == "measure"
+
+
+class TestDetachedLaneJob:
+    """The ccc shell may exit; only verified start + completion is success (#1169)."""
+
+    @staticmethod
+    def _env(tmp_path: Path) -> dict[str, str]:
+        return {
+            **os.environ,
+            "HOME": str(tmp_path),
+            "DREAMWORK_LANE_ID": f"fixture-{tmp_path.name}",
+        }
+
+    @staticmethod
+    def _launch(tmp_path: Path, name: str, program: str) -> subprocess.CompletedProcess:
+        # The outer bash exits immediately after job-launch, matching the parent
+        # boundary that killed ccc-routed `nohup ... &` jobs in #1169.
+        return subprocess.run(
+            [
+                "bash", "-c", 'python3 "$1" job-launch "$2" -- python3 -c "$3"',
+                "lane-job-shell", str(CLI_PATH), name, program,
+            ],
+            cwd=REPO, env=TestDetachedLaneJob._env(tmp_path),
+            text=True, capture_output=True, check=False,
+        )
+
+    @staticmethod
+    def _wait(tmp_path: Path, name: str, timeout: str = "3") -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [sys.executable, str(CLI_PATH), "job-wait", name, "--timeout", timeout],
+            cwd=REPO, env=TestDetachedLaneJob._env(tmp_path),
+            text=True, capture_output=True, check=False,
+        )
+
+    @staticmethod
+    def _field(output: str, key: str) -> str:
+        prefix = f"{key}="
+        return next(line.removeprefix(prefix) for line in output.splitlines()
+                    if line.startswith(prefix))
+
+    def test_job_survives_launch_shell_and_requires_complete_record(self, tmp_path):
+        launched = self._launch(
+            tmp_path, "completed",
+            "import time; print('real output', flush=True); time.sleep(.15)",
+        )
+        assert launched.returncode == 0, launched.stderr
+        pid = int(self._field(launched.stdout, "STARTED job=completed pid"))
+        log = Path(self._field(launched.stdout, "log"))
+        started = Path(self._field(launched.stdout, "start_receipt"))
+        assert log.stat().st_size > 0
+        assert ls._pid_alive(pid), "launcher must verify and return a still-live pid"
+        assert started.read_text() == (
+            f"version=1\npid={pid}\nlog_nonempty=1\npid_alive=1\n"
+        )
+
+        completed = self._wait(tmp_path, "completed")
+        assert completed.returncode == 0, completed.stderr
+        assert f"COMPLETE job=completed pid={pid} exit=0" in completed.stdout
+        done = Path(self._field(completed.stdout, "completion"))
+        assert done.read_text() == f"version=1\npid={pid}\nexit=0\n"
+        assert "real output" in log.read_text()
+
+    def test_nonempty_partial_log_and_dead_pid_are_failure(self, tmp_path):
+        launched = self._launch(
+            tmp_path, "dies",
+            "import time; print('partial output', flush=True); time.sleep(.25)",
+        )
+        assert launched.returncode == 0, launched.stderr
+        pid = int(self._field(launched.stdout, "STARTED job=dies pid"))
+        log = Path(self._field(launched.stdout, "log"))
+        done = Path(self._field(launched.stdout, "completion"))
+        os.kill(pid, signal.SIGTERM)  # only the fixture supervisor spawned above
+
+        failed = self._wait(tmp_path, "dies")
+        assert failed.returncode == 1
+        assert log.stat().st_size > 0, "partial output alone must not become success"
+        assert not done.exists()
+        assert (
+            f"FAILURE: job 'dies' pid {pid} died without a valid completion record"
+            in failed.stderr
+        )
+
+    def test_truncated_completion_record_is_failure(self, tmp_path):
+        launched = self._launch(
+            tmp_path, "truncated",
+            "import time; print('partial output', flush=True); time.sleep(.3)",
+        )
+        assert launched.returncode == 0, launched.stderr
+        done = Path(self._field(launched.stdout, "completion"))
+        done.write_text("version=1\npid=")
+
+        failed = self._wait(tmp_path, "truncated", timeout="0")
+        assert failed.returncode == 1
+        assert "completion record is invalid: empty or truncated" in failed.stderr

@@ -46,6 +46,8 @@ Usage
     dev/lane_scratch.py measure      # the one filesystem-measurement location
     dev/lane_scratch.py write <name> # write stdin to a lane-private file, print
                                      # its absolute path; REFUSES empty input (#868)
+    dev/lane_scratch.py job-launch <name> -- <command>  # verified detach (#1169)
+    dev/lane_scratch.py job-wait <name> --timeout 900   # require completion
 
     S="$(dev/lane_scratch.py snap)"
     cp client/router.js "$S/router.js"      # snapshot before the injection
@@ -87,6 +89,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 # Root for all lane-private scratch. A literal ``~/.cache`` rather than
@@ -484,8 +487,202 @@ def _write_main(argv: list[str]) -> int:
     return 0
 
 
+def _atomic_record(path: Path, fields: list[tuple[str, str | int]]) -> None:
+    """Write a small completion/verification record without an empty-file state."""
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    payload = "".join(f"{key}={value}\n" for key, value in fields)
+    temporary.write_text(payload, encoding="utf-8")
+    os.replace(temporary, path)
+
+
+def _read_record(path: Path, required: tuple[str, ...]) -> dict[str, str]:
+    """Read an exact, non-empty key/value record; reject truncation and extras."""
+    text = path.read_text(encoding="utf-8")
+    if not text or not text.endswith("\n"):
+        raise ValueError("empty or truncated")
+    fields: dict[str, str] = {}
+    for line in text.splitlines():
+        if "=" not in line:
+            raise ValueError(f"malformed line {line!r}")
+        key, value = line.split("=", 1)
+        if not key or not value or key in fields:
+            raise ValueError(f"malformed or duplicate field {key!r}")
+        fields[key] = value
+    if tuple(fields) != required:
+        raise ValueError(
+            f"expected fields {', '.join(required)}, got {', '.join(fields) or 'none'}"
+        )
+    return fields
+
+
+def _pid_alive(pid: int) -> bool:
+    """Return true only for a live, non-zombie process."""
+    try:
+        os.kill(pid, 0)
+        stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
+    except (OSError, ValueError):
+        return False
+    closing = stat.rfind(")")
+    return closing >= 0 and stat[closing + 2:closing + 3] != "Z"
+
+
+def _job_paths(name: str, cwd: Path | None, role: str) -> tuple[Path, ...]:
+    safe_name = _slug(name)
+    if not safe_name or safe_name == "unnamed":
+        raise ValueError(f"job name {name!r} resolves to no usable filename")
+    job = lane_scratch_dir(cwd, create=True, role=role) / "jobs" / safe_name
+    return job, job / "output.log", job / "started", job / "completion"
+
+
+def _job_runner_main(argv: list[str]) -> int:
+    """Internal detached supervisor: run the command, then atomically record exit."""
+    if len(argv) < 4 or argv[2] != "--":
+        print("refuse: internal lane-job runner requires LOG DONE -- COMMAND", file=sys.stderr)
+        return 2
+    log_path, done_path = Path(argv[0]), Path(argv[1])
+    command = argv[3:]
+    with log_path.open("a", encoding="utf-8", buffering=1) as log:
+        print(f"lane-job-start pid={os.getpid()}", file=log, flush=True)
+        try:
+            result = subprocess.run(
+                command, stdin=subprocess.DEVNULL, stdout=log,
+                stderr=subprocess.STDOUT, check=False,
+            )
+            exit_code = result.returncode
+        except OSError as exc:
+            print(f"lane-job-launch-error: {exc}", file=log, flush=True)
+            exit_code = 126
+        _atomic_record(done_path, [
+            ("version", 1), ("pid", os.getpid()), ("exit", exit_code),
+        ])
+    return exit_code
+
+
+def _job_launch_main(argv: list[str]) -> int:
+    """Launch a detached job and return only after start evidence is verified."""
+    ap = argparse.ArgumentParser(prog="lane_scratch.py job-launch")
+    ap.add_argument("name", help="stable lane-private name for this run")
+    ap.add_argument("--startup-timeout", type=float, default=5.0)
+    ap.add_argument("--cwd", default=None,
+                    help="derive lane identity for this directory")
+    ap.add_argument("--role", default=None)
+    ap.add_argument("command", nargs=argparse.REMAINDER)
+    args = ap.parse_args(argv)
+    command = args.command[1:] if args.command[:1] == ["--"] else args.command
+    if not command:
+        ap.error("a command is required after --")
+    cwd = Path(args.cwd) if args.cwd else None
+    role = args.role or lane_role()
+    try:
+        job, log_path, started_path, done_path = _job_paths(args.name, cwd, role)
+    except ValueError as exc:
+        print(f"refuse: {exc}", file=sys.stderr)
+        return 2
+    if job.exists():
+        print(f"refuse: job {args.name!r} already exists at {job}; choose a new name",
+              file=sys.stderr)
+        return 2
+    job.mkdir(parents=True)
+    log_path.touch()
+    runner = [sys.executable, str(Path(__file__).resolve()), "_job-runner",
+              str(log_path), str(done_path), "--", *command]
+    process = subprocess.Popen(
+        runner, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True,
+    )
+    deadline = time.monotonic() + max(0.0, args.startup_timeout)
+    while time.monotonic() <= deadline:
+        if log_path.stat().st_size > 0 and _pid_alive(process.pid):
+            _atomic_record(started_path, [
+                ("version", 1), ("pid", process.pid),
+                ("log_nonempty", 1), ("pid_alive", 1),
+            ])
+            print(f"STARTED job={args.name} pid={process.pid}")
+            print(f"log={log_path}")
+            print(f"completion={done_path}")
+            print(f"start_receipt={started_path}")
+            return 0
+        if process.poll() is not None:
+            break
+        time.sleep(0.01)
+    print(
+        f"FAILURE: job {args.name!r} did not produce a non-empty log while its pid "
+        f"{process.pid} was alive; no start receipt written (log={log_path})",
+        file=sys.stderr,
+    )
+    return 1
+
+
+def _job_wait_main(argv: list[str]) -> int:
+    """Wait for a verified launch and require a complete, parseable exit record."""
+    ap = argparse.ArgumentParser(prog="lane_scratch.py job-wait")
+    ap.add_argument("name")
+    ap.add_argument("--timeout", type=float, default=3600.0)
+    ap.add_argument("--cwd", default=None,
+                    help="derive lane identity for this directory")
+    ap.add_argument("--role", default=None)
+    args = ap.parse_args(argv)
+    cwd = Path(args.cwd) if args.cwd else None
+    role = args.role or lane_role()
+    try:
+        job, log_path, started_path, done_path = _job_paths(args.name, cwd, role)
+        started = _read_record(
+            started_path, ("version", "pid", "log_nonempty", "pid_alive")
+        )
+        pid = int(started["pid"])
+        if (started["version"], started["log_nonempty"], started["pid_alive"]) != (
+                "1", "1", "1"):
+            raise ValueError("start receipt does not prove log_nonempty=1 and pid_alive=1")
+    except (OSError, ValueError) as exc:
+        print(f"FAILURE: job {args.name!r} has no valid start receipt: {exc}",
+              file=sys.stderr)
+        return 1
+
+    deadline = time.monotonic() + max(0.0, args.timeout)
+    while True:
+        if done_path.exists():
+            try:
+                done = _read_record(done_path, ("version", "pid", "exit"))
+                exit_code = int(done["exit"])
+                if done["version"] != "1" or int(done["pid"]) != pid:
+                    raise ValueError("completion pid/version does not match start receipt")
+                if exit_code < 0 or exit_code > 255:
+                    raise ValueError(f"exit code {exit_code} is outside 0..255")
+                if log_path.stat().st_size == 0:
+                    raise ValueError("log is empty")
+            except (OSError, ValueError) as exc:
+                print(f"FAILURE: job {args.name!r} completion record is invalid: {exc}",
+                      file=sys.stderr)
+                return 1
+            print(f"COMPLETE job={args.name} pid={pid} exit={exit_code}")
+            print(f"log={log_path}")
+            print(f"completion={done_path}")
+            return exit_code
+        if not _pid_alive(pid):
+            print(
+                f"FAILURE: job {args.name!r} pid {pid} died without a valid "
+                f"completion record (log={log_path}, completion={done_path})",
+                file=sys.stderr,
+            )
+            return 1
+        if time.monotonic() >= deadline:
+            print(
+                f"FAILURE: timed out waiting for job {args.name!r}; pid {pid} is "
+                f"still alive and no completion record exists (log={log_path})",
+                file=sys.stderr,
+            )
+            return 2
+        time.sleep(0.05)
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    if argv[:1] == ["_job-runner"]:
+        return _job_runner_main(argv[1:])
+    if argv[:1] == ["job-launch"]:
+        return _job_launch_main(argv[1:])
+    if argv[:1] == ["job-wait"]:
+        return _job_wait_main(argv[1:])
     if argv[:1] == ["require-mtime-change"]:
         return _mtime_control_main(argv[1:])
     if argv[:1] == ["write"]:
@@ -494,7 +691,9 @@ def main(argv: list[str] | None = None) -> int:
         description="Print this lane's private scratch directory (#652). "
                     "Role-keyed (#694): a reviewer gets a separate subdir.",
         epilog=(
-            "Subcommands: `write <name>` writes stdin to a lane-private file "
+            "Subcommands: `job-launch NAME -- COMMAND` starts a verified detached "
+            "job; `job-wait NAME` requires its explicit completion record; "
+            "`write <name>` writes stdin to a lane-private file "
             "and prints its path (#868); `require-mtime-change <path> -- <cmd>` "
             "runs a positive control. With no subcommand, prints this lane's "
             "scratch dir. The legacy `snap` and `measure` directory names remain "
@@ -517,7 +716,8 @@ def main(argv: list[str] | None = None) -> int:
     args, extras = ap.parse_known_args(argv)
     if args.sub not in (None, "snap", "measure"):
         matches = difflib.get_close_matches(
-            args.sub, ("write", "require-mtime-change"), n=1, cutoff=0.75)
+            args.sub, ("job-launch", "job-wait", "write", "require-mtime-change"),
+            n=1, cutoff=0.75)
         suggestion = f"; did you mean '{matches[0]}'?" if matches else ";"
         print(f"refuse: unknown verb '{args.sub}'{suggestion} for the legacy "
               f"directory form use --dir {args.sub}", file=sys.stderr)
