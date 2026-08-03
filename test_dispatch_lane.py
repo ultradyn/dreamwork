@@ -615,6 +615,86 @@ def test_unclassified_core_read_failure_is_reported_and_does_not_block(tmp_path)
     assert "launch allowed" in result.stderr
 
 
+def _land_task_in_fixture(root: Path, task_id: int) -> None:
+    """Mark a fixture task LANDED without touching the shared _ledger_fixture.
+
+    Asserts the update took (rowcount 1) so a silently-missed id -- the
+    precondition the refuse depends on -- cannot let the test pass vacuously.
+    """
+    connection = sqlite3.connect(root / ".dreamwork" / "ledger.sqlite3")
+    cursor = connection.execute(
+        "UPDATE task SET state = 'landed' WHERE id = ?", (task_id,))
+    assert cursor.rowcount == 1, f"precondition: task #{task_id} not in fixture store"
+    connection.commit()
+    connection.close()
+
+
+def test_dispatch_refuses_brief_whose_primary_task_has_already_landed(tmp_path):
+    # #1125: landing is terminal, so a brief whose primary task has LANDED is
+    # stale by construction -- the record moved past its premise of open work.
+    # This is the one head-vs-record supersession signal a dispatcher can detect
+    # without reading prose; every broader signal is wallpaper (measured against
+    # the live store: a citation-to-landed check fires 71x on one brief, and
+    # "the record moved since the head was written" fires on 77% of dispatches).
+    cli, root = _sandbox_cli(tmp_path)
+    _land_task_in_fixture(root, 900)
+    prompt = _healthy_prompt(tmp_path, root, task=900, lane="cx-stale")
+
+    result = _run(cli, prompt, "true")
+
+    assert result.returncode == 2, (
+        f"landed primary #900 was not refused (rc={result.returncode}); the "
+        f"#1125 head-vs-record state guard did not fire. stderr={result.stderr!r}"
+    )
+    assert "task #900 is LANDED" in result.stderr
+    assert "already-resolved work" in result.stderr
+    # #651 ceiling, in the check's own output (#1114 idiom): the message names
+    # the task's STATE, not the head's full claims.
+    assert "names the task's STATE, not the head's full claims (#651)" in result.stderr
+    # The refuse fires before persist, so nothing is written for resolved work.
+    assert not (root / ".dreamwork" / "docs" / "briefs" / "900-cx-stale.md").exists()
+
+
+def test_landed_citation_is_not_the_primary_so_dispatch_proceeds(tmp_path):
+    # The guard keys on the PRIMARY task (the heading id), not on any landed
+    # citation. A brief for an OPEN task that cites a LANDED sibling must NOT
+    # refuse: landed citations are usually lesson authority, not live premises
+    # (measured: 71 of 79 citations in a real brief are to landed tasks, so a
+    # per-citation landed check is wallpaper). This binds that narrowness.
+    cli, root = _sandbox_cli(tmp_path)
+    _land_task_in_fixture(root, 901)
+    prompt = _healthy_prompt(tmp_path, root, task=900, lane="cx-citeslanded")
+    prompt.write_text(
+        prompt.read_text(encoding="utf-8").replace(
+            "\n\n" + CONTRACT,
+            "\n\nRelated: #901 landed a fix this builds on.\n\n" + CONTRACT,
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run(cli, prompt, "true")
+
+    assert result.returncode == 0, result.stderr
+    assert "is LANDED" not in result.stderr
+
+
+def test_dispatch_refuses_landed_primary_in_prepare_mode(tmp_path):
+    # The guard runs before persist, which --prepare also reaches, so a landed
+    # task cannot even be prepared for dispatch.
+    cli, root = _sandbox_cli(tmp_path)
+    _land_task_in_fixture(root, 902)
+    prompt = _healthy_prompt(tmp_path, root, task=902, lane="cx-prepstale")
+
+    env = {**os.environ, "DREAMWORK_ALLOW_PIPED_STDOUT": "1"}
+    result = subprocess.run(
+        [sys.executable, str(cli), "--prepare", "--prompt", str(prompt)],
+        capture_output=True, text=True, env=env,
+    )
+
+    assert result.returncode == 2
+    assert "task #902 is LANDED" in result.stderr
+
+
 def test_dispatch_refuses_the_ambiguous_hand_off_wording(tmp_path):
     cli, root = _sandbox_cli(tmp_path)
     prompt = _healthy_prompt(tmp_path, root)
