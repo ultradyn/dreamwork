@@ -7167,7 +7167,8 @@ class TestBlockerCitations1024:
     def test_stale_citation_without_qualifying_note_stays_unhandled(self, tmp_path):
         entry = (
             "- **#703** — Build after the human gate · P1 · origin: **loop**\n"
-            "  UNBLOCKED #591 was discussed before the Do not start ruling cited in #591.\n"
+            "  UNBLOCKED #591 was discussed earlier.\n"
+            "  Do not start before the ruling cited in #591.\n"
             "  · Follow-up 2026-07-31 — #591 has useful background, but no status change.\n")
         questions = self.questions(answered_entries=(
             "- **P1 · #591: design ruling**\n"
@@ -7179,6 +7180,31 @@ class TestBlockerCitations1024:
             f"{classification}")
         assert any("#703 cites blocker #591" in row
                    for row in self.blocker_rows(rows)), rows
+
+    def test_clearing_note_only_acknowledges_the_blocker_it_names(self, tmp_path):
+        entry = (
+            "- **#704** — Build after both human gates · P1 · origin: **loop**\n"
+            "  Do not start before the ruling cited in #591.\n"
+            "  Do not start before the ruling cited in #832.\n"
+            "  · CLEARED 2026-08-03 — blocker #591 was answered.\n")
+        answered = (
+            "- **P1 · #591: first ruling**\n"
+            "  → answered (2026-07-31 17:03): proceed\n"
+            "- **P1 · #832: second ruling**\n"
+            "  → answered (2026-08-01 10:00): proceed\n")
+        rows = self.rows(self.build(
+            tmp_path, self.tasks(entry), self.questions(answered_entries=answered)))
+        direct = lint._direct_blocker_citations(entry, set())
+        assert lint._blocker_citation_classification(
+            entry, 591, direct, "ANSWERED") == "stale-acknowledged"
+        classification = lint._blocker_citation_classification(
+            entry, 832, direct, "ANSWERED")
+        assert classification == "stale-unhandled", (
+            "#704/#832 was muted by the clearing note for #591: "
+            f"{classification}")
+        warns = self.blocker_rows(rows)
+        assert not any("blocker #591" in row for row in warns), warns
+        assert any("#704 cites blocker #832" in row for row in warns), warns
 
     def test_630_body_and_question_title_report_one_cleared_blocker(self, tmp_path):
         tasks = self.tasks(
