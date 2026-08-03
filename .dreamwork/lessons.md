@@ -6967,3 +6967,116 @@ carries it.
 **The tell to watch for:** when I am about to write a specific number, path, or
 prohibition into a brief *without opening anything*, that is the moment the
 checklist exists for, and it is precisely the moment it feels unnecessary.
+
+## A background job dies with the shell that launched it, and a trailing `sleep` is what keeps that shell alive to be killed (2026-08-04, #1197 gate)
+
+I launched a merge gate as `nohup python3 dev/land_lane.py … &` from a
+harness-backgrounded call, and put a `sleep 30` after it so I could read the
+log. The gate died: `land_lane interrupted by signal 15; main stayed on master;
+scratch retained`.
+
+**The `sleep` is the bug, not the `nohup`.** With nothing after the `&` the
+tracked shell exits immediately and the child is orphaned to init. The trailing
+`sleep` kept that shell alive and *tracked*, so when the harness stopped it, the
+stop went to the whole process group — and `nohup` only ignores SIGHUP, not
+SIGTERM. The thing I added to observe the job is what killed it.
+
+The form that survives is `setsid nohup CMD > log 2>&1 < /dev/null & disown`
+with **nothing after it** — `setsid` leaves the process group entirely, so a
+group-directed signal cannot reach it. Read the log on a *later* call.
+
+The general shape: **anything that keeps the launching shell alive converts an
+orphaned child back into a killable one.** It failed safely here only because
+`land_lane` is careful about signals; the cost was one wasted gate cycle.
+
+## Recovering a dead gate needs its corpse, and I reaped it (2026-08-04, #1211)
+
+A gate died leaving `.dreamwork/gate-in-flight.json`. A live OR dead breadcrumb
+refuses every future gate, so recovery matters. `_refuse_dead_gate` recovers by
+**identity-verifying the recorded scratch worktree**: it must start with
+`.gate-`, belong to the recorded common git dir, be detached, and match the
+recorded merge sha — and **all four probes need `target.is_dir()` first.**
+
+I tidied up by reaping the scratch worktree, then asked the gate to recover.
+With the directory gone every probe faults, the breadcrumb is retained forever,
+and **all future gates are blocked** — the tidying made the state permanently
+unrecoverable. I cleared it by hand only after verifying the pid was dead, the
+scratch absent, `git worktree list` showed zero gate worktrees, and master was
+unchanged at the recorded pre-merge sha.
+
+**Cleaning up the evidence is not neutral when the recovery path is an
+identity check.** The rule: let the tool that owns a recovery perform it
+*before* removing anything it might need to inspect. Filed as `#1211`.
+
+## A rebase orphans the shas you were about to cite, and `fold` refuses silently (2026-08-04, #1069)
+
+`ledger.py fold` validates that **every 7+ hex token in the note is an ancestor
+of `--base`**. I folded `#1069` citing a lane commit from before I rebased the
+branch; the rebase had rewritten it, so the token resolved to nothing, the fold
+**refused without a visible error**, and the task stayed `open`. I only caught
+it by re-reading the state afterwards.
+
+Two habits follow. **Cite the merge sha, not branch commits** — the merge is
+what is on master and it cannot be orphaned by a later rebase. And **read the
+task's state back after every fold**, because this refusal's failure mode is
+silence, and a silent refusal on a write verb is indistinguishable from success
+until something else notices.
+
+## Gate cost scales with the changed module's fan-in, not the size of the diff (2026-08-04)
+
+Measured across four consecutive landings:
+
+| branch | change | tests | wall |
+|---|---|---:|---:|
+| `cx-1191corpus` | 2 lines in `lint.py` | 2371 | ~14 min |
+| `cx-1197…` | 4 commits in `land_lane.py` | 372 | 2:57 |
+| `cx-644briefgen` | `dev/brief.py` | 145 | 0:28 |
+| `cx-1179r2range` | `dev/redproof.py` | 1125 | 5:56 |
+
+A **two-line** change to `lint.py` cost 8× the wall-clock of a **four-commit**
+change to `land_lane.py`, because the derivation rules pull in everything that
+imports or reads the changed module. Diff size predicts nothing.
+
+The scheduling consequence: **under load, land the narrow-fan-in branches first**
+— they are both faster and safer — and save the wide-fan-in ones for a quiet
+machine. Browser-touching branches (`client/*`) carry the extra risk that
+`#666` measured: under contention those guards return a *wrong answer rather
+than a slow one*.
+
+## A probe whose two populations overlap can only return the answer I was hoping for (2026-08-04, handoffs)
+
+I checked for unfolded hand-offs by splitting `handoffs.md` on its two headings:
+pending ids from after `## Pending`, folded ids from after `## Folded`. It
+reported **zero unfolded**, which is what I wanted to see, so I nearly moved on.
+
+`## Folded` is at line 36 and `## Pending` at line 211. Splitting on `## Folded`
+therefore swallowed **the entire Pending section into the folded set**, so every
+pending id was "already folded" by construction. **The probe could not have
+returned anything else**, whatever the file said. Re-run with line ranges it
+gave one candidate, which turned out to be a nested mention inside another
+entry — the true answer was still zero, and that is the point: *the right answer
+from an instrument that cannot produce a wrong one is not evidence.*
+
+This is the same family as `lane_owned_paths(dw, …)` taking `.dreamwork` rather
+than the repo root, and as "a probe that cannot express 'alive' reports every
+process as dead" (`#1189`/`#1169`). The tell is structural and cheap to check:
+**when a probe reports the clean answer, ask what input would have made it
+report a dirty one.** If nothing would, it has not run.
+
+## My own tooling broke my own rule, because the rule lives in prose and the tooling lives in a file (2026-08-04, #1206-adjacent)
+
+I wrote a scratchpad dispatch script that piped `launch_lane.py`'s stdout into
+`grep` to keep the output short. It refused, correctly:
+
+    REFUSE phase=output-safety: stdout is a pipe whose reader can close early
+    and kill the runner with SIGPIPE; redirect to a regular file
+
+**"Never pipe a backgrounded command" is a rule I hold and have written down**,
+and I broke it the moment I was writing throwaway tooling rather than doing the
+thing the rule is about. Three dispatches were lost to it.
+
+The generalisation is uncomfortable and worth keeping: **the standards I apply
+to the work do not automatically apply to the scaffolding I build to do the
+work**, and scaffolding is exactly where I am least careful because it feels
+disposable. It was a guard in the *tool* that caught me, not my own discipline —
+which is the same argument `#644` and `#1209` make about briefs, one level out.
