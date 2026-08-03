@@ -235,7 +235,25 @@ class QuestionDualColumnSource(unittest.TestCase):
   await page.evaluate(next => setData(next), states.open);
   await page.waitForSelector('#qfocus .qa[data-qkey="o0"] textarea');
   const droppedDraft = 'draft that must outlive a vanished question';
+  // Refuse the input listener's first save so only restoreCardState's
+  // unmatched-card fallback can create the record asserted below.
+  await page.evaluate(() => {
+    const save = dwDraft.save.bind(dwDraft);
+    window.__fallbackSaveProbe = { attempts: 0 };
+    dwDraft.save = (title, value) => {
+      window.__fallbackSaveProbe.attempts += 1;
+      if (window.__fallbackSaveProbe.attempts === 1) return false;
+      return save(title, value);
+    };
+  });
   await page.locator('#qfocus .qa[data-qkey="o0"] textarea').fill(droppedDraft);
+  const autosave = await page.evaluate(title => ({
+    attempts: window.__fallbackSaveProbe.attempts,
+    stored: DraftStore.get(DraftStore.id('card', title))?.text || '',
+  }), states.title);
+  if (autosave.attempts !== 1 || autosave.stored !== '')
+    throw new Error('fallback-write fixture did not isolate input autosave: ' +
+      JSON.stringify(autosave));
   liveData = states.missing;
   liveMtime = 'poll-missing';
   pollArmed = true;
@@ -250,6 +268,7 @@ class QuestionDualColumnSource(unittest.TestCase):
       notice: notice?.textContent || '',
       noticeQid: notice?.dataset.unmatchedQid || '',
       stored: record?.text || '',
+      saveAttempts: window.__fallbackSaveProbe.attempts,
     };
   }, states.title);
   if (pollMtimeRequests < 1 || pollDataRequests < 1)
@@ -258,10 +277,11 @@ class QuestionDualColumnSource(unittest.TestCase):
     throw new Error('missing-state fixture did not remove the real card and textarea');
   if (vanished.noticeQid !== encodeURIComponent(states.title) ||
       !vanished.notice.includes('Draft preserved') ||
-      vanished.stored !== droppedDraft)
-    throw new Error('scheduled poll silently dropped draft "' + droppedDraft +
-      '": saved=1; restored-cards=0; absent target .qa[data-qid="' +
-      encodeURIComponent(states.title) + '"] and no visible recovery');
+      vanished.stored !== droppedDraft || vanished.saveAttempts !== 2)
+    throw new Error('unmatched-card fallback write did not preserve draft "' +
+      droppedDraft + '": input autosave was refused; fallback attempts=' +
+      vanished.saveAttempts + '; restored-cards=0; absent target .qa[data-qid="' +
+      encodeURIComponent(states.title) + '"]');
 
   // The recovery key is title-derived. Prove a retitle does not find the old
   // draft, then require the notice to state that exact limitation.

@@ -1061,6 +1061,13 @@
   .qhealth.unreadable .qhbody { color:var(--lit); }
   .qhealth.missing .qhbody { color:var(--dim); }
   .qh { color:var(--warn); }
+  /* A vanished question's draft recovery is live state, not a channel fault:
+     the accent rail keeps the preserved draft findable without making it look
+     broken. If browser storage refused it, the readonly copy is the fallback
+     channel and the rail changes to the standing failure colour. */
+  .qdraftrecovery { border-left:2px solid var(--accent); padding-left:.8rem;
+    color:var(--lit); max-width:56ch; }
+  .qdraftrecovery:has(textarea) { border-left-color:var(--warn); }
   /* #452 — the focused question's said-missing state. The rail idiom at
      DIM level, not --warn: the channel is healthy and the question is
      simply gone, so it must not wear the fault colour — and it must not

@@ -16,7 +16,7 @@
     "client/favicon.js": "746a512fb2d23b6ac1294f4d5fdbb4bcc5809a93cae1fe6e78dbbe70882ba901",
     "client/router.js": "9bbaca6dd72c462cad1d94c3dcc5cdfae202b2dbe7e5216b03a0a6e3d11eb490",
     "client/shader.js": "e293165e637d135da651d35fa7834208a07e6dc1142d670d2cd6018a1017a462",
-    "client/style.css": "78ba73e70b80a8315fab4640d8f555840e48621ab7f98f61b3acaf2aabc36388",
+    "client/style.css": "fe684b55d98501419b63469c0d09bbe12c14cbff2210bf154f949c42f9cc3a1a",
     "client/views.js": "3d55e5e217711c8adf605d3f283e2bcb200b3ef229c54af4c1c68a9de5962e58",
     "dev/build/ds-src/ArtifactRow.d.ts": "12ace56abf0721bdd65bbb781e52937fdbd8dbe21897fd5eab3455a3b4da04cb",
     "dev/build/ds-src/ArtifactRow.fixture.json": "a38b3cf2012178882d4c60cf29361cef79e3192e954518830580959648fffd76",
@@ -50,7 +50,7 @@
   },
   "outputs": {
     "client/dist/ds/index.js": "856035e8726857e347cab2729accffe03b2dc5dddf3e11a64150a6831c3bb833",
-    "client/dist/ds/styles.css": "78ba73e70b80a8315fab4640d8f555840e48621ab7f98f61b3acaf2aabc36388",
+    "client/dist/ds/styles.css": "fe684b55d98501419b63469c0d09bbe12c14cbff2210bf154f949c42f9cc3a1a",
     "client/dist/native.js": "0cfbc07f2f40841033fb051686705bcb2bf9e62a0e3f710ccc39d48846da40e2"
   },
   "schema": 1,

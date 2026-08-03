@@ -8647,15 +8647,11 @@ class TestAppShell(unittest.TestCase):
         self.assertNotEqual(
             start, -1,
             "the registered /question component is absent from the shipment")
-        registered_source = watch.PAGE[start:registration.start()]
-        for token, state in (
-                ('questions_open', 'open'), ('k:"o"', 'open'),
-                ('answered_entries', 'fold-following answered'),
-                ('k:"a"', 'fold-following answered'),
-                ('className:"qmissing"', 'not-found')):
-            self.assertIn(
-                token, registered_source,
-                "the registered /question component lost its %s state" % state)
+        # State resolution is behaviour-bound by
+        # QuestionDualColumnSource.test_registered_question_emits_dual_column_container:
+        # it mounts the executable registry and drives open, answered, and
+        # missing data through the shipped component. Do not pin this static
+        # shell check to minifier-specific object or className output.
         # the folded Answered section no longer has look-alike markup
         self.assertNotIn('answeredEntry', watch.PAGE)
         self.assertNotIn('aentry', watch.PAGE)
