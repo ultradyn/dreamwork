@@ -3412,3 +3412,260 @@ def test_authority_note_does_not_claim_to_have_verified_the_lane_ran_handoff(doc
     assert len(note_lines) == 1, f"expected exactly one authority line, got {note_lines}"
     # It must name what it CANNOT establish, not assert it did.
     assert "cannot establish which command produced" in note_lines[0]
+
+
+# ---------------------------------------------------------------------------
+# #1157 — batched rebase-then-gate landing.
+#
+# When N branches are ready, landing the first staleifies the rest. The batch
+# path rebases each entry onto the CURRENT master immediately before its gate,
+# absorbing each landing before the next. These tests drive REAL fixture repos
+# with REAL branches — not stubbed gates (#1157 red-proof direction 2).
+# ---------------------------------------------------------------------------
+
+def _run_batch(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(TOOL), "batch", *args],
+        cwd=root, capture_output=True, text=True,
+    )
+
+
+def _make_two_lane_repo(tmp_path: Path) -> tuple[Path, Path, Path]:
+    """A base checkout plus two empty lane worktrees (branches 'lane', 'lane-b')."""
+    root, lane_a = _make_repo(tmp_path)
+    lane_b = tmp_path / "lane-b"
+    _git(root, "worktree", "add", "-b", "lane-b", str(lane_b), "master")
+    return root, lane_a, lane_b
+
+
+@pytest.fixture
+def batch_two_doc_lanes(tmp_path: Path):
+    """Two doc-only lanes adding DIFFERENT files — neither conflicts on rebase.
+
+    Each is inert documentation (.dreamwork/docs/*.md) so require=0 and no
+    red-proof injection is needed (#1018). The diff is genuinely code-free so
+    the #1010 empty-selection guarantee still holds for any branch that has a
+    binding path — these do not.
+    """
+    root, lane_a, lane_b = _make_two_lane_repo(tmp_path)
+    _write(lane_a / ".dreamwork" / "docs" / "alpha.md", "# Alpha\n")
+    _git(lane_a, "add", ".dreamwork/docs/alpha.md")
+    _git(lane_a, "commit", "-m", "doc alpha")
+    _write(lane_b / ".dreamwork" / "docs" / "beta.md", "# Beta\n")
+    _git(lane_b, "add", ".dreamwork/docs/beta.md")
+    _git(lane_b, "commit", "-m", "doc beta")
+    return root, lane_a, lane_b
+
+
+def test_batch_lands_two_stale_doc_branches_by_rebasing_per_entry(batch_two_doc_lanes):
+    """THE test (#1157): landing branch 1 staleifies branch 2, and the batch
+    recovers by rebasing each entry onto current master immediately before its
+    gate. If the rebase happened up front (the trap), branch 2 would be gated
+    against a stale master and refuse — this test discriminates that.
+    """
+    root, lane_a, lane_b = batch_two_doc_lanes
+    master_before = _git(root, "rev-parse", "--verify", "refs/heads/master")
+
+    result = _run_batch(
+        root, "--entry", "lane", "--entry", "lane-b",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    master_after = _git(root, "rev-parse", "--verify", "refs/heads/master")
+    # Master advanced (at least once — landing lane staleifies lane-b, which
+    # the batch then rebases and lands too).
+    assert master_after != master_before, "master did not advance at all"
+    # Both branches landed — not an aggregate "exit 0" (#1157 trap: "assert
+    # the batch exited 0"). Each entry's verdict is named individually.
+    assert "lane: LANDED" in result.stdout, result.stdout
+    assert "lane-b: LANDED" in result.stdout, result.stdout
+    # Both denominators stated (#868).
+    assert "batch summary: attempted=2 landed=2" in result.stdout
+    # Lane-a's landing advanced master; lane-b was rebased onto that new tip
+    # before its own gate. If the rebase were up-front, lane-b would REFUSE.
+    assert "REFUSE phase=preflight: branch is not rebased" not in result.stdout
+
+
+def test_batch_master_advanced_once_per_landing(batch_two_doc_lanes):
+    """The batch is serial: each landing fast-forwards master exactly once, so
+    two landings = two distinct master shas after the batch. This catches the
+    'rebase all up front' defect: in that case branch 2 refuses at preflight
+    and master advances only once.
+    """
+    root, lane_a, lane_b = batch_two_doc_lanes
+    master_before = _git(root, "rev-parse", "--verify", "refs/heads/master")
+
+    result = _run_batch(root, "--entry", "lane", "--entry", "lane-b")
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    # After the batch, master should have advanced past BOTH merges. The merge
+    # commits are distinct (each has a different set of parents/content), so
+    # counting commits from master_before to master should be at least 2
+    # (one merge per landing, possibly more if fast-forward creates commits).
+    count = _git(
+        root, "rev-list", "--count", f"{master_before}..master",
+    )
+    assert int(count) >= 2, (
+        f"master advanced only {count} commit(s) from the before-sha; "
+        f"expected >= 2 (one per landing)"
+    )
+
+
+@pytest.fixture
+def batch_conflict_lanes(tmp_path: Path):
+    """Two doc lanes that both ADD the SAME file with different content.
+
+    Lane-a lands first (adding the file); lane-b's rebase then hits an
+    add/add conflict — both branches created .dreamwork/docs/shared.md.
+    The batch must abort the rebase, leave lane-b's worktree clean, and
+    continue (not die on the first conflict).
+    """
+    root, lane_a, lane_b = _make_two_lane_repo(tmp_path)
+    _write(lane_a / ".dreamwork" / "docs" / "shared.md", "# From lane-a\n")
+    _git(lane_a, "add", ".dreamwork/docs/shared.md")
+    _git(lane_a, "commit", "-m", "doc shared from a")
+    _write(lane_b / ".dreamwork" / "docs" / "shared.md", "# From lane-b\n")
+    _git(lane_b, "add", ".dreamwork/docs/shared.md")
+    _git(lane_b, "commit", "-m", "doc shared from b")
+    return root, lane_a, lane_b
+
+
+def test_batch_rebase_conflict_continues_and_leaves_worktree_clean(
+    batch_conflict_lanes,
+):
+    """A rebase conflict must not strand every later branch (#1157 req 2).
+    The batch aborts the rebase (leaving the branch untouched), reports the
+    conflict loudly, and continues. #1159: a mid-rebase worktree breaks OTHER
+    gates, so the worktree must be clean afterward.
+    """
+    root, lane_a, lane_b = batch_conflict_lanes
+    master_before = _git(root, "rev-parse", "--verify", "refs/heads/master")
+
+    result = _run_batch(root, "--entry", "lane", "--entry", "lane-b")
+
+    # The batch exits non-zero (not all entries landed).
+    assert result.returncode == 1, result.stdout + result.stderr
+    # Lane-a landed; lane-b hit a rebase conflict.
+    assert "lane: LANDED" in result.stdout, result.stdout
+    assert "lane-b: CONFLICT" in result.stdout, result.stdout
+    assert "rebase-conflict=1" in result.stdout, result.stdout
+    # Master advanced once (lane-a landed; lane-b did not).
+    master_after = _git(root, "rev-parse", "--verify", "refs/heads/master")
+    assert master_after != master_before, "lane-a did not land"
+    # Lane-b's worktree must be clean — no half-rebased state (#1159).
+    assert lane_b.is_dir(), "lane-b worktree was removed"
+    status = _git(lane_b, "status", "--porcelain=v1", "--untracked-files=no")
+    assert status == "", f"lane-b worktree is dirty after aborted rebase: {status}"
+    # Lane-b's branch ref must still exist.
+    assert _git(root, "show-ref", "--verify", "refs/heads/lane-b")
+
+
+@pytest.fixture
+def batch_landed_plus_refused(tmp_path: Path):
+    """One doc-only lane (lands) and one code lane with no named tests (refused).
+
+    Lane-b adds a binding .py file but names no tests, so land() refuses at
+    the selection phase ('named test selection is empty' for a branch with
+    binding paths). The batch must report the refusal loudly and continue.
+    """
+    root, lane_a, lane_b = _make_two_lane_repo(tmp_path)
+    _write(lane_a / ".dreamwork" / "docs" / "alpha.md", "# Alpha\n")
+    _git(lane_a, "add", ".dreamwork/docs/alpha.md")
+    _git(lane_a, "commit", "-m", "doc alpha")
+    _write(lane_b / "new_tool.py", "VALUE = 1\n")
+    _git(lane_b, "add", "new_tool.py")
+    _git(lane_b, "commit", "-m", "code change with no tests")
+    return root, lane_a, lane_b
+
+
+def test_batch_gate_refusal_continues_and_reports_loudly(batch_landed_plus_refused):
+    """A gate REFUSAL must not stop the batch (#1157 req 3), but it must be
+    reported loudly and distinguishably from a pass.
+    """
+    root, lane_a, lane_b = batch_landed_plus_refused
+    master_before = _git(root, "rev-parse", "--verify", "refs/heads/master")
+
+    # Lane-a has no tests (doc-only, legal #1018); lane-b has no tests but a
+    # binding path (illegal — land() refuses at selection).
+    result = _run_batch(root, "--entry", "lane", "--entry", "lane-b")
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "lane: LANDED" in result.stdout, result.stdout
+    assert "lane-b: REFUSED" in result.stdout, result.stdout
+    assert "refused=1" in result.stdout, result.stdout
+    # The refusal reason must be visible.
+    assert "REFUSE phase=selection" in result.stderr, result.stderr
+    # Master advanced once (lane-a); lane-b's worktree is retained.
+    master_after = _git(root, "rev-parse", "--verify", "refs/heads/master")
+    assert master_after != master_before
+    assert lane_b.is_dir(), "lane-b worktree was removed despite refusal"
+
+
+def test_batch_with_zero_entries_refuses_not_exit_zero(tmp_path: Path):
+    """A batch with zero entries must exit non-zero — 'the batch exited 0' is
+    vacuous when zero branches were gated (#1157 trap, #868 denominator).
+    """
+    root, _lane = _make_repo(tmp_path)
+    result = _run_batch(root)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "REFUSE batch: no entries" in result.stderr, result.stderr
+
+
+def test_batch_entry_without_registered_worktree_is_skipped(tmp_path: Path):
+    """An entry whose branch has no registered linked worktree is SKIPPED, not
+    a crash. The batch continues and names it in the summary.
+    """
+    root, _lane = _make_repo(tmp_path)
+    result = _run_batch(root, "--entry", "nonexistent-branch")
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "nonexistent-branch: SKIPPED" in result.stdout, result.stdout
+    assert "skipped=1" in result.stdout, result.stdout
+
+
+def test_batch_summary_reports_all_four_outcomes_distinguishably(tmp_path: Path):
+    """#136: landed / refused / rebase-conflict / skipped are four states and
+    must stay distinguishable in the output. This test constructs a batch that
+    exercises as many of them as feasible in one run.
+
+    Entries: (1) a doc-only lane that lands; (2) a doc-only lane that conflicts
+    with #1 on rebase; (3) a code lane with no tests that refuses at selection;
+    (4) a branch with no registered worktree that is skipped.
+    """
+    root, lane_a, lane_b = _make_two_lane_repo(tmp_path)
+
+    # Lane-a and lane-b both add the same shared doc (conflict after a lands).
+    _write(lane_a / ".dreamwork" / "docs" / "shared.md", "# From a\n")
+    _git(lane_a, "add", ".dreamwork/docs/shared.md")
+    _git(lane_a, "commit", "-m", "doc shared from a")
+    _write(lane_b / ".dreamwork" / "docs" / "shared.md", "# From b\n")
+    _git(lane_b, "add", ".dreamwork/docs/shared.md")
+    _git(lane_b, "commit", "-m", "doc shared from b")
+
+    # Lane-c: code change, no named tests → refuses at selection.
+    lane_c = tmp_path / "lane-c"
+    _git(root, "worktree", "add", "-b", "lane-c", str(lane_c), "master")
+    _write(lane_c / "new_tool.py", "VALUE = 1\n")
+    _git(lane_c, "add", "new_tool.py")
+    _git(lane_c, "commit", "-m", "code with no tests")
+
+    result = _run_batch(
+        root,
+        "--entry", "lane",         # LANDED
+        "--entry", "lane-b",       # CONFLICT (same file)
+        "--entry", "lane-c",       # REFUSED (binding, no tests)
+        "--entry", "ghost",        # SKIPPED (no worktree)
+    )
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    summary = [l for l in result.stdout.splitlines() if "batch summary:" in l]
+    assert len(summary) == 1, f"expected one summary line, got {summary}"
+    assert "attempted=4" in summary[0]
+    assert "landed=1" in summary[0]
+    assert "rebase-conflict=1" in summary[0]
+    assert "refused=1" in summary[0]
+    assert "skipped=1" in summary[0]
+    # Each branch is named with its distinct state marker.
+    assert "lane: LANDED" in result.stdout
+    assert "lane-b: CONFLICT" in result.stdout
+    assert "lane-c: REFUSED" in result.stdout
+    assert "ghost: SKIPPED" in result.stdout
