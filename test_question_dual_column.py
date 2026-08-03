@@ -77,12 +77,16 @@ class QuestionDualColumnSource(unittest.TestCase):
             opened.update(title=title, body=long_body)
             answered = dict(base["answered_entries"][0])
             answered.update(title=title, body=long_body)
+            nearby = dict(opened)
+            nearby["title"] = title + " nearby, never a substitute"
             states = {
                 "title": title,
                 "open": dict(base, questions_open=[opened],
                              answered_entries=[]),
                 "answered": dict(base, questions_open=[],
-                                 answered_entries=[answered]),
+                                  answered_entries=[answered]),
+                "missing": dict(base, questions_open=[nearby],
+                                answered_entries=[]),
             }
             states_path = tmp / "states.json"
             states_path.write_text(json.dumps(states), encoding="utf-8")
@@ -103,6 +107,11 @@ import { readFileSync } from 'node:fs';
 
 const html = readFileSync(process.argv[2], 'utf8');
 const states = JSON.parse(readFileSync(process.argv[3], 'utf8'));
+let liveData = states.open;
+let liveMtime = '0';
+let pollArmed = false;
+let pollMtimeRequests = 0;
+let pollDataRequests = 0;
 const browser = await chromium.launch({ headless: true });
 try {
   const page = await browser.newPage();
@@ -113,10 +122,13 @@ try {
     if (route.request().isNavigationRequest()) {
       await route.fulfill({ status: 200, contentType: 'text/html', body: html });
     } else if (url.pathname === '/data.json') {
+      if (pollArmed) pollDataRequests += 1;
       await route.fulfill({ status: 200, contentType: 'application/json',
-        body: JSON.stringify(states.open) });
+        body: JSON.stringify(liveData) });
     } else if (url.pathname === '/mtime') {
-      await route.fulfill({ status: 200, contentType: 'text/plain', body: '0' });
+      if (pollArmed) pollMtimeRequests += 1;
+      await route.fulfill({ status: 200, contentType: 'text/plain',
+        body: liveMtime });
     } else {
       await route.fulfill({ status: 404, body: '' });
     }
@@ -195,6 +207,40 @@ try {
   if (after.textScroll !== before.textScroll ||
       after.readScroll !== before.readScroll)
     throw new Error('native update lost question textarea or read scroll');
+
+  // Construct the vanishing-card case for real, then let tick() discover it
+  // through /mtime. Calling setData(missing) here would prove setData, not the
+  // scheduled poll that production relies on.
+  await page.evaluate(next => setData(next), states.open);
+  await page.waitForSelector('#qfocus .qa[data-qkey="o0"] textarea');
+  const droppedDraft = 'draft that must outlive a vanished question';
+  await page.locator('#qfocus .qa[data-qkey="o0"] textarea').fill(droppedDraft);
+  liveData = states.missing;
+  liveMtime = 'poll-missing';
+  pollArmed = true;
+  await page.waitForSelector('#qfocus .qmissing', { timeout: 5000 });
+  const vanished = await page.evaluate(title => {
+    const focus = document.querySelector('#qfocus');
+    const notice = focus?.querySelector('[role="alert"][data-unmatched-qid]');
+    const record = DraftStore.get(DraftStore.id('card', title));
+    return {
+      cards: focus?.querySelectorAll('.qa[data-qid]').length,
+      textareas: focus?.querySelectorAll('textarea').length,
+      notice: notice?.textContent || '',
+      noticeQid: notice?.dataset.unmatchedQid || '',
+      stored: record?.text || '',
+    };
+  }, states.title);
+  if (pollMtimeRequests < 1 || pollDataRequests < 1)
+    throw new Error('scheduled /mtime poll did not fetch the missing state');
+  if (vanished.cards !== 0 || vanished.textareas !== 0)
+    throw new Error('missing-state fixture did not remove the real card and textarea');
+  if (vanished.noticeQid !== encodeURIComponent(states.title) ||
+      !vanished.notice.includes('Draft preserved') ||
+      vanished.stored !== droppedDraft)
+    throw new Error('scheduled poll silently dropped draft "' + droppedDraft +
+      '": saved=1; restored-cards=0; absent target .qa[data-qid="' +
+      encodeURIComponent(states.title) + '"] and no visible recovery');
   if (pageErrors.length)
     throw new Error('shipping /question raised page errors: ' +
       pageErrors.join(' | '));
