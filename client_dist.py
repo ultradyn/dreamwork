@@ -152,13 +152,23 @@ def ds_sources(root):
     The directory is the source of truth: adding an export's companion triad
     makes it a manifest input without adding its basename to a second list.
     The export/triad completeness test owns the stronger shape requirement.
+
+    A missing or readable-but-empty directory is a legitimate empty companion
+    set for trees that ship no wrappers.  An existing directory that cannot be
+    read is different: return ``None`` so the checker refuses to guess.
     """
+    directory = os.path.join(root, DS_SOURCE_DIR)
+    try:
+        with os.scandir(directory):
+            pass
+    except FileNotFoundError:
+        return []
+    except OSError:
+        return None
     found = sorted(
-        path for path in glob.glob(os.path.join(root, DS_SOURCE_DIR, "*"))
+        path for path in glob.glob(os.path.join(directory, "*"))
         if any(path.endswith(suffix) for suffix in DS_SOURCE_SUFFIXES)
     )
-    if not found:
-        return None
     return [os.path.relpath(p, root).replace(os.sep, "/") for p in found]
 
 

@@ -450,6 +450,22 @@ def test_native_sources_are_all_build_inputs(tmp_path):
         "is not derived from the tree" % (client_dist.NATIVE_SRC_DIR, new))
 
 
+def test_expected_inputs_accepts_a_tree_without_wrapper_companions(tmp_path):
+    root = _clone(tmp_path)
+    companions = client_dist.ds_sources(str(root))
+    shutil.rmtree(root / client_dist.DS_SOURCE_DIR)
+
+    inputs = client_dist.expected_inputs(str(root))
+    assert inputs is not None, (
+        "repo without dev/build/ds-src must report an empty companion set, "
+        "not unknown inputs")
+    expected = (["client/" + name for name in client_dist.asset_order(str(root))]
+                + [client_dist.WRAPPER_EXPORTS_REL]
+                + client_dist.native_sources(str(root)))
+    assert inputs == expected
+    assert not set(companions) & set(inputs)
+
+
 def test_a_new_native_source_that_the_manifest_never_saw_is_stale(tmp_path):
     """RED PROOF: the P3-shaped mistake, exactly.
 
