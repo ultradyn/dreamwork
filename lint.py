@@ -5542,17 +5542,17 @@ def check_sync_conflict_files(dw: Path, rep: Report) -> None:
             for path in borrowed)
 
     # Deduplicate roots while preserving owned severity and the first label.
-    merged_roots: dict[Path, tuple[str, bool, bool]] = {}
+    merged_roots: dict[Path, _SyncConflictScanRoot] = {}
     for entry in scan_roots:
         canonical = entry.path.resolve()
         prior = merged_roots.get(canonical)
         if prior is None:
-            merged_roots[canonical] = (
-                entry.label, entry.owned, entry.object_store)
+            merged_roots[canonical] = _SyncConflictScanRoot(
+                canonical, entry.label, entry.owned, entry.object_store)
         else:
-            merged_roots[canonical] = (
-                prior[0], prior[1] or entry.owned,
-                prior[2] or entry.object_store)
+            merged_roots[canonical] = _SyncConflictScanRoot(
+                canonical, prior.label, prior.owned or entry.owned,
+                prior.object_store or entry.object_store)
     dedicated_roots = set(merged_roots)
 
     examined = 0
@@ -5564,7 +5564,11 @@ def check_sync_conflict_files(dw: Path, rep: Report) -> None:
     unreadable: dict[str, tuple[str, str]] = {}  # path -> (level, error)
     seen_files: set[Path] = set()
 
-    for scan_root, (label, own_root, object_store) in merged_roots.items():
+    for entry in merged_roots.values():
+        scan_root = entry.path
+        label = entry.label
+        own_root = entry.owned
+        object_store = entry.object_store
         if not scan_root.is_dir():
             absent.append(f"{label} ({scan_root})")
             continue

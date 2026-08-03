@@ -31,6 +31,10 @@ WARN_ROW = re.compile(r"^\s+WARN(?:\s|$)")
 PADDED_WARN_ROW = re.compile(
     r"^  WARN  (?P<label>\S(?:.*?\S)?)(?P<padding> {2,})(?P<detail>\S.*)$"
 )
+PADDED_LINT_ROW = re.compile(
+    r"^  (?P<level>OK|WARN) +(?P<label>\S(?:.*?\S)?)"
+    r"(?P<padding> {2,})(?P<detail>\S.*)$"
+)
 LINT_TRAILER = re.compile(r"^clean \((\d+) warning\(s\)\)$", re.MULTILINE)
 
 # The gates this tool promises to run before the base branch is allowed to
@@ -1590,14 +1594,24 @@ _LANE_CONTAINMENT_TRANSIENT_MARKER = "detached HEAD is transient"
 _SYNC_CONFLICT_CLOCK_ADVISORY_MARKER = (
     "Advisory: self-attested acknowledgement expired"
 )
-_SYNC_CONFLICT_RECEIPT_PATH_RE = re.compile(
-    r"known Syncthing conflict copy at (?P<path>.+?) — acknowledgement is "
+_SYNC_CONFLICT_EXPIRED_DETAIL_RE = re.compile(
+    r"Advisory: self-attested acknowledgement expired for known Syncthing "
+    r"conflict copy at (?P<path>.*) — acknowledgement is "
+    r"(?P<ack_age>\d+) day\(s\) old \(recorded (?P<reviewed>\d{4}-\d{2}-\d{2})\); "
+    r"review deadline (?P<deadline>\d{4}-\d{2}-\d{2}) expired "
+    r"(?P<overdue_age>\d+) day\(s\) ago; open question remains: "
+    r"(?P<reason>.*)\. Dates are author-editable and renewal is an unverified "
+    r"claim; the binding record is that human question\. Exact relative path "
+    r"and SHA-256 still match, so this warning is visible but does not wedge "
+    r"unrelated lanes: #1166\Z"
 )
-_SYNC_CONFLICT_ACK_AGE_RE = re.compile(
-    r"acknowledgement is \d+ day\(s\) old"
-)
-_SYNC_CONFLICT_OVERDUE_AGE_RE = re.compile(
-    r"expired \d+ day\(s\) ago"
+_SYNC_CONFLICT_OK_DETAIL_RE = re.compile(
+    r"Known Syncthing conflict copy at (?P<path>.*) — advisory and "
+    r"self-attested; acknowledged (?P<reviewed>\d{4}-\d{2}-\d{2}); review due "
+    r"(?P<deadline>\d{4}-\d{2}-\d{2}): (?P<reason>.*); exact relative path "
+    r"and SHA-256 matched\. Dates are author-editable and renewal is an "
+    r"unverified claim; the binding record is the human question\. No other "
+    r"file in the directory is exempt: #1166\Z"
 )
 
 
@@ -1639,7 +1653,7 @@ def _is_non_tree_warn(row: str) -> bool:
     """True for narrowly identified WARNs not derived from the merged tree."""
     return (
         _is_fleet_transient_lane_warn(row)
-        or _is_clock_derived_sync_conflict_warn(row)
+        or _clock_advisory_receipt_identity(row) is not None
     )
 
 
@@ -1654,13 +1668,8 @@ def _partition_warn_rows(
     false-REDs unrelated branches. They are still printed (``_print_rows``
     already showed the full population); only the fail-decision excludes them.
     """
-    def is_excluded(row: str) -> bool:
-        if _is_fleet_transient_lane_warn(row):
-            return True
-        return _clock_advisory_receipt_identity(row) is not None
-
-    compared = tuple(r for r in rows if not is_excluded(r))
-    excluded = tuple(r for r in rows if is_excluded(r))
+    compared = tuple(r for r in rows if not _is_non_tree_warn(r))
+    excluded = tuple(r for r in rows if _is_non_tree_warn(r))
     return compared, excluded
 
 
@@ -1670,23 +1679,46 @@ def _clock_advisory_receipt_identity(row: str) -> tuple[str, str] | None:
         return None
     identity = _warn_row_identity(row)
     detail = identity[2] if len(identity) > 2 else ""
-    path_match = _SYNC_CONFLICT_RECEIPT_PATH_RE.search(detail)
-    if path_match is None:
+    detail_match = _SYNC_CONFLICT_EXPIRED_DETAIL_RE.fullmatch(detail)
+    row_match = PADDED_WARN_ROW.fullmatch(row)
+    if detail_match is None or row_match is None:
         return None
-    canonical, age_count = _SYNC_CONFLICT_ACK_AGE_RE.subn(
-        "acknowledgement is <clock-derived age>", row, count=1
+    offset = row_match.start("detail")
+    replacements = (
+        (offset + detail_match.start("ack_age"),
+         offset + detail_match.end("ack_age"), "<clock-derived age>"),
+        (offset + detail_match.start("overdue_age"),
+         offset + detail_match.end("overdue_age"), "<clock-derived age>"),
     )
-    canonical, overdue_count = _SYNC_CONFLICT_OVERDUE_AGE_RE.subn(
-        "expired <clock-derived age>", canonical, count=1
-    )
-    if age_count != 1 or overdue_count != 1:
-        return None
-    return path_match.group("path"), canonical
+    canonical = row
+    for start, end, replacement in reversed(replacements):
+        canonical = canonical[:start] + replacement + canonical[end:]
+    return detail_match.group("path"), canonical
+
+
+def _lint_receipt_paths(output: str) -> tuple[str, ...] | None:
+    """Return all structurally emitted receipt paths, or None without coverage."""
+    paths: list[str] = []
+    sync_conflict_row_seen = False
+    for row in output.splitlines():
+        match = PADDED_LINT_ROW.fullmatch(row)
+        if match is None or match.group("label") != "sync-conflict":
+            continue
+        sync_conflict_row_seen = True
+        detail = match.group("detail")
+        receipt = (
+            _SYNC_CONFLICT_EXPIRED_DETAIL_RE.fullmatch(detail)
+            or _SYNC_CONFLICT_OK_DETAIL_RE.fullmatch(detail)
+        )
+        if receipt is not None:
+            paths.append(receipt.group("path"))
+    return tuple(paths) if sync_conflict_row_seen else None
 
 
 def _partition_warn_row_sets(
     baseline: Sequence[str],
     after: Sequence[str],
+    baseline_receipt_paths: Sequence[str] | None = None,
 ) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
     """Partition two readings while comparing tracked receipt metadata.
 
@@ -1699,27 +1731,42 @@ def _partition_warn_row_sets(
     baseline_compared, baseline_excluded = _partition_warn_rows(baseline)
     after_compared, after_excluded = _partition_warn_rows(after)
 
-    def receipt_rows(rows: Sequence[str]) -> dict[str, list[str]]:
-        found: dict[str, list[str]] = {}
+    def receipt_rows(rows: Sequence[str]) -> dict[str, str]:
+        found: dict[str, str] = {}
         for row in rows:
             receipt = _clock_advisory_receipt_identity(row)
             if receipt is not None:
                 path, canonical = receipt
-                found.setdefault(path, []).append(canonical)
+                prior = found.get(path)
+                if prior is not None and prior != canonical:
+                    raise ValueError(
+                        "receipt identity collision for path "
+                        f"{path!r}: {prior!r} and {canonical!r}"
+                    )
+                found[path] = canonical
         return found
 
     baseline_receipts = receipt_rows(baseline_excluded)
     after_receipts = receipt_rows(after_excluded)
-    # No baseline advisory means this is the one permitted asymmetric case:
-    # the wall clock crossed the deadline and created the first WARN.
-    if baseline_receipts:
-        # Duplicate rows for one path are not safely one receipt. Leave only
-        # those duplicates excluded rather than arbitrarily pairing them.
-        baseline_compared += tuple(
-            rows[0] for rows in baseline_receipts.values() if len(rows) == 1
-        )
+    baseline_compared += tuple(baseline_receipts.values())
+
+    # The baseline lint reading carries every known receipt path from both its
+    # OK and WARN rows. That extra state distinguishes a known-OK receipt's
+    # first clock expiry from a newly introduced tracked receipt. ``None`` is
+    # reserved for old/minimal fixture linters that emitted no sync-conflict
+    # coverage row; their historical forward-crossing behaviour stays intact.
+    if baseline_receipt_paths is None:
+        if baseline_receipts:
+            after_compared += tuple(after_receipts.values())
+    else:
+        baseline_known = set(baseline_receipt_paths)
+        if len(baseline_known) != len(baseline_receipt_paths):
+            raise ValueError("receipt identity collision in baseline lint state")
+        baseline_expired = set(baseline_receipts)
         after_compared += tuple(
-            rows[0] for rows in after_receipts.values() if len(rows) == 1
+            canonical
+            for path, canonical in after_receipts.items()
+            if path in baseline_expired or path not in baseline_known
         )
 
     return (
@@ -1934,6 +1981,7 @@ class LintReading:
     outcome: LintOutcome
     rows: tuple[str, ...] | None
     repository_probe: subprocess.CompletedProcess[str] | None = None
+    receipt_paths: tuple[str, ...] | None = None
 
 
 def _command_output(result: subprocess.CompletedProcess[str], limit: int = 2000) -> str:
@@ -1976,7 +2024,9 @@ def _lint(repo: Path) -> LintReading:
     trailer = LINT_TRAILER.search(combined)
     rows = _warn_rows(combined)
     if not result.returncode and trailer is not None and int(trailer.group(1)) == len(rows):
-        return LintReading(result, LintOutcome.CLEAN, rows)
+        return LintReading(
+            result, LintOutcome.CLEAN, rows,
+            receipt_paths=_lint_receipt_paths(combined))
 
     # This is a separate checked Git reading, not an interpretation of lint's
     # output.  Force Git's diff machinery to materialise HEAD's patch (`-m`
@@ -2558,13 +2608,14 @@ def land(
         # fleet state and wall-clock state may change while the merged tree does
         # not. The full population each reading examined is still reported
         # above; the split states BOTH denominators so a pass is never silent.
-        (
-            baseline_compared,
-            baseline_excluded,
-            after_compared,
-            after_excluded,
-        ) = _partition_warn_row_sets(baseline, after)
         try:
+            (
+                baseline_compared,
+                baseline_excluded,
+                after_compared,
+                after_excluded,
+            ) = _partition_warn_row_sets(
+                baseline, after, baseline_reading.receipt_paths)
             baseline_index = _warn_row_index(baseline_compared)
             after_index = _warn_row_index(after_compared)
         except ValueError as exc:
