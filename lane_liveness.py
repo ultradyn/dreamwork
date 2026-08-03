@@ -104,8 +104,8 @@ from lane_runner_identity import ancestor_pids as _ancestor_pids  # noqa: E402
 from lane_runner_identity import is_lane_runner as _is_lane_runner  # noqa: E402
 
 
-def _registered_worktrees(target: Path) -> tuple[Path, ...]:
-    """Return git-registered lane worktrees under this target's two roots."""
+def _worktree_registry(target: Path) -> tuple[Path, tuple[Path, ...]]:
+    """Return the main checkout and registered lanes under its two roots."""
     try:
         result = subprocess.run(
             ["git", "-C", str(target), "worktree", "list", "--porcelain"],
@@ -117,15 +117,51 @@ def _registered_worktrees(target: Path) -> tuple[Path, ...]:
         detail = result.stderr.strip().splitlines()[0] if result.stderr.strip() else "git failed"
         raise LivenessUnknown(
             "cannot list registered worktrees: %s" % detail)
-    roots = tuple(root.resolve() for root in worktree_roots(target.resolve()))
-    paths = []
+    records = []
     for line in result.stdout.splitlines():
         if not line.startswith("worktree "):
             continue
-        path = Path(line.removeprefix("worktree ")).resolve()
+        records.append(Path(line.removeprefix("worktree ")).resolve())
+    if not records:
+        raise LivenessUnknown("cannot list registered worktrees: git returned no records")
+    # Porcelain lists the main checkout first even when invoked from a linked
+    # worktree.  The gate breadcrumb is main-owned, so neither the lane roots
+    # nor that breadcrumb may be rooted on the invocation checkout.
+    main_checkout = records[0]
+    roots = tuple(root.resolve() for root in worktree_roots(main_checkout))
+    paths = []
+    for path in records[1:]:
         if any(path.parent == root for root in roots):
             paths.append(path)
-    return tuple(paths)
+    return main_checkout, tuple(paths)
+
+
+def _registered_worktrees(target: Path) -> tuple[Path, ...]:
+    """Return git-registered lane worktrees under this target's two roots."""
+    return _worktree_registry(target)[1]
+
+
+def _in_flight_gate_worktree(main_checkout: Path) -> Path | None:
+    """Return the exact scratch named by the main checkout's gate breadcrumb.
+
+    This deliberately restates ``lint._in_flight_gate_worktree`` instead of
+    importing the executable linter into this shared runtime probe.  Its
+    identity rule is the same: breadcrumb path, never the ``.gate-*`` name.
+    """
+    path = main_checkout / ".dreamwork" / "gate-in-flight.json"
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(record, dict):
+        return None
+    raw = record.get("gate_worktree")
+    if not raw:
+        return None
+    try:
+        return Path(str(raw)).resolve()
+    except OSError:
+        return None
 
 
 def _prompt_worktree(raw: bytes, roots: tuple[Path, ...]) -> Path | None:
@@ -169,7 +205,6 @@ def inspect_lanes(
     prompts whose worktree is no longer registered are named separately.
     """
     target = target.resolve()
-    roots = tuple(root.resolve() for root in worktree_roots(target))
     if process_entries is None:
         try:
             process_entries = os.listdir("/proc")
@@ -179,8 +214,15 @@ def inspect_lanes(
     if not pids:
         raise LivenessUnknown("lane detector examined 0 process candidates")
 
-    worktrees = (_registered_worktrees(target) if registered_worktrees is None
-                 else tuple(path.resolve() for path in registered_worktrees))
+    if registered_worktrees is None:
+        main_checkout, worktrees = _worktree_registry(target)
+    else:
+        main_checkout = target
+        worktrees = tuple(path.resolve() for path in registered_worktrees)
+    roots = tuple(root.resolve() for root in worktree_roots(main_checkout))
+    gate_scratch = _in_flight_gate_worktree(main_checkout)
+    if gate_scratch is not None:
+        worktrees = tuple(path for path in worktrees if path != gate_scratch)
     registered = {path.resolve() for path in worktrees}
     reader = read_cmdline or (
         lambda pid: Path("/proc/%d/cmdline" % pid).read_bytes())

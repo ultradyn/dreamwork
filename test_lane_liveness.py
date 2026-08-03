@@ -1,6 +1,8 @@
 """Tests for strict lane-lock classification in :mod:`lane_liveness`."""
 
 import json
+import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -43,6 +45,65 @@ def test_lockless_worktree_is_settled_not_finished(tmp_path):
 
     assert inspection.worktree_only == ("cx-settled",)
     assert inspection.finished == ()
+
+
+def test_only_breadcrumb_named_gate_scratch_is_not_worktree_only(tmp_path):
+    target, idle, _identity = _subject(tmp_path, lane="cx-idle")
+    live_gate = idle.parent / ".gate-live"
+    live_gate.mkdir()
+    abandoned_gate = idle.parent / ".gate-abandoned"
+    abandoned_gate.mkdir()
+    (target / ".dreamwork").mkdir()
+    (target / ".dreamwork" / "gate-in-flight.json").write_text(json.dumps({
+        "gate_worktree": str(live_gate),
+    }))
+
+    inspection = lane_liveness.inspect_lanes(
+        target, process_entries=["101"],
+        registered_worktrees=(live_gate, abandoned_gate, idle),
+        read_cmdline=lambda _pid: b"")
+
+    assert inspection.worktree_only == (".gate-abandoned", "cx-idle"), \
+        "breadcrumb-named gate scratch was advertised as idle: %r" % \
+        (inspection.worktree_only,)
+
+
+def test_gate_breadcrumb_is_read_from_main_checkout_when_invoked_in_lane(
+        tmp_path):
+    main = tmp_path / "project"
+    main.mkdir()
+    env = os.environ | {
+        "GIT_AUTHOR_NAME": "Dreamwork Test",
+        "GIT_AUTHOR_EMAIL": "dreamwork@example.invalid",
+        "GIT_COMMITTER_NAME": "Dreamwork Test",
+        "GIT_COMMITTER_EMAIL": "dreamwork@example.invalid",
+    }
+
+    def git(*args):
+        subprocess.run(
+            ["git", "-C", str(main), *args], check=True,
+            capture_output=True, text=True, env=env)
+
+    git("init", "-q")
+    (main / "tracked").write_text("fixture\n")
+    git("add", "tracked")
+    git("commit", "-q", "-m", "fixture")
+    root = tmp_path / ".worktrees"
+    live_gate = root / ".gate-live"
+    idle = root / "cx-idle"
+    git("worktree", "add", "-q", "--detach", str(live_gate), "HEAD")
+    git("worktree", "add", "-q", "--detach", str(idle), "HEAD")
+    (main / ".dreamwork").mkdir()
+    (main / ".dreamwork" / "gate-in-flight.json").write_text(json.dumps({
+        "gate_worktree": str(live_gate),
+    }))
+
+    inspection = lane_liveness.inspect_lanes(
+        idle, process_entries=["101"], read_cmdline=lambda _pid: b"")
+
+    assert inspection.worktree_only == ("cx-idle",), \
+        "probe ignored the main-owned gate breadcrumb: %r" % \
+        (inspection.worktree_only,)
 
 
 def test_dead_runner_is_finished_with_its_lock_record(tmp_path, monkeypatch):
