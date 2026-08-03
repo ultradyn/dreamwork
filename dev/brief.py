@@ -101,6 +101,27 @@ currently-correct ledger field rejects a correct brief. Base-SHA resolution is
 the sole survivor: it closes the observed wrong-path coordinate mechanically,
 while stating plainly that a resolving line can still support a false claim.
 
+## #1209 IGC: close one remaining family without refusing correct briefs
+
+Context: #644 left (F3) relaxed rules quoted as live, (F4) rotted generated
+counts, and (F5) stale mutable fields. G1 closes an observed family
+mechanically; G2 never refuses a correct precise brief; G3 is independent of a
+confident author's judgement. “partial” means the rival catches only its
+explicitly detectable subset.
+
+| Rival | All | F3 | F4 | F5 | Refuses correct? | G1 | G2 | G3 |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| date/SHA on rule citations | ✘ | partial | — | — | yes | ✘ | ✘ | ✘ |
+| derive and compare `lesson citations` rows | ✔ | — | partial | — | no | ✔ | ✔ | ✔ |
+| forbid mutable ledger fields in heads | ✘ | — | — | ✔ | yes | ✔ | ✘ | ✔ |
+
+Decisive errors: a ruling date exposes age but neither proves the ruling is
+still live nor accepts a correct undated citation; forbidding a current ledger
+field rejects a correct brief. The surviving asymmetric check derives the
+named lint population at the generation SHA and refuses only a mismatch. It
+closes the observed F4 instance without claiming to catch arbitrary counts;
+F3 and F5 remain open.
+
 ## Storage
 
 This tool writes no files and opens no store for writing; it emits text on
@@ -269,6 +290,17 @@ _FILE_LINE_CITATION = re.compile(
     r"\.(?:css|html|js|json|md|mjs|py|sh|toml|txt|ya?ml)"
     r"):(?P<first>[1-9]\d*)(?:-(?P<last>[1-9]\d*))?"
     r"(?![\w.-])",
+    re.IGNORECASE,
+)
+_LESSON_CITATION = re.compile(r"lessons\.md:(\d+)")
+_COUNT_WORDS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+}
+_LESSON_CITATION_COUNT_CLAIM = re.compile(
+    r"\b(?P<count>\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+"
+    r"(?:known\s+)?`?lesson[ -]citations?`?\s+"
+    r"(?:false[ -]positive\s+)?rows?\b",
     re.IGNORECASE,
 )
 _GLOSSED_TASK_CITATION = re.compile(
@@ -1023,6 +1055,85 @@ def _validate_file_line_citations(core: str, checkout: Path, sha: str) -> None:
         )
 
 
+def _validate_lesson_citation_count(core: str, checkout: Path, sha: str) -> None:
+    """Refuse a stale claim about lint's numeric lesson-citation WARN rows.
+
+    The check deliberately recognises only the observed, mechanically
+    derivable population. Fenced and quoted text is historical evidence, not a
+    live claim. A correct count passes; unrelated quantities are untouched.
+    """
+    claims: list[tuple[int, int]] = []
+    in_fence = False
+    fence_char = ""
+    fence_len = 0
+    for line_no, line in enumerate(core.splitlines(), 1):
+        if in_fence:
+            if re.match(
+                rf"^ {{0,3}}{re.escape(fence_char)}{{{fence_len},}}[ \t]*$", line
+            ):
+                in_fence = False
+            continue
+        opened = _FENCE_OPEN.match(line)
+        if opened:
+            in_fence = True
+            fence_char = opened.group(2)[0]
+            fence_len = len(opened.group(2))
+            continue
+        prose = _QUOTED_PROSE.sub(" ", line)
+        for match in _LESSON_CITATION_COUNT_CLAIM.finditer(prose):
+            token = match.group("count").lower()
+            claims.append((line_no, int(token) if token.isdigit() else _COUNT_WORDS[token]))
+
+    if not claims:
+        return
+
+    def git_read(*args: str) -> str:
+        result = subprocess.run(
+            ["git", "-C", str(checkout), *args],
+            capture_output=True, text=True, check=False,
+        )
+        if result.returncode != 0:
+            detail = result.stderr.strip() or f"git exited {result.returncode}"
+            raise BriefFault(
+                "could not derive `lesson citations` rows at generation sha "
+                f"{sha}: {detail}"
+            )
+        return result.stdout
+
+    lesson_lines = git_read("show", f"{sha}:.dreamwork/lessons.md").splitlines()
+    paths = git_read(
+        "ls-tree", "-r", "--name-only", sha, "--",
+        ".dreamwork/lessons.md", "briefs",
+    ).splitlines()
+    findings = 0
+    for path in paths:
+        if path != ".dreamwork/lessons.md" and not (
+            path.startswith("briefs/") and path.endswith(".md")
+        ):
+            continue
+        for match in _LESSON_CITATION.finditer(git_read("show", f"{sha}:{path}")):
+            target = int(match.group(1))
+            actual = (
+                lesson_lines[target - 1]
+                if 1 <= target <= len(lesson_lines)
+                else None
+            )
+            if actual is None or not actual.startswith("- **"):
+                findings += 1
+
+    mismatches = [
+        f"core line {line_no} claims {claimed} known `lesson citations` row(s)"
+        for line_no, claimed in claims
+        if claimed != findings
+    ]
+    if mismatches:
+        raise BriefFault(
+            "; ".join(mismatches)
+            + f", but generation sha {sha} has {findings}. Re-derive the row set "
+            "at the brief base; do not replace this with a fresher constant."
+        )
+
+
 def _citation_authority_report(core: str, ledger: Path) -> str:
     """Put each explicit citation gloss beside its ledger title for human review."""
     prose_lines = _INLINE_CODE.sub(
@@ -1644,6 +1755,7 @@ def build(task: int, branch: str, owns: list[str], core: str, *,
             raise BriefFault(f"prepared base sha is not a commit id: {prepared_base_sha!r}")
         resolved_base = prepared_base_sha
     _validate_file_line_citations(core, checkout, resolved_base)
+    _validate_lesson_citation_count(core, checkout, resolved_base)
     print(
         _base_scope_derivation_report(checkout, resolved_base, owns),
         file=sys.stderr,
