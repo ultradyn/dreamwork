@@ -10,20 +10,20 @@ decision, so this verdict existed only in a scratchpad file. Preserved here verb
 
 - **P1 — post-rebase red-proof was not re-armed.** The author registry/reach evidence is timestamped `06:58`, while rebases completed at `08:56` (onto `44397ea6`) and again at `09:02`. `redproof check --require 1 --base 44397ea6` exits 0 and reports `caught 1 of 1`, but that only validates the older recorded injection; it does not satisfy #993’s required fresh re-arm. Re-run the injection/control after the current rebase, then re-run the three gates.
 
-- **P1 — the delegate can render nothing and the relevant suite stays green.** In an isolated clone, I replaced [Answers](/home/xertrov/.llm-general/skills/.worktrees/glm-1072answers-review-r2/dev/build/wrapper-exports.js:104)’s builder output with `''`, rebuilt, staged only the generated dist needed by the deploy-index test, then ran:
+- **P1 — the delegate can render nothing and the relevant suite stays green.** In an isolated clone, I replaced [Answers](/home/xertrov/.llm-general/skills/.worktrees/glm-1072answers-review-r2/dev/build/wrapper-exports.js line 104)’s builder output with `''`, rebuilt, staged only the generated dist needed by the deploy-index test, then ran:
 
   ```text
   python3 -m pytest test_client_dist.py -q
   42 passed in 32.69s
   ```
 
-  The generic browser loop only requires every export to mount and preserve input; its strict output comparison is hard-coded to `Reviews` at [test_client_dist.py](/home/xertrov/.llm-general/skills/.worktrees/glm-1072answers-review-r2/test_client_dist.py:524). Thus an empty or wrong `Answers` delegate ships green.
+  The generic browser loop only requires every export to mount and preserve input; its strict output comparison is hard-coded to `Reviews` at [test_client_dist.py](/home/xertrov/.llm-general/skills/.worktrees/glm-1072answers-review-r2/test_client_dist.py line 524). Thus an empty or wrong `Answers` delegate ships green.
 
   Cheapest honest closure: add an Answers-only DOM serialization equality test over all five fixtures, comparing mounted `Answers` output with `buildAnswers(props.data)`. It need not alter the Reviews implementation or `#1071` source; generalizing the existing test is optional.
 
 ## Standards
 
-- **P1 — the exported type contradicts production data and runtime.** [Answers.d.ts](/home/xertrov/.llm-general/skills/.worktrees/glm-1072answers-review-r2/dev/build/ds-src/Answers.d.ts:10) permits only `"unreadable"` although the committed fixture uses `"ok"` and `watch.answers_health` can emit `missing`, `empty`, `unreadable`, or `ok`. It also makes `data` optional/null at [line 16](/home/xertrov/.llm-general/skills/.worktrees/glm-1072answers-review-r2/dev/build/ds-src/Answers.d.ts:16), but [buildAnswers](/home/xertrov/.llm-general/skills/.worktrees/glm-1072answers-review-r2/client/views.js:1213) dereferences it immediately. Make `data` required and model the complete health union, then rebuild the shipped declaration.
+- **P1 — the exported type contradicts production data and runtime.** [Answers.d.ts](/home/xertrov/.llm-general/skills/.worktrees/glm-1072answers-review-r2/dev/build/ds-src/Answers.d.ts line 10) permits only `"unreadable"` although the committed fixture uses `"ok"` and `watch.answers_health` can emit `missing`, `empty`, `unreadable`, or `ok`. It also makes `data` optional/null at [line 16](/home/xertrov/.llm-general/skills/.worktrees/glm-1072answers-review-r2/dev/build/ds-src/Answers.d.ts line 16), but [buildAnswers](/home/xertrov/.llm-general/skills/.worktrees/glm-1072answers-review-r2/client/views.js line 1213) dereferences it immediately. Make `data` required and model the complete health union, then rebuild the shipped declaration.
 
 ## Spec
 
