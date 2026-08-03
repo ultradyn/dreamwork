@@ -4,8 +4,22 @@
 
 - **P1 · 2026-08-03 — there is a real Syncthing conflict copy inside `.git/` and something reads it.
   May I delete it, or do you want to look first? (#1166/#1162)**
-  **This one blocks a landing, so it is the most time-sensitive thing on this list.** The file is
-  `.git/wt/cache/ci-status/master.sync-conflict-20260729-032627-QJRKU52.json`.
+  **UPDATE 2026-08-04 — this no longer blocks a landing, and the cost of NOT deleting it is now
+  measured.** The file is `.git/wt/cache/ci-status/master.sync-conflict-20260729-032627-QJRKU52.json`.
+  - `#1166` round 5 built the per-file triaged acknowledgement I described below, and it works: the
+    row is bound to the exact path plus its SHA-256, carries a 2026-08-10 review date, and 781 tests
+    pass. So the gate stays open whether or not you answer. **You are not holding anything up.**
+  - But round 5's review then measured what that machinery costs. The acknowledgement's expiry WARN is
+    **clock-derived** — its age text changes at every midnight — and the landing gate compares WARN
+    rows byte-for-byte, refusing on any add or remove. Constructed transitions: crossing the due date
+    gives `added=1, removed=0`; each subsequent midnight gives `added=1, removed=1`. **A gate run
+    spanning midnight would refuse an unrelated lane.** `#1166` round 6 is out now fixing that by
+    excluding the clock-derived row from the comparison.
+  - So the honest state of play: keeping the file costs a bespoke acknowledgement mechanism, an expiry
+    clock, and a gate exclusion — three pieces of machinery in the merge gate's critical path that
+    exist **only because a 107-byte reconstructible cache file is still on disk.** Deleting it deletes
+    the reason for all three. That strengthens the recommendation below rather than changing it.
+  - Still no rush, and still your call. I have not touched the file.
   - `#1166`'s round-3 review established that it is **not inert**. Worktrunk's read-only
     `wt config state get` enumerates *every* `.json` in that directory, and on the live repo it
     rendered both `master.json` and the conflict sibling as **two separate `master` records**.
