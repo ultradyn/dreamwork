@@ -2672,8 +2672,15 @@ class TestNamedLaneAcrossEveryCliVerb:
         assert not scratch.exists(), (
             "an invalid named lane created a phantom scratch directory")
 
-    def test_forget_accepts_a_printed_identity_and_refuses_an_unknown_lane(
-            self, repo, tmp_path):
+    def test_forget_resolves_the_same_identity_as_begin(self, repo, tmp_path):
+        """#1148 (revised by #1153): begin and forget must resolve identity
+        through ONE function — the raw token. #1148 made forget accept the
+        canonical dir name check prints AND fault on an unknown token; that
+        was a per-verb re-derivation, and #1153 removes it so a token begin
+        accepts is never one forget refuses. forget takes the SAME raw token
+        begin took; an unknown/empty token is "nothing to forget" (exit 1),
+        not a FAULT — begin creates, forget drops, but both resolve the same
+        segment."""
         lane = "cx-1148fixture"
         canonical = rp._ls.identity_segment(lane)
         env = dict(__import__("os").environ)
@@ -2689,27 +2696,173 @@ class TestNamedLaneAcrossEveryCliVerb:
         assert printed, checked.stdout + checked.stderr
         assert printed.group(1) == canonical, checked.stderr
 
-        # The canonical directory name printed by check names this same lane;
-        # it must not be hashed again into a double-prefixed phantom identity.
+        # forget takes the SAME raw token begin took (#1153): one resolution
+        # rule, not a dir-name match begin does not perform.
         cleared = self._run(
-            repo, env, "forget", "router.js", "--lane", printed.group(1))
+            repo, env, "forget", "router.js", "--lane", lane)
         assert cleared.returncode == 0, cleared.stdout + cleared.stderr
         assert "dropped 1 armed/unrecorded entry(ies)" in cleared.stdout
-        assert f"lane-{canonical}-" not in cleared.stdout
+        assert canonical in cleared.stdout, (
+            f"forget did not resolve begin's identity segment {canonical}: "
+            + cleared.stdout)
 
-        # A real, now-empty lane is the legitimate no-op. A typo resolves no
-        # existing identity and must be a distinct fault, not the same answer.
+        # The canonical dir name is NOT a second accepted spelling: passing it
+        # re-hashes (as begin would), resolving a different, empty segment.
+        # That is "nothing to forget" (exit 1), not a silent clear (#1148's
+        # false-all-clear) and not a FAULT (#1153 instance 2).
+        rehashed = self._run(
+            repo, env, "forget", "router.js", "--lane", printed.group(1))
+        assert rehashed.returncode == 1, rehashed.stdout + rehashed.stderr
+        assert "nothing registered" in rehashed.stderr
+
+        # A now-empty lane and an unknown token are the SAME state — no
+        # registry for that identity — and both are "nothing to forget"
+        # (exit 1). #1148 faulted on the unknown one; #1153 unifies: forget
+        # refuses calmly, never faulting on a token begin would accept.
         empty = self._run(repo, env, "forget", "router.js", "--lane", lane)
         assert empty.returncode == 1, empty.stdout + empty.stderr
         assert "nothing registered" in empty.stderr
 
         unknown = self._run(
             repo, env, "forget", "router.js", "--lane", "cx-1148fxture")
-        assert "--lane 'cx-1148fxture' did not resolve to an existing launch identity" \
-            in unknown.stderr, ("unresolved lane guard was bypassed for "
-                                "cx-1148fxture\n" + unknown.stdout + unknown.stderr)
-        assert unknown.returncode == 2, unknown.stdout + unknown.stderr
-        assert "nothing registered" not in unknown.stderr
+        assert unknown.returncode == 1, (
+            "an unknown lane token must be a calm 'nothing to forget' (exit 1), "
+            "not a FAULT — it resolves the same segment begin would: "
+            + unknown.stdout + unknown.stderr)
+        assert "nothing registered" in unknown.stderr
+        # A typo must NOT report success (exit 0); exit 1 is the refusal.
+        assert "did not resolve to an existing launch identity" not in unknown.stderr, (
+            "the #1148 per-verb fault message survived the unification: "
+            + unknown.stderr)
+
+
+# ── #1153: every verb resolves ONE identity, stated once ──────────────
+
+class TestEveryVerbResolvesOneIdentity:
+    """#1153: ``begin``, ``forget``, ``observe``, ``restore``, ``check`` and
+    ``handoff`` must resolve lane identity through ONE function. The bug only
+    exists when a lane holds SEVERAL registries (a lane mixing the env token
+    with ``--lane <branch>`` sprays them); construct that, then assert every
+    verb selects the same segment for a given ``--lane``.
+
+    The defect had two faces: (1) bare verbs resolved the env identity while
+    ``--lane`` registrations lived elsewhere, FAULTing in a way that read like
+    a proof failure; (2) ``forget`` re-derived identity (a dir-name match +
+    existence check begin never applied) so a token ``begin`` accepted was one
+    ``forget`` refused. Both are the per-verb re-derivation #992 names."""
+
+    def test_every_verb_resolves_the_same_segment_when_several_exist(
+            self, repo, monkeypatch, capsys):
+        """A lane holds several registries (the bug's precondition). For
+        ``--lane alpha``, every verb must resolve ``identity_segment(alpha)``
+        — not whichever of the several sorts first. Captures each verb's
+        printed 'resolved identity dir' and asserts they all name the same
+        path begin armed."""
+        # Several registries under one lane_key: arm two under different tokens.
+        (repo / "second.js").write_text("export function two() { return 2; }\n")
+        _git(repo, "add", "second.js")
+        _git(repo, "-c", "user.email=t@t", "-c", "user.name=t",
+             "commit", "-qm", "add second")
+        # Registry A (the one every verb must select):
+        assert rp.begin(repo, "router.js", ("expectation.txt",),
+                        lane="alpha") == 0
+        out_begin, _ = capsys.readouterr()
+        seg_alpha = rp._identity_segment("alpha")
+        dir_alpha = str(rp._redproof_dir(repo, seg_alpha, rp._role(repo)))
+        assert dir_alpha in out_begin, (
+            f"begin did not resolve alpha's dir: {out_begin}")
+        # Registry B (the distractor — a different segment under this lane_key):
+        assert rp.begin(repo, "second.js", ("router.js",),
+                        lane="beta") == 0
+        capsys.readouterr()
+        # PRECONDITION: two distinct identity dirs now exist under this lane.
+        idirs = sorted(d.name for d in rp._ls.lane_identity_dirs(repo))
+        assert {rp._identity_segment("alpha"),
+                rp._identity_segment("beta")} <= set(idirs), idirs
+
+        # observe / restore / check under --lane alpha all resolve dir_alpha:
+        (repo / "router.js").write_text("SABOTAGE ALPHA\n")
+        assert rp.observe(repo, "router.js",
+                          failure="sabotage alpha present",
+                          command=[sys.executable, "-c",
+                                   "from pathlib import Path; "
+                                   "assert 'SABOTAGE' not in "
+                                   "Path('router.js').read_text(), "
+                                   "'sabotage alpha present'"],
+                          lane="alpha") == 0
+        out_observe, _ = capsys.readouterr()
+        assert dir_alpha in out_observe, (
+            f"observe resolved a different identity than begin: {out_observe}")
+
+        assert rp.restore(repo, "router.js", lane="alpha") == 0
+        out_restore, _ = capsys.readouterr()
+        assert dir_alpha in out_restore, (
+            f"restore resolved a different identity than begin: {out_restore}")
+
+        assert rp.check(repo, lane="alpha", require=1) == 0
+        out_check, _ = capsys.readouterr()
+        assert dir_alpha in out_check, (
+            f"check resolved a different identity than begin: {out_check}")
+        # And it did NOT silently pick beta's distractor registry:
+        seg_beta = rp._identity_segment("beta")
+        assert seg_beta not in out_check, (
+            f"check picked the distractor registry {seg_beta}: {out_check}")
+
+        # forget under --lane alpha resolves dir_alpha (retires the restored
+        # entry), the same segment begin armed — not a fault, not beta.
+        assert rp.forget(repo, "router.js", lane="alpha") == 0
+        out_forget, _ = capsys.readouterr()
+        assert dir_alpha in out_forget, (
+            f"forget resolved a different identity than begin: {out_forget}")
+
+    def test_forget_does_not_fault_on_a_token_begin_accepts(
+            self, repo, capsys):
+        """Instance 2, discriminating: ``forget --lane FRESH`` on a token with
+        no registry must NOT FAULT (exit 2), because ``begin --lane FRESH``
+        accepts the same token. forget resolves the same segment and reports
+        'nothing to forget' (exit 1). The two operations differ (begin
+        creates, forget drops) but they agree on identity."""
+        # A registry exists under another token (the several-registries state):
+        assert rp.begin(repo, "router.js", ("expectation.txt",),
+                        lane="alpha") == 0
+        capsys.readouterr()
+        # forget on a FRESH token no registry exists for:
+        exit = rp.forget(repo, "router.js", lane="fresh-unused-token-1153")
+        out, err = capsys.readouterr()
+        assert exit != 2, (
+            f"forget FAULTED on a token begin would accept (#1153 instance 2): "
+            f"{err}")
+        # It resolved the SAME segment begin would, and said nothing-to-forget:
+        seg = rp._identity_segment("fresh-unused-token-1153")
+        assert str(rp._redproof_dir(repo, seg, rp._role(repo))) in out, (
+            f"forget did not resolve begin's segment for the fresh token: {out}")
+        assert "nothing to forget" in err or "nothing registered" in err, err
+
+    def test_bare_check_names_the_env_identity_not_an_unnamed_lane(
+            self, repo, monkeypatch, capsys):
+        """#651: a bare ``check`` (env set, no --lane) that faults must name
+        the identity it ACTUALLY audited (the env one), not 'the named lane'
+        — no lane was named. And when other identity dirs exist (#1153
+        instance 1: the work is under --lane), it names them so the absence
+        reads as 'not THIS identity', not 'you have no registry'."""
+        # The lane's real work is under --lane branchname (a different segment
+        # than the env token), modelling instances 1 and 3 exactly.
+        assert rp.begin(repo, "router.js", ("expectation.txt",),
+                        lane="glm-1153ident") == 0
+        capsys.readouterr()
+        # Bare check uses the ENV identity (fixture-lane-aa895 from the repo
+        # fixture), which is empty; require>0 faults.
+        exit = rp.check(repo, require=1)
+        _, err = capsys.readouterr()
+        assert exit == 2, f"expected FAULT, got {exit}: {err}"
+        # Must NOT claim a lane was named when none was (#651):
+        assert "the named lane" not in err, err
+        # Must name the env identity it audited:
+        assert "this lane" in err, err
+        # Must name the other identity dir where the work actually lives
+        # (#136): the absence cannot read as 'no registry anywhere'.
+        assert rp._identity_segment("glm-1153ident") in err, (
+            f"check did not name the other identity holding the work: {err}")
 
 
 # ── #877: a restored source whose downstream bundle is stale ──────────
