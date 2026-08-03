@@ -251,6 +251,27 @@ def _open_fact(target: str) -> str:
     return "%d open" % len(ids)
 
 
+def _work_reason(work) -> str:
+    """A short why for a HOLDING-WORK lane: commits, tracked-dirty, or untracked.
+
+    Names the bucket(s) that made the lane hold work, not every count, so the
+    prefix stays scannable. ``commits?`` flags a base the branch could not be
+    compared against (#136): the lane may still hold commits unseen.
+    """
+    parts = []
+    if work.unmerged:
+        parts.append("%d commits" % work.unmerged)
+    if work.tracked_dirty:
+        parts.append("%d tracked-dirty" % work.tracked_dirty)
+    if work.untracked:
+        parts.append("%d untracked" % work.untracked)
+    if not parts:
+        parts.append("holding-work")
+    if not work.commits_known:
+        parts.append("commits?")
+    return "+".join(parts)
+
+
 def _fleet_fact(target: str) -> str:
     """Live lane names from the canonical lock/process identity detector.
 
@@ -276,10 +297,27 @@ def _fleet_fact(target: str) -> str:
         fact += " · worktree-only %d [%s]" % (
             len(inspection.worktree_only), ", ".join(inspection.worktree_only))
     if inspection.finished:
-        fact += " · finished %d [%s]" % (
-            len(inspection.finished), ", ".join(
-                "#%s %s" % (lane.task, lane.lane)
-                for lane in inspection.finished))
+        # #1154: "finished" is one word for a lane whose runner is gone,
+        # whether it reported, died holding nothing, or died holding a day's
+        # work on its branch or in a dirty tree. The dangerous state holds
+        # work the coordinator has not reviewed and reaping would destroy, so
+        # it gets its OWN short prefix rather than a comma-separated bucket —
+        # a dense line that grows another bucket is less read, not more
+        # informed. Lanes the classifier could not read (work is None) stay
+        # under "finished" rather than being silently promoted.
+        holding = [fl for fl in inspection.finished
+                   if fl.work is not None and fl.work.holding_work]
+        settled = [fl for fl in inspection.finished if fl not in holding]
+        if settled:
+            fact += " · finished %d [%s]" % (
+                len(settled), ", ".join(
+                    "#%s %s" % (fl.task, fl.lane) for fl in settled))
+        if holding:
+            fact += " · HOLDING-WORK %d [%s]" % (
+                len(holding), ", ".join(
+                    "#%s %s (%s)" % (fl.task, fl.lane, _work_reason(fl.work))
+                    for fl in holding))
+            fact += " — branch or tree holds unreviewed work; do not reap"
     if inspection.process_only:
         fact += " · process-only %d [%s]" % (
             len(inspection.process_only), ", ".join(inspection.process_only))
