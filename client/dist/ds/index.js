@@ -2428,7 +2428,7 @@ var DreamworkDesign = (() => {
       const a = node.ownerDocument.createElement("a");
       if (part.kind === "goal") {
         a.className = "goalref";
-        a.href = "/goals";
+        a.href = "/goals#goal-" + part.id;
         a.textContent = part.text;
       } else {
         a.className = "taskref";
@@ -4768,7 +4768,11 @@ var DreamworkDesign = (() => {
       return { name: "research", param: sp.get("p") };
     }
     if (loc.pathname === "/reviews") return { name: "reviews", param: null };
-    if (loc.pathname === "/goals") return { name: "goals", param: null };
+    if (loc.pathname === "/goals") return {
+      name: "goals",
+      param: null,
+      fragment: goalsUrl(loc.hash).slice("/goals".length) || null
+    };
     if (loc.pathname === "/chat" || loc.pathname.startsWith("/chat/")) {
       const seg = loc.pathname.slice(6);
       return { name: "chat", param: seg ? decodeURIComponent(seg) : null };
@@ -7246,7 +7250,7 @@ var DreamworkDesign = (() => {
     view = { name, param, q: opts.q || null, mode };
     applyTitle();
     if (window.dreambg) window.dreambg.setTint(TINT[name] || 0);
-    const url = name === "questions" ? "/questions" : name === "answers" ? "/answers" : name === "settings" ? "/settings" : name === "file" ? "/file?p=" + encodeURIComponent(param || "") + (mode === "source" ? "&view=source" : "") : name === "review" ? "/review?p=" + encodeURIComponent(param || "") + (opts.q ? "&q=" + encodeURIComponent(opts.q) : "") : name === "tasks2" ? "/tasks2" + (param ? "?t=" + encodeURIComponent(param) : "") : name === "question" ? "/question?qid=" + encodeURIComponent(param || "") : name === "research" ? "/research" + (param ? "?p=" + encodeURIComponent(param) : "") : name === "reviews" ? "/reviews" : name === "goals" ? "/goals" : name === "chat" ? "/chat/" + encodeURIComponent(param || "") : "/";
+    const url = name === "questions" ? "/questions" : name === "answers" ? "/answers" : name === "settings" ? "/settings" : name === "file" ? "/file?p=" + encodeURIComponent(param || "") + (mode === "source" ? "&view=source" : "") : name === "review" ? "/review?p=" + encodeURIComponent(param || "") + (opts.q ? "&q=" + encodeURIComponent(opts.q) : "") : name === "tasks2" ? "/tasks2" + (param ? "?t=" + encodeURIComponent(param) : "") : name === "question" ? "/question?qid=" + encodeURIComponent(param || "") : name === "research" ? "/research" + (param ? "?p=" + encodeURIComponent(param) : "") : name === "reviews" ? "/reviews" : name === "goals" ? goalsUrl(opts.fragment) : name === "chat" ? "/chat/" + encodeURIComponent(param || "") : "/";
     const artifactDoc = name === "review" || name === "tasks2" || name === "research" && !!param;
     if (opts.push) history.pushState({ name, param, q: opts.q || null }, "", url);
     const navView = view;
@@ -7267,6 +7271,17 @@ var DreamworkDesign = (() => {
       });
     }
     if (modeSwap) restoreScrollRatio(keepRatio);
+    if (name === "goals") scrollGoalTarget(opts.fragment);
+  }
+  function goalsUrl(fragment) {
+    return "/goals" + (typeof fragment === "string" && /^#goal-\d+$/.test(fragment) ? fragment : "");
+  }
+  function scrollGoalTarget(fragment) {
+    if (goalsUrl(fragment) === "/goals") return false;
+    const target = document.getElementById(fragment.slice(1));
+    if (!target) return false;
+    target.scrollIntoView();
+    return true;
   }
   function isInternal(a) {
     if (!a || a.target === "_blank" || a.hasAttribute("download")) return false;
@@ -7279,7 +7294,7 @@ var DreamworkDesign = (() => {
     if (!isInternal(a)) return;
     e.preventDefault();
     const r = routeOf(a);
-    const opts = { push: true, q: r.q, mode: r.mode };
+    const opts = { push: true, q: r.q, mode: r.mode, fragment: r.fragment };
     if (r.name === "review" && r.q) {
       const card = a.closest(".qa");
       if (card) opts.fromRect = card.getBoundingClientRect();
@@ -7288,7 +7303,12 @@ var DreamworkDesign = (() => {
   });
   addEventListener("popstate", () => {
     const r = routeOf(location);
-    navigate(r.name, r.param, { push: false, q: r.q, mode: r.mode });
+    navigate(r.name, r.param, {
+      push: false,
+      q: r.q,
+      mode: r.mode,
+      fragment: r.fragment
+    });
   });
   async function tick() {
     try {
@@ -7346,7 +7366,13 @@ var DreamworkDesign = (() => {
     navigate(
       r.name,
       r.param,
-      { push: false, transition: false, q: r.q, mode: r.mode }
+      {
+        push: false,
+        transition: false,
+        q: r.q,
+        mode: r.mode,
+        fragment: r.fragment
+      }
     ).then(loadRolls);
     tick();
   })();

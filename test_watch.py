@@ -6900,7 +6900,7 @@ class TestTasksRoute(unittest.TestCase):
         src = watch.COMPONENTS_JS
         self.assertIn("PG-(\\d+)", src)  # the combined RE carries the goal branch
         self.assertIn("a.className = 'goalref'", src)
-        self.assertIn("a.href = '/goals'", src)
+        self.assertIn("a.href = '/goals#goal-' + part.id", src)
         # #1042 — same extraction as the task-ref test: skip sets AND the RE
         # come from production source so this node-eval reaches the SHIPPING
         # TASK_REF_RE, not a restated copy. Break the goal branch in the
@@ -6969,7 +6969,7 @@ class TestTasksRoute(unittest.TestCase):
                 { console.error(label + ': expected 2 <a> links, got ' + mixedLinks.length
                   + ' — linkTaskRefText may be creating non-anchor elements'); process.exit(20); }
               const expected = expectedClasses.map(className => className === 'goalref'
-                ? ['goalref', '/goals', 'PG-1']
+                ? ['goalref', '/goals#goal-1', 'PG-1']
                 : ['taskref', '/tasks?t=1', '#1']);
               for (let i = 0; i < expected.length; i++) {
                 const [className, href, text] = expected[i];
@@ -7000,14 +7000,14 @@ class TestTasksRoute(unittest.TestCase):
             linkTaskRefText(ls);
             if (!conserved(ls, lsText))
               { console.error('ls: reconstructed text diverged — text not conserved, first-link index is meaningless'); process.exit(33); }
-            if (hrefs(ls)[0] !== '/goals') { console.error('line-start PG-1 failed'); process.exit(24); }
+            if (hrefs(ls)[0] !== '/goals#goal-1') { console.error('line-start PG-1 failed'); process.exit(24); }
             // punctuation-adjacent
             const pa = node('see PG-1.', 'prose');
             const paText = pa.nodeValue;
             linkTaskRefText(pa);
             if (!conserved(pa, paText))
               { console.error('pa: reconstructed text diverged — text not conserved, first-link index is meaningless'); process.exit(34); }
-            if (hrefs(pa)[0] !== '/goals') { console.error('punctuation-adjacent PG-1 failed'); process.exit(25); }
+            if (hrefs(pa)[0] !== '/goals#goal-1') { console.error('punctuation-adjacent PG-1 failed'); process.exit(25); }
             // PG- with no digits — must NOT link
             const nodigit = node('see PG- now', 'prose');
             linkTaskRefText(nodigit);
@@ -7585,6 +7585,137 @@ class TestGoalsRoute(unittest.TestCase):
         self.assertIn("access=Access.WRITE", source)
         self.assertIn("with store.transaction():", source)
         self.assertNotIn("sqlite3", source)
+
+    def test_pg_goal_links_reach_distinct_rows_after_native_update(self):
+        """PG-3 and PG-7 name real, distinct native-row targets, including
+        after setData drives the native registry's update path."""
+        root = os.path.dirname(watch.__file__)
+        goals_src = watch.read_text(os.path.join(
+            root, "dev", "build", "src", "goals.js"))
+        router_src = watch.ROUTER_JS
+        components_src = watch.COMPONENTS_JS
+        self.assertIn("id: 'goal-' + node.id", goals_src,
+                      "goal rows have no addressable goal-N identity")
+        self.assertEqual(router_src.count("fragment: r.fragment"), 3,
+                         "click, history, and initial navigation must all carry the goal fragment")
+        script = textwrap.dedent("""\
+            const goalSource = %s
+              .replace("import React from 'react';", '')
+              .replace("import { fromBuilder } from './delegate.js';",
+                "const fromBuilder = (_n, fn) => fn;")
+              .replace('export function registerGoals', 'function registerGoals');
+            const React = {
+              createElement(type, props, ...children) {
+                props = Object.assign({}, props || {}, {children});
+                return typeof type === 'function' ? type(props) : {type, props};
+              },
+              useState(initial) {
+                return [typeof initial === 'function' ? initial() : initial, () => {}];
+              },
+              useEffect() {}, useRef() { return {current:null}; },
+            };
+            const mdB = text => ({type:'details', props:{text, children:[]}});
+            let goalComponent = null;
+            eval(goalSource);
+            registerGoals({register(name, spec) { goalComponent = spec.component; return spec; }});
+            const walk = (node, visit) => {
+              if (!node || typeof node !== 'object') return;
+              visit(node);
+              const kids = node.props && node.props.children || [];
+              for (const kid of kids.flat(Infinity)) walk(kid, visit);
+            };
+            const renderIds = next => {
+              const ids = [];
+              walk(goalComponent({data:next}), node => {
+                if (node.type === 'li' && node.props.className === 'goaltree-row')
+                  ids.push(node.props.id);
+              });
+              return ids;
+            };
+            let renderedIds = [];
+            let data = null;
+            const registry = {update(next) { renderedIds = renderIds(next); }};
+            const window = {dwNative:{registry}};
+            %s
+            %s
+            const nodePayload = (id, title) => ({id, title, parent_id:null,
+              state:'open', state_error:null, completed_count:0, total_count:0,
+              blockers:[], details:'', criteria:[], member_tasks:[], verdicts:[]});
+            const payload = nodes => ({goals:{health:'ok', examined_count:nodes.length,
+              expected_count:nodes.length, current_goal_id:null, nodes}});
+            setData(payload([nodePayload(3, 'Three'), nodePayload(7, 'Seven')]));
+            if (renderedIds.join(',') !== 'goal-3,goal-7') {
+              console.error('initial native goal targets were ' + renderedIds.join(',')
+                + ', expected goal-3,goal-7'); process.exit(40);
+            }
+            setData(payload([nodePayload(7, 'Seven updated'), nodePayload(3, 'Three updated')]));
+            if (renderedIds.join(',') !== 'goal-7,goal-3') {
+              console.error('native setData update dropped goal targets: landed on '
+                + renderedIds.join(',') + ', expected goal-7,goal-3'); process.exit(41);
+            }
+
+            %s
+            %s
+            %s
+            %s
+            %s
+            %s
+            let created = [];
+            const doc = {
+              createDocumentFragment() { return {kids:[], appendChild(n){this.kids.push(n)}}; },
+              createTextNode(text) { return {kind:'text', text}; },
+              createElement(tag) { const el = {tag, kind:tag, dataset:{}, setAttribute(){}};
+                created.push(el); return el; },
+            };
+            const prose = {nodeValue:'PG-3 then PG-7', ownerDocument:doc,
+              parentElement:{closest(selector) { return selector === '.md' ? {} : null; }},
+              replaceWith(frag) { this.result = frag.kids; }};
+            linkTaskRefText(prose);
+            const refs = prose.result.filter(node => node.className === 'goalref');
+            if (refs.length !== 2 || refs[0].href !== '/goals#goal-3'
+                || refs[1].href !== '/goals#goal-7' || refs[0].href === refs[1].href) {
+              console.error('PG-3 and PG-7 did not resolve to distinct targets: '
+                + refs.map(ref => ref.href).join(',')); process.exit(42);
+            }
+            for (const ref of refs) {
+              const id = ref.href.split('#')[1];
+              if (!renderedIds.includes(id)) {
+                console.error(ref.textContent + ' promised ' + ref.href
+                  + ' but landed on /goals with no existing #' + id + ' target');
+                process.exit(43);
+              }
+            }
+
+            %s
+            %s
+            if (goalsUrl(null) !== '/goals') {
+              console.error('fragment-free goals navigation no longer lands on /goals');
+              process.exit(44);
+            }
+            if (goalsUrl('#goal-3') !== '/goals#goal-3') {
+              console.error('goals router discarded #goal-3 and landed on '
+                + goalsUrl('#goal-3')); process.exit(45);
+            }
+            let scrolled = '';
+            const document = {getElementById(id) {
+              return renderedIds.includes(id) ? {scrollIntoView(){scrolled=id}} : null;
+            }};
+            if (!scrollGoalTarget('#goal-3') || scrolled !== 'goal-3') {
+              console.error('clicking PG-3 did not reach #goal-3; landed on '
+                + goalsUrl(null)); process.exit(46);
+            }
+        """) % (json.dumps(goals_src),
+                _extract_js_fn(router_src, "function nativeRegistry("),
+                _extract_js_fn(router_src, "function setData("),
+                _extract_js_const(components_src, "TASK_REF_SKIP"),
+                _extract_js_const(components_src, "TASK_REF_SKIP_NO_CODE"),
+                _extract_js_const(components_src, "TASK_REF_RE"),
+                _extract_js_fn(components_src, "function taskRefParts("),
+                _extract_js_fn(components_src, "function backtickTaskLinksOn("),
+                _extract_js_fn(components_src, "function linkTaskRefText("),
+                _extract_js_fn(router_src, "function goalsUrl("),
+                _extract_js_fn(router_src, "function scrollGoalTarget("))
+        _node_check(["node", "-e", script])
 
     def test_page_wires_one_native_goals_authority(self):
         native = watch.NATIVE_JS.replace("\\\n", "")

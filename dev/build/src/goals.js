@@ -328,7 +328,7 @@ function GoalPage(props) {
           'The examined tree is genuinely empty. Create the first goal below.'))
     : nodes.length ? React.createElement('ul', { className: 'goaltree' },
       nodes.map(node => React.createElement('li', {
-        className: 'goaltree-row', key: node.id,
+        className: 'goaltree-row', id: 'goal-' + node.id, key: node.id,
         style: { '--goal-depth': Math.min(goalDepth(node, byId), 8) },
       }, React.createElement('div', { className: 'goaltree-node' }, stateChip(node),
       React.createElement('span', { className: 'goaltree-title' }, node.title),

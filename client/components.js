@@ -717,7 +717,7 @@ function linkTaskRefText(node) {
          and href mean a reader can tell a goal link from a task link, and
          the two never shadow each other even when PG-1 and #1 share a
          number. No hover: the goals page is the destination, not a card. */
-      a.className = 'goalref'; a.href = '/goals';
+      a.className = 'goalref'; a.href = '/goals#goal-' + part.id;
       a.textContent = part.text;
     } else {
       a.className = 'taskref'; a.href = '/tasks?t=' + part.id;

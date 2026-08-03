@@ -1346,7 +1346,10 @@ function routeOf(loc) {
   }
   // #545 — the full reviews listing the dashboard's cap points at.
   if (loc.pathname === '/reviews') return { name: 'reviews', param: null };
-  if (loc.pathname === '/goals') return { name: 'goals', param: null };
+  if (loc.pathname === '/goals') return {
+    name: 'goals', param: null,
+    fragment: goalsUrl(loc.hash).slice('/goals'.length) || null,
+  };
   // #562 — /chat/<id>: one topic chat's conversation. The id is the path
   // segment after /chat/; /chat with no id degrades to the page's not-found
   // voice (a chat is its own subject — the navigate principle).
@@ -4872,7 +4875,7 @@ async function navigate(name, param, opts) {
     : name === 'research' ? '/research' +
         (param ? '?p=' + encodeURIComponent(param) : '')
     : name === 'reviews' ? '/reviews'
-    : name === 'goals' ? '/goals'
+    : name === 'goals' ? goalsUrl(opts.fragment)
     : name === 'chat' ? '/chat/' + encodeURIComponent(param || '')
     : '/';
   /* The wide artifact column is the review idiom's, and a research DOC
@@ -4905,6 +4908,21 @@ async function navigate(name, param, opts) {
   // after the new content is in layout, and only for the swap that has a
   // position worth keeping
   if (modeSwap) restoreScrollRatio(keepRatio);
+  if (name === 'goals') scrollGoalTarget(opts.fragment);
+}
+/* Goal fragments are the one scoped fragment-bearing route. Keeping the
+   validation here prevents an arbitrary hash from becoming router state while
+   leaving ordinary /goals navigation byte-for-byte unchanged. */
+function goalsUrl(fragment) {
+  return '/goals' + (typeof fragment === 'string' && /^#goal-\d+$/.test(fragment)
+    ? fragment : '');
+}
+function scrollGoalTarget(fragment) {
+  if (goalsUrl(fragment) === '/goals') return false;
+  const target = document.getElementById(fragment.slice(1));
+  if (!target) return false;
+  target.scrollIntoView();
+  return true;
 }
 /* only same-document routes are intercepted; external links, new-tab and
    modified clicks fall through to the browser. */
@@ -4931,7 +4949,7 @@ addEventListener('click', e => {
   // `routeOf` reads `search` off the <a> as readily as off `location`, so the
   // mode switch needs no handler of its own: it is two ordinary internal links
   // (#252), which is also what makes it keyboard-operable and deep-linkable.
-  const opts = { push: true, q: r.q, mode: r.mode };
+  const opts = { push: true, q: r.q, mode: r.mode, fragment: r.fragment };
   // a review link fired from inside a question card seeds the shared-element
   // morph: remember where the question sat so it can travel to its dock.
   if (r.name === 'review' && r.q) {
@@ -4942,7 +4960,9 @@ addEventListener('click', e => {
 });
 addEventListener('popstate', () => {
   const r = routeOf(location);
-  navigate(r.name, r.param, { push: false, q: r.q, mode: r.mode });
+  navigate(r.name, r.param, {
+    push: false, q: r.q, mode: r.mode, fragment: r.fragment,
+  });
 });
 /* live tick: re-render the active data-driven view in place, no fade.
    Tolerates the brief unreachable window while the server restarts. */
@@ -5041,7 +5061,8 @@ if (!MIST_ON) document.body.classList.add('mistoff');   // #449: see crossfade
 (function () {                              // initial view from the URL
   const r = routeOf(location);
   navigate(r.name, r.param,
-           { push: false, transition: false, q: r.q, mode: r.mode })
+           { push: false, transition: false, q: r.q, mode: r.mode,
+             fragment: r.fragment })
     .then(loadRolls);
   tick();
 })();
