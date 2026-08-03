@@ -3664,8 +3664,188 @@ def test_batch_summary_reports_all_four_outcomes_distinguishably(tmp_path: Path)
     assert "rebase-conflict=1" in summary[0]
     assert "refused=1" in summary[0]
     assert "skipped=1" in summary[0]
+    # #1157 round 2: the abort-failed denominator is stated even at zero, so a
+    # pass is never silent about whether a worktree was stranded (#868/#136).
+    assert "abort-failed=0" in summary[0]
     # Each branch is named with its distinct state marker.
     assert "lane: LANDED" in result.stdout
     assert "lane-b: CONFLICT" in result.stdout
     assert "lane-c: REFUSED" in result.stdout
     assert "ghost: SKIPPED" in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# #1157 round 2 — the P1: rebase cleanup must be exception-safe (a checked
+# `finally`) and the abort's own result must be checked. These drive REAL git
+# state (a real paused rebase, a real abort failure), not a stubbed gate.
+# ---------------------------------------------------------------------------
+
+
+def _conflicting_lane_repo(tmp_path: Path) -> tuple[Path, Path]:
+    """A base checkout plus a lane whose rebase onto master hits a REAL add/add
+    conflict: master and the lane both add ``shared.txt`` with different bytes.
+
+    Leaves the lane clean and NOT yet rebased, so a caller can either let the
+    helper start the rebase or start it themselves to pre-create the paused
+    state (the abort-failed fixture).
+    """
+    root, lane = _make_repo(tmp_path)
+    _write(root / "shared.txt", "from master\n")
+    _git(root, "add", "shared.txt")
+    _git(root, "commit", "-m", "master adds shared")
+    _write(lane / "shared.txt", "from lane\n")
+    _git(lane, "add", "shared.txt")
+    _git(lane, "commit", "-m", "lane adds shared")
+    return root, lane
+
+
+def _git_raw(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    """git without the rc==0 assert — for commands that legitimately fail
+    (a conflicting rebase) or that we run to inspect a stranded state."""
+    return subprocess.run(
+        ["git", *args], cwd=repo, capture_output=True, text=True
+    )
+
+
+def test_rebase_interruption_is_cleaned_in_finally_leaving_worktree_clean(
+    tmp_path, monkeypatch
+):
+    """#1157 P1, finally half. An exception raised mid-rebase — AFTER the
+    rebase has created a real paused-rebase state — must not strand the
+    worktree. Cleanup runs in a checked ``finally``, so the branch ref is
+    restored and the worktree is clean.
+
+    The interruption is injected at ``_relay`` (a non-rebase seam that prints
+    output), NOT by faking ``git rebase``: the conflicting rebase and the
+    paused-rebase state it leaves are REAL (direction-2: drive a real git
+    rebase into a real conflict). Asserting 'the batch continued' would be
+    vacuous; this asserts the STATE it would continue from — no stranded
+    rebase, branch ref restored to its pre-rebase sha.
+    """
+    root, lane = _conflicting_lane_repo(tmp_path)
+    lane_before = _git(lane, "rev-parse", "HEAD")
+
+    # _relay is called right after the conflict is detected, before cleanup.
+    # Raising there simulates an interruption between rebase and abort. The
+    # conflicting rebase itself is real; only the output-printing seam raises.
+    def interrupting_relay(_result):
+        raise RuntimeError("RED-PROOF interruption: raised mid-rebase")
+
+    monkeypatch.setattr(land_lane, "_relay", interrupting_relay)
+
+    attempt = land_lane._rebase_lane_checked(lane, "master")
+
+    # The interruption was recorded (the rebase did not complete), and cleanup
+    # ran in the finally despite the exception.
+    assert attempt.state == "conflict", attempt.detail
+    assert "raised mid-rebase" in attempt.detail, attempt.detail
+    # THE assertions — the state the batch would continue from:
+    assert not land_lane._rebase_in_progress(lane), (
+        "worktree left mid-rebase after an interruption (finally did not clean up)"
+    )
+    status = _git_raw(lane, "status", "--porcelain=v1", "--untracked-files=no").stdout
+    assert status == "", f"worktree dirty after interrupted rebase: {status}"
+    lane_after = _git(lane, "rev-parse", "HEAD")
+    assert lane_after == lane_before, (
+        f"branch ref moved {lane_before[:12]} -> {lane_after[:12]} after an "
+        f"interrupted rebase; the abort did not restore it"
+    )
+
+
+def test_failed_rebase_abort_is_a_distinct_stranded_outcome(tmp_path):
+    """#1157 P1, checked-abort half (#136). When ``git rebase --abort`` itself
+    FAILS while a rebase is genuinely paused, that is a STRANDED worktree — a
+    distinct state from a routine conflict (where the abort restored the
+    branch cleanly). The two must not collapse.
+
+    The paused rebase is REAL (a real add/add conflict, left in place), and
+    the abort failure is REAL: a read-only git dir makes ``git rebase --abort``
+    exit 128 ('Unable to create index.lock: Permission denied'). Nothing is
+    stubbed. The worktree stays stranded because the abort genuinely could not
+    clean up — and the outcome names that, loudly, instead of 'conflict'.
+    """
+    root, lane = _conflicting_lane_repo(tmp_path)
+    lane_before = _git(lane, "rev-parse", "HEAD")
+
+    # Start the rebase for real: it conflicts and pauses (rc != 0).
+    started = _git_raw(lane, "rebase", "master")
+    assert started.returncode != 0, "fixture rebase should have conflicted"
+    assert land_lane._rebase_in_progress(lane), "fixture should be mid-rebase"
+
+    # Make the abort genuinely fail: a read-only git dir blocks the writes
+    # --abort needs (index.lock, removing the rebase-merge dir).
+    git_dir = _git(lane, "rev-parse", "--absolute-git-dir")
+    subprocess.run(["chmod", "-R", "a-w", git_dir], check=True)
+    try:
+        attempt = land_lane._rebase_lane_checked(lane, "master")
+    finally:
+        # Restore writability so pytest can tear down tmp_path.
+        subprocess.run(["chmod", "-R", "u+w", git_dir], check=True)
+
+    # The discriminating assertion (#136): abort-failed is NOT conflict.
+    assert attempt.state == "abort-failed", (
+        f"failed abort collapsed into '{attempt.state}' — a stranded worktree "
+        f"must be its own outcome, not a routine conflict (detail: {attempt.detail})"
+    )
+    # The abort really did fail (its failure output was captured) and the
+    # worktree really is stranded — the paused rebase was NOT cleaned up.
+    assert attempt.detail, "abort-failed but no failure output captured"
+    assert land_lane._rebase_in_progress(lane), (
+        "abort-failed outcome but the worktree is not stranded — the fixture "
+        "no longer reproduces a real failed abort"
+    )
+    # The branch REF was not advanced to master (the rebase never completed):
+    # a rebase detaches HEAD but leaves refs/heads/<branch> at its original
+    # tip, and the failed abort changed neither. The lane tip is intact.
+    assert _git(root, "rev-parse", "refs/heads/lane") == lane_before, (
+        "the lane branch ref moved even though the rebase never completed"
+    )
+
+
+def test_batch_reports_abort_failed_loudly_with_distinct_marker(
+    tmp_path, monkeypatch, capsys
+):
+    """The batch must surface an ``abort-failed`` entry as its own loud marker
+    and count it in the summary — not fold it into rebase-conflict (#136).
+
+    A real abort-failure cannot be timed inside a single batch run (the git dir
+    must be writable for the rebase to pause, then read-only for the abort to
+    fail), so this exercises the batch's *response* to that outcome by routing
+    the (real, separately-tested) helper to return it. It proves the marker,
+    the stderr line, and both denominators — the git behaviour is proven by the
+    two fixtures above. The monkeypatch short-circuits before land(), so no
+    gate runs.
+    """
+    root, lane_a, lane_b = _make_two_lane_repo(tmp_path)
+    _write(lane_a / ".dreamwork" / "docs" / "alpha.md", "# Alpha\n")
+    _git(lane_a, "add", ".dreamwork/docs/alpha.md")
+    _git(lane_a, "commit", "-m", "doc alpha")
+
+    monkeypatch.setattr(
+        land_lane, "_rebase_lane_checked",
+        lambda lane, base: land_lane._RebaseAttempt(
+            "abort-failed", "index.lock: Permission denied"
+        ),
+    )
+    monkeypatch.chdir(root)
+
+    rc = land_lane.land_batch(
+        [land_lane.BatchEntry("lane", ()), land_lane.BatchEntry("lane-b", ())],
+        base="master",
+    )
+    out, err = capsys.readouterr()
+
+    assert rc == 1
+    # Distinct marker, not CONFLICT (#136).
+    assert "lane: ABORTBAD" in out, out
+    assert "lane-b: ABORTBAD" in out, out
+    assert "lane: CONFLICT" not in out
+    # Reported loudly on stderr, naming the stranded worktree.
+    assert "lane: ABORT-FAILED" in err, err
+    assert "stranded" in err, err
+    # Both denominators stated (#868): attempted and abort-failed counts.
+    assert "attempted=2" in out, out
+    assert "abort-failed=2" in out, out
+    assert "rebase-conflict=0" in out, out
+
+
