@@ -3542,3 +3542,24 @@ class TestHandoffDerivesRequirement:
         out, err = capsys.readouterr()
         assert exit == 2, out + err
         assert "absent from the working tree" in err, err
+
+
+def test_handoff_carries_head_identity_so_a_stale_paste_is_detectable(
+        repo, capsys):
+    """#1140/#1131: handoff's quoted block carries the HEAD it audited so a
+    reader can detect a stale paste — a block whose HEAD is not the branch tip
+    describes a tree that no longer exists (the lane committed again after
+    running handoff). This is a READ aid, not a gate input: the gate derives its
+    own number and never consults this block."""
+    base, head = _binding_branch(repo)
+    # PRECONDITION: the branch has a binding diff so the block is meaningful.
+    derived = rp._derived_requirement(repo, base, head)
+    assert derived["require"] == 1, (
+        f"fixture lost its binding diff; require={derived['require']}")
+    capsys.readouterr()
+    exit = _handoff(repo)
+    out, err = capsys.readouterr()
+    assert exit == 2, out + err  # no registry -> FAULT (require>0)
+    # The audited HEAD is the branch tip at the moment handoff ran.
+    assert f"audited HEAD: {head}" in out, (
+        f"handoff did not print the audited HEAD; got:\n{out}")
