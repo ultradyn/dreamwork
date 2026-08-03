@@ -2048,8 +2048,9 @@ def test_first_round_code_with_no_registry_gets_the_same_gate_remedy(tmp_path):
 
     assert result.returncode == 1
     assert "red-proof requirement: 1 injection required" in result.stdout
+    if "Carry-forward provenance was supplied" in result.stderr:
+        pytest.fail("first-round gate emitted CLI-only carry-forward remedy")
     assert "Produce a fresh causal proof" in result.stderr
-    assert "Carry-forward provenance was supplied" not in result.stderr
     _assert_base_unmoved(root, before)
 
 
