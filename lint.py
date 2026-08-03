@@ -986,13 +986,16 @@ def check_unfolded_answers(dw: Path, watch, rep: Report) -> None:
     TWO faults, both found in the same fold, and they need different levels:
 
     - **An answer-tagged bullet under `## Open`** is an unfolded answer. WARN, and
-      the message carries the AGE rather than merely the fact — because there is a
-      legitimate window (his answer lands, the loop folds it on the next tick), and
-      an ERROR firing inside that window would cry wolf on correct behaviour. Age
-      is what distinguishes the window from the failure, so age is what it prints.
-      The age comes from the bullet's own timestamp against the clock, so a
-      one-minute-old answer reads differently from a two-hour-old one without
-      needing two rules.
+      the message carries the answer's OWN recorded time rather than a relative
+      age — because there is a legitimate window (his answer lands, the loop
+      folds it on the next tick), and an ERROR firing inside that window would
+      cry wolf on correct behaviour. The recorded time lets a reader gauge how
+      stale the unfolded answer is, but it is tree-derived (it comes from the
+      bullet's own stamp) and therefore stable across wall-clock movement (#1004):
+      a relative "8 minutes ago" changes between the two lint runs land_lane
+      compares, so a slow gate refuses itself on a clock diff that says nothing
+      about the branch. The answer's absolute timestamp carries the same
+      information without being perishable.
     - **Two answer bullets sharing one timestamp** is a duplicate delivery
       (#274's third witness: his answer landed twice, byte-identical, and
       `watch-events.log` carried the same `01:23:21` line twice). WARN and named
@@ -1039,7 +1042,6 @@ def check_unfolded_answers(dw: Path, watch, rep: Report) -> None:
         return                      # check_questions owns a file with no sections
     end = next((i for i in range(start + 1, len(lines))
                 if lines[i].startswith("## ")), len(lines))
-    now = datetime.now()
     per_entry: dict[str, list[str]] = {}
     order: list[str] = []
     title = None
@@ -1058,17 +1060,20 @@ def check_unfolded_answers(dw: Path, watch, rep: Report) -> None:
     for title in order:
         stamps = [s for s in per_entry[title] if s]
         short = title[:56] + ("…" if len(title) > 56 else "")
-        age = ""
+        when = ""
         if stamps:
             try:
                 oldest = min(datetime.strptime(s, "%Y-%m-%d %H:%M") for s in stamps)
-                hours = (now - oldest).total_seconds() / 3600.0
-                age = (" — answered %.0f minutes ago" % (hours * 60) if hours < 1
-                       else " — answered %.1f hours ago" % hours)
+                # #1004: the answer's OWN recorded time is tree-derived and
+                # stable across wall-clock movement, unlike a `now - oldest`
+                # relative age ("8 minutes ago") that changes between the two
+                # lint runs land_lane compares. A human reading the row still
+                # sees the exact moment the answer landed and can gauge its age.
+                when = f" — answered {oldest:%Y-%m-%d %H:%M}"
             except ValueError:
                 pass
         rep.add(WARN, "questions.md", (
-            f"{short} is under `## Open` and already carries his answer{age}; the "
+            f"{short} is under `## Open` and already carries his answer{when}; the "
             f"dashboard is still asking a settled question beside the open ones — "
             f"fold it (#366)"))
         dupes = {s for s in stamps if stamps.count(s) > 1}
@@ -1421,13 +1426,18 @@ def check_landed_still_open(dw: Path, text: str, rep: Report) -> None:
     softened WARN is one nobody re-checks. What the entry asks for instead is
     that the reader "check git, which takes one command" — so the check runs the
     command and prints the answer. An override now has to be made against a
-    timestamp and an age rather than against a bare sha.
+    timestamp rather than against a bare sha. (#1004: the relative age that used
+    to follow the timestamp was dropped because it changes with wall-clock time;
+    the absolute `%cI` timestamp carries the same weight for a reader.)
     """
-    # `\x1f` rather than a space, because `%cr` is itself spaced ("3 hours ago")
-    # and a space-split would have to know how many fields to expect.
+    # `\x1f` rather than a space, because `%s` (the commit subject) can carry
+    # spaces, so a space-split would have to know how many fields to expect.
+    # #1004: `%cr` (relative committer date, "3 hours ago") was dropped because
+    # it changes with wall-clock time — the absolute `%cI` timestamp carries the
+    # same information for a reader without being perishable.
     try:
         out = subprocess.run(
-            ["git", "-C", str(dw.parent), "log", "--format=%h\x1f%cI\x1f%cr\x1f%s"],
+            ["git", "-C", str(dw.parent), "log", "--format=%h\x1f%cI\x1f%s"],
             capture_output=True, text=True, timeout=20,
         )
     except (OSError, subprocess.SubprocessError):
@@ -1435,20 +1445,20 @@ def check_landed_still_open(dw: Path, text: str, rep: Report) -> None:
     if out.returncode != 0:
         return  # not a repo, or no commits yet: nothing to compare against
 
-    # id -> [(sha, when, ago)] for its close/merge commits. The trailing class
+    # id -> [(sha, when)] for its close/merge commits. The trailing class
     # stops `close(#31)` from answering for #3, which a bare prefix match would.
-    closed: dict[int, list[tuple[str, str, str]]] = {}
+    closed: dict[int, list[tuple[str, str]]] = {}
     for line in out.stdout.splitlines():
         parts = line.split("\x1f")
-        if len(parts) != 4:
+        if len(parts) != 3:
             continue
-        sha, iso, ago, subject = parts
+        sha, iso, subject = parts
         m = CLOSE_SUBJECT.match(subject)
         if m:
             # `%cI` is `2026-07-28T01:39:02+10:00`; the minute is as precise as
             # this needs to be and the timezone is noise for a local reader.
             closed.setdefault(int(m.group(1)), []).append(
-                (sha, iso[:16].replace("T", " "), ago))
+                (sha, iso[:16].replace("T", " ")))
     if not closed:
         return
 
@@ -1472,14 +1482,16 @@ def check_landed_still_open(dw: Path, text: str, rep: Report) -> None:
             landings = closed.get(tid)
             if not landings:
                 continue
-            if any(sha in body for sha, _, _ in landings):
+            if any(sha in body for sha, _ in landings):
                 acknowledged += 1       # a deliberate partial: it cites its commit
             else:
-                # #363: the AGE is the part that argues. The evidence goes in the
+                # #363: the WHEN is the part that argues. The evidence goes in the
                 # message so the reader does not have to run `git log` to weigh
-                # it — see the docstring for why that is the whole fix.
+                # it — see the docstring for why that is the whole fix. #1004:
+                # only the absolute timestamp, not a relative age, so the row is
+                # stable across wall-clock movement.
                 evidence = ", ".join(
-                    f"`{sha}` {when}, {ago}" for sha, when, ago in landings)
+                    f"`{sha}` {when}" for sha, when in landings)
                 stale.append(f"#{tid} ({evidence})")
     for name in stale:
         rep.add(
