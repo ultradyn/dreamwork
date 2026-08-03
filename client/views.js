@@ -883,7 +883,7 @@ function chatTurn(t) {
 }
 function buildChat(fetched) {
   // Unknown id degrades quietly, in the page's own voice — never a traceback,
-  // never a thrown exception (the same .qmissing shape buildQuestion uses).
+  // never a thrown exception (the same .qmissing shape /question uses).
   // No composer on this path: you cannot reply to a chat that does not exist.
   if (!fetched)
     return `<div class="qmissing"><div class="qmisshead">not found</div>` +

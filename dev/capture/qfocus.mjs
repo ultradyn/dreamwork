@@ -12,9 +12,9 @@
    Production lines the red-proofs name (watch.py):
      · the `a.qfocus` link emission in qaInner — removing it reds the
        way-in checks;
-     · buildQuestion's `d.answered_entries.find` fallback — removing it
-       reds the fold-follow check (the tick would report a live, folded
-       question as missing);
+     · the registered native Question component's `answered_entries`
+       fallback — removing it reds the fold-follow check (the tick would
+       report a live, folded question as missing);
      · the `.qmissing` branch — removing it reds the missing-key check;
      · the crossfade path itself — the route-arrival evidence asks the
        browser (transitionstart, #442) whether the existing dissolve ran,

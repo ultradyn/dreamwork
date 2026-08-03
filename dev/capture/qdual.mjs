@@ -28,8 +28,8 @@
        stacked block). `grid-template-columns` alone does NOT red it (a grid
        with two children auto-makes two columns), which is why the line named
        is display:grid, not the template;
-     · the `qdual` class on #qfocus in buildQuestion — removing it reds the
-       same check (the CSS keys off .qdual);
+     · the `qdual` class on #qfocus in the registered native Question
+       component — removing it reds the same check (the CSS keys off .qdual);
      · `min-height:9rem` on the focus textarea — removing it reds the
        "taller than normal" check.
 
@@ -158,4 +158,3 @@ ok('no page errors', errs.length === 0);
 if (errs.length) notes.push('page errors: ' + errs.join(' | '));
 await b.close();
 finish();
-

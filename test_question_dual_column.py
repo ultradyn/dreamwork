@@ -8,8 +8,9 @@ byte-exact client constants — so a regression in the layout-split branch, the
 focus-scoped grid, or the width-exception wiring is caught without a browser.
 
 Production lines the red-proofs name (each assertion has one):
-  · buildQuestion's `qdual` container emission in client/views.js — the
-    layout-split branch. Removing it reds `test_build_question_emits_dual_column`.
+  · the registered native Question component's `qdual` container emission in
+    dev/build/src/question.js — the layout-split branch. Removing it reds
+    `test_registered_question_emits_dual_column`.
   · the `#qfocus.qdual`-scoped `grid-template-columns` in client/style.css —
     the grid that splits body (col 1) from compose (col 2). Removing the
     `#qfocus` scope reds the dashboard-protection half (a bare `.qa` grid would
@@ -43,27 +44,52 @@ def _fn_src(src, name):
     return src[start:nxt if nxt > 0 else len(src)]
 
 
+def _registered_component_src(page, route):
+    """Return the shipped component registered for ROUTE.
+
+    Registration absence and component-definition absence are distinct
+    failures: neither may collapse to an empty slice that blames the caller.
+    The whitespace-tolerant matcher survives line wrapping in the bundle.
+    """
+    registration = re.search(
+        r'\.\s*register\(\s*["\']' + re.escape(route) +
+        r'["\']\s*,\s*\{\s*component\s*:\s*([A-Za-z_$][\w$]*)',
+        page)
+    if registration is None:
+        raise AssertionError(
+            "the shipped native registry does not register /%s" % route)
+    component = registration.group(1)
+    definitions = list(re.finditer(
+        r'function\s+' + re.escape(component) + r'\s*\(',
+        page[:registration.start()]))
+    if not definitions:
+        raise AssertionError(
+            "the registered /%s component %s is absent from the shipment" %
+            (route, component))
+    return page[definitions[-1].start():registration.start()]
+
+
 class QuestionDualColumnSource(unittest.TestCase):
     """The /question focus view ships a dual-column layout; the dashboard does
     not. The split is CSS-driven and scoped to the focus container, because
     `qaCard` is shared with the dashboard and is explicitly out of scope."""
 
-    def test_build_question_emits_dual_column_container(self):
-        """buildQuestion wraps the focused card in a dual-column container.
+    def test_registered_question_emits_dual_column_container(self):
+        """The registered native view wraps its card in a dual container.
 
         Production line: the `qdual` class on the `#qfocus` div in
-        client/views.js buildQuestion. The dashboard question builders
+        dev/build/src/question.js Question. The dashboard question builders
         (buildQuestions/buildDashboard) never emit `#qfocus`, so the dual
         layout cannot reach them — asserted below as the dashboard half.
         """
-        src = _fn_src(watch.VIEWS_JS, "buildQuestion")
-        self.assertIn("buildQuestion", src, "sliced the wrong function")
+        src = _registered_component_src(watch.PAGE, "question")
         # the container exists and carries the dual-column marker
-        self.assertIn('id="qfocus"', src,
-                      "buildQuestion no longer emits the #qfocus container")
-        self.assertIn("qdual", src,
-                      "buildQuestion's layout-split branch (the qdual marker) "
-                      "is gone — the dual-column container is not emitted")
+        self.assertIn('id:"qfocus"', src,
+                      "the registered /question component no longer emits "
+                      "the #qfocus container")
+        self.assertIn('className:"qdual"', src,
+                      "the registered /question component lost its qdual "
+                      "layout-split branch — #qfocus.qdual is not emitted")
 
     def test_dashboard_builders_do_not_emit_the_focus_container(self):
         """The dashboard and /questions listing are UNCHANGED: they never

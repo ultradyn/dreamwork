@@ -932,11 +932,11 @@ question.
 - **The split is CSS-driven and focus-scoped, never a second card.** `qaCard`
   is the one component the dashboard, `/questions`, the dock and the
   answer-submit morph all render through, so changing its structure is out of
-  scope. Instead `buildQuestion` marks the focus container `#qfocus.qdual`,
-  and a `#qfocus.qdual`-scoped grid lays the same card's `.qbody` (col 1) and
-  `.qcompose` (col 2) side by side. The dashboard is unchanged because the
-  scope never reaches it — `.qbody` is `display:contents` everywhere but here,
-  where it becomes the left column.
+  scope. Instead the registered native Question component marks the focus
+  container `#qfocus.qdual`, and a `#qfocus.qdual`-scoped grid lays the same
+  card's `.qbody` (col 1) and `.qcompose` (col 2) side by side. The dashboard
+  is unchanged because the scope never reaches it — `.qbody` is
+  `display:contents` everywhere but here, where it becomes the left column.
 - **A third deliberate width exception.** A second column needs room the
   `72ch` reading column does not give, so `body.question .wrap` widens to
   `1040px` — the same body-class + `body.wsliding` glide idiom `/review` and
