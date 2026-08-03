@@ -14,10 +14,10 @@
     "client/command.js": "a7346f466f100f6fc9a764ca22245e5983bfe8c7abd6c802d6d06e894750f577",
     "client/components.js": "97a9acbdaca87175ac74f728a6db0d263537501646d20c2342503367c94e534f",
     "client/favicon.js": "746a512fb2d23b6ac1294f4d5fdbb4bcc5809a93cae1fe6e78dbbe70882ba901",
-    "client/router.js": "16323900f0e61dc9db4ebb4c5f07ec27843414bc319394621945af69352c7b2b",
+    "client/router.js": "12bbbbbca7263d4a954c59ad8ec8b62a0246123885aa6b6f1bf6af01b1e0f28b",
     "client/shader.js": "e293165e637d135da651d35fa7834208a07e6dc1142d670d2cd6018a1017a462",
-    "client/style.css": "78ba73e70b80a8315fab4640d8f555840e48621ab7f98f61b3acaf2aabc36388",
-    "client/views.js": "c82d6bc700a37cebefe72808c189d9a335cf8fe75ea4bea4450a3ce37e997730",
+    "client/style.css": "fe684b55d98501419b63469c0d09bbe12c14cbff2210bf154f949c42f9cc3a1a",
+    "client/views.js": "3d55e5e217711c8adf605d3f283e2bcb200b3ef229c54af4c1c68a9de5962e58",
     "dev/build/ds-src/ArtifactRow.d.ts": "12ace56abf0721bdd65bbb781e52937fdbd8dbe21897fd5eab3455a3b4da04cb",
     "dev/build/ds-src/ArtifactRow.fixture.json": "a38b3cf2012178882d4c60cf29361cef79e3192e954518830580959648fffd76",
     "dev/build/ds-src/ArtifactRow.prompt.md": "0ee7afa94f02d495b71e321150c6563a6246ece1cfcacc2488f627f384e203c5",
@@ -41,16 +41,17 @@
     "dev/build/ds-src/QaCompose.prompt.md": "abbf16d73fddc2e512fe802b0c010676959178e1570c137ce2f3fc7180864e34",
     "dev/build/src/delegate.js": "8cbeb4bce8ccaee70c8dc6ae76160eeb8dd9f8f3a92ca51e28712747ee28b293",
     "dev/build/src/goals.js": "00cea817c3b0d392ebdaadf32b9ec8ce69d1faa79cfbd4f285204f132880ab76",
-    "dev/build/src/native-entry.js": "42c071b11224dd1be63aa3065ae59c45cc6dafb5bb3f1200b8fa30821b10f9d4",
+    "dev/build/src/native-entry.js": "7e3058581b31bc34b810c99ee44d3902cd45d58d5487445568248789af887612",
     "dev/build/src/probe.js": "f6c51e602a98990ca28fe31206f0aa533c77016f5a9e04cc883769e52c3f67fc",
+    "dev/build/src/question.js": "4c324cc693dd17c3458c7bf8f8aac19c64c173aa15985d4a3defa5b9865fd3ca",
     "dev/build/src/registry.js": "6d8b3a665afcec61e7d0ab59b32b6ee23b0fc0bff90bf23b2558823057beb0a8",
     "dev/build/src/research.js": "26813363dcb58d20cef045528fbf55da86827053584a480f9b549d03626987cd",
     "dev/build/wrapper-exports.js": "ceac587fd5555910a0f65aa1b0bff6ea114e03991a50509ffc75365464e70080"
   },
   "outputs": {
-    "client/dist/ds/index.js": "2ddb78e4563bb7518cf57e94a0900d38efd71cd17338fb857dbc649799c7ec0a",
-    "client/dist/ds/styles.css": "78ba73e70b80a8315fab4640d8f555840e48621ab7f98f61b3acaf2aabc36388",
-    "client/dist/native.js": "9c7f412c650b2eb4fdf961bca893e25061c88b9fe13b2e8c452ab474dd9a4cfd"
+    "client/dist/ds/index.js": "363bc23e81ddf4b96b9f2e74bbce1df7432efee14dcacf0ea1f66b7dbc1f01d8",
+    "client/dist/ds/styles.css": "fe684b55d98501419b63469c0d09bbe12c14cbff2210bf154f949c42f9cc3a1a",
+    "client/dist/native.js": "08a4fa63369c9c2c403e8e9cb54bf885aff9d6736b868d4cb9d691cb61ede1c7"
   },
   "schema": 1,
   "tool": {

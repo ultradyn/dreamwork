@@ -3584,18 +3584,6 @@ var DreamworkDesign = (() => {
     const value = el.type === "number" ? Number(el.value) : el.value;
     saveSetting(el, value);
   });
-  function buildQuestion(title, d) {
-    if (!d) return '<div class="dim">loading…</div>';
-    if (title) {
-      const oi = (d.questions_open || []).findIndex((x) => x.title === title);
-      if (oi >= 0)
-        return `<div id="qfocus" class="qdual">` + qaCard(d.questions_open[oi], "o" + oi, "focus") + `</div>`;
-      const ai = d.answered_entries.findIndex((x) => x.title === title);
-      if (ai >= 0)
-        return `<div id="qfocus" class="qdual">` + qaCard(d.answered_entries[ai], "a" + ai, "focus") + `</div>`;
-    }
-    return `<div id="qfocus"><div class="qmissing"><div class="qmisshead">not found</div><div class="qmissbody">this link names a question the list no longer has — it was most likely re-titled or removed while you watched. No other question has been substituted for it.</div><div class="qmissback"><a href="/questions">&larr; back to questions</a></div></div></div>`;
-  }
   var RSPLIT_KEY = "dw.review.split";
   var RSPLIT_MIN = 30;
   var RSPLIT_MAX = 82;
@@ -4796,7 +4784,11 @@ var DreamworkDesign = (() => {
     data = next;
     if (window.dwPluginCommands) window.dwPluginCommands(data.plugin_commands);
     const registry = nativeRegistry();
-    if (registry) registry.update(data);
+    const kept = registry && registry.mounted().length ? snapshotCardState() : null;
+    if (registry) {
+      registry.update(data);
+      restoreCardState(kept);
+    }
     retryPendingGoalTarget();
     return data;
   }
@@ -4906,7 +4898,6 @@ var DreamworkDesign = (() => {
     const d = await ensureData();
     if (isNativeRoute(view.name)) return null;
     if (view.name === "review") return buildReview(view.param, view.q, d);
-    if (view.name === "question") return buildQuestion(view.param, d);
     if (view.name === "reviews") return buildReviews(d);
     if (view.name === "settings") return buildSettings(d);
     if (!d) return '<div class="dim">loading…</div>';
@@ -5022,7 +5013,7 @@ var DreamworkDesign = (() => {
     }
     function save(logicalId, text, meta) {
       const k1 = v1Key(logicalId);
-      if (!k1) return;
+      if (!k1) return false;
       try {
         if (text) {
           const rec = { t: text };
@@ -5042,7 +5033,9 @@ var DreamworkDesign = (() => {
           const lo = legacyKey(logicalId);
           if (lo) localStorage.removeItem(lo);
         }
+        return true;
       } catch (e) {
+        return false;
       }
     }
     function restore(logicalId, el) {
@@ -5154,8 +5147,8 @@ var DreamworkDesign = (() => {
   })();
   var dwDraft = {
     save(title, value) {
-      if (!title) return;
-      DraftStore.save(DraftStore.id("card", title), value);
+      if (!title) return false;
+      return DraftStore.save(DraftStore.id("card", title), value);
     },
     restore(title, el) {
       if (!title) return;
@@ -5431,8 +5424,14 @@ var DreamworkDesign = (() => {
   }
   function restoreCardState(saved) {
     if (!saved || !saved.size) return;
+    const unmatched = /* @__PURE__ */ new Map();
+    saved.forEach((state, qid) => unmatched.set(qid, {
+      state,
+      target: "card"
+    }));
     document.querySelectorAll(".qa[data-qid]").forEach((card) => {
-      const s = saved.get(card.dataset.qid);
+      const qid = card.dataset.qid;
+      const s = saved.get(qid);
       if (!s) return;
       const dets = [...card.querySelectorAll("details")];
       (s.open || []).forEach((o, i) => {
@@ -5441,9 +5440,15 @@ var DreamworkDesign = (() => {
       putScroll(qaScroller(card), s.read);
       const comp = card.querySelector(".qcompose");
       setCardMode(comp, s.mode, true);
-      if (s.value === null) return;
+      if (s.value === null) {
+        unmatched.delete(qid);
+        return;
+      }
       const ta = comp && comp.querySelector("textarea");
-      if (!ta) return;
+      if (!ta) {
+        unmatched.get(qid).target = "textarea";
+        return;
+      }
       ta.value = s.value;
       fitText(ta, false);
       putScroll(ta, s.scroll);
@@ -5452,6 +5457,37 @@ var DreamworkDesign = (() => {
       } catch (e) {
       }
       if (s.focus) refocus(ta);
+      unmatched.delete(qid);
+    });
+    unmatched.forEach((miss, qid) => {
+      const s = miss.state;
+      let title = "";
+      try {
+        title = decodeURIComponent(qid);
+      } catch (e) {
+      }
+      const hasDraft = s.value !== null && s.value !== "";
+      const preserved = hasDraft && title ? dwDraft.save(title, s.value) : false;
+      const host = document.getElementById("qfocus") || document.getElementById("view");
+      if (!host) return;
+      const notice = document.createElement("div");
+      notice.className = "qhealth qdraftrecovery";
+      notice.setAttribute("role", "alert");
+      notice.dataset.unmatchedQid = qid;
+      const absent = miss.target === "textarea" ? "its answer box is no longer available" : "the question is no longer on this page";
+      if (preserved) {
+        notice.textContent = "Draft preserved in this browser because " + absent + ". It will return if this title returns.";
+      } else if (hasDraft) {
+        notice.textContent = "Draft could not be restored or stored because " + absent + ". Copy it now: ";
+        const copy = document.createElement("textarea");
+        copy.readOnly = true;
+        copy.value = s.value;
+        copy.setAttribute("aria-label", "unrestored question draft");
+        notice.appendChild(copy);
+      } else {
+        notice.textContent = "Question state was discarded because " + absent + ".";
+      }
+      host.appendChild(notice);
     });
   }
   function refocus(ta) {
