@@ -579,6 +579,15 @@ def test_runtime_growth_reds_while_larger_component_growth_stays_green(
     shutil.copy(ROOT / client_dist.NATIVE_REL, dist)
     baseline = _native_weight(root)
 
+    probe = src / "probe.js"
+    probe_original = probe.read_text(encoding="utf-8")
+    probe.write_text(
+        probe_original + "\nglobalThis.__probeWeightProof = %r;\n" %
+        ("p" * 1_000), encoding="utf-8")
+    assert _native_weight(root)["runtime"] > baseline["runtime"] + 500, (
+        "the real coexistence probe is absent from the runtime measurement")
+    probe.write_text(probe_original, encoding="utf-8")
+
     registry = src / "registry.js"
     original = registry.read_text(encoding="utf-8")
     runtime_padding = "x" * 2_000
