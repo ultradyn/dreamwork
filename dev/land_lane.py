@@ -1052,9 +1052,7 @@ class Diff:
 
     @property
     def required_injections(self) -> int:
-        # An EMPTY diff is not an exemption: `changed` must be non-empty for
-        # the documentation rule to have examined anything at all (#868).
-        return 0 if self.changed and not self.redproof_binding else 1
+        return 0 if not self.redproof_binding else 1
 
 
 def _classify_diff(repo: Path, base_sha: str, branch_sha: str) -> Diff | None:
@@ -1085,6 +1083,11 @@ def _requirement_line(diff: Diff) -> str:
     says which of them it is holding.
     """
     if diff.required_injections == 0:
+        if not diff.changed:
+            return (
+                "red-proof requirement: 0 injections REQUIRED — the diff is "
+                "EMPTY; no changed path exists to bind an injection to"
+            )
         if diff.lint_gated_binding:
             return (
                 "red-proof requirement: 0 injections REQUIRED — "

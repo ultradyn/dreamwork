@@ -1802,11 +1802,27 @@ def test_a_markdown_file_that_is_a_program_is_not_inert(doc):
     )
 
 
-def test_an_empty_diff_is_not_a_documentation_exemption():
-    """#868: zero changed paths must not read as "zero required"."""
+def test_an_empty_diff_owes_no_injection_but_stays_distinct_from_all_inert():
+    """A successful empty diff owes nothing without claiming doc coverage."""
     empty = land_lane.Diff(changed=(), inert=(), binding=(), tests=())
-    assert empty.required_injections == 1
+    assert empty.required_injections == 0
     assert "the diff is EMPTY" in land_lane._requirement_line(empty)
+    assert "inert documentation" not in land_lane._requirement_line(empty)
+
+
+def test_an_unreadable_diff_is_not_the_empty_diff(tmp_path, capsys):
+    """A failed git read returns None; it never inherits empty's exemption."""
+    _, lane = _make_repo(tmp_path)
+    head = _git(lane, "rev-parse", "HEAD")
+
+    empty = land_lane._classify_diff(lane, head, head)
+    unreadable = land_lane._classify_diff(lane, "definitely-not-a-sha", head)
+
+    assert empty is not None
+    assert empty.changed == ()
+    assert empty.required_injections == 0
+    assert unreadable is None
+    assert "fatal:" in capsys.readouterr().err
 
 
 def test_a_node_id_does_not_count_as_naming_the_whole_file():
