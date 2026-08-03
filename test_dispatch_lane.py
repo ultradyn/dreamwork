@@ -1305,6 +1305,18 @@ def test_launch_review_creates_attached_branch_worktree_and_records_cwd(tmp_path
     attempts = sorted((root / ".dreamwork" / "review-dispatches").glob("*.launch.json"))
     assert len(attempts) == 1
     attempt = json.loads(attempts[0].read_text(encoding="utf-8"))
+    format_row = next(
+        line for line in (ROOT / "file-formats.md").read_text(encoding="utf-8").splitlines()
+        if line.startswith("| `.dreamwork/review-dispatches/")
+        and ".launch.json`" in line
+    )
+    field_clause = format_row.split("JSON fields: ", 1)[1].split(". Meanings:", 1)[0]
+    documented_fields = re.findall(r"`([a-z][a-z0-9_]*)`", field_clause)
+    assert len(documented_fields) == len(set(documented_fields))
+    assert set(documented_fields) == set(attempt), (
+        "review launch format field list drifted: "
+        f"documented={sorted(documented_fields)} actual={sorted(attempt)}"
+    )
     persisted_prompt = Path(attempt["prompt"]).read_text(encoding="utf-8")
     assert payload == {
         "argv": ["--permission-mode", "plan", "@cx-reviewer", persisted_prompt],
