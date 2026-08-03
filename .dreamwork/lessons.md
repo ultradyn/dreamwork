@@ -6668,3 +6668,60 @@ refusing, and all three were written from its output. Output is evidence about w
 **State expectations as observations, not as verdicts.** "Round 3 measured 589" is checkable. "A count
 that did not change would be suspicious" pre-commits the lane to a conclusion about a measurement
 neither of us has made yet. The first invites a correction; the second punishes one.
+
+## A checker that cannot see the population reports an empty population as a total miss (2026-08-04, #1184/#1191)
+
+`lint.py::check_landed_guards` resolves each registered guard name against the
+test tree, skipping any path containing `/.worktrees/` so a lane's copies do not
+count toward the main checkout's registry. Every lane runs FROM a worktree, so
+from a lane the corpus is empty and the check reports **every** declared guard as
+"not defined in any test_*.py".
+
+The same commit, linted from two places, gives two answers:
+
+    from the gate worktree:  1 guard(s) declared, 0 defined, 1 not defined
+    from the main checkout:  1 guard(s) declared, all defined in the test tree
+
+Two things go wrong and only the second is dangerous. The check is
+**unverifiable where nearly all work happens** — #1184's brief told the lane to
+confirm a WARN row disappeared, which was unsatisfiable by construction, and the
+lane stopped on it. Worse, it fails in the direction that **manufactures**
+findings: "I could not look" is rendered as "everything is missing". A lane that
+believed it would rewrite registry rows that were never stale, turning #1114's
+staleness detector into a source of staleness.
+
+This is the false-zero lesson (`lessons.md:3491`) inverted, and the inversion is
+why it is worth its own entry. A false zero reads as an all-clear; a false
+FULL-MISS reads as an emergency, and an emergency is acted on. Both come from the
+same root — an unmeasurable population reported as a measured one.
+
+The remedy for "I cannot see the canonical tree" is to say so and abstain, never
+to report an empty set as a population. Note the exclusion was not careless: it
+prevents a real miscount. The defect is that it has no third state.
+
+## A multi-alternate grep tells you a file matched, not which alternate it matched (2026-08-04, #1187)
+
+Looking for what emits the heartbeat tick line, I ran
+
+    grep -ln 'dream tick\|lanes .* live\|worktree-only' dev/*.py
+
+and got `dev/lane_status.py`. I wrote a brief on it. The real emitter is
+`tick_line.py` **at the repo root**, and `dev/lane_status.py` contains zero
+occurrences of `dream tick` — it matched the second and third alternates only.
+
+Two independent errors compounded, and each alone would have been survivable:
+
+- **The glob was the wrong population.** `dev/*.py` cannot return a root-level
+  file. The search could not have found the right answer, and it returned a
+  confident one anyway. I had listed `test_tick_line.py` by name minutes earlier
+  and did not connect it.
+- **`-l` discards which pattern matched.** With alternates of differing
+  strength — one that identifies the thing, two that merely co-occur near it —
+  a filename-only result cannot distinguish "this is the emitter" from "this
+  mentions lanes". Put the identifying term in its own grep, or use `-o` and
+  read what came back.
+
+The dispatched lane refuted it in one round for the cost of a worktree. The
+cheaper fix is the one-line check before writing the brief: **grep for the
+single most identifying string, unglobbed, and confirm the file you name
+actually contains it.**

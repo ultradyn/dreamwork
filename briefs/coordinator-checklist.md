@@ -93,3 +93,22 @@ text shape cannot establish contradiction, scope completeness, or world truth.
   merits: the change removes a `lint.py` WARN row, and whatever test asserts the WARN population has to
   be in scope to be updated. A doc-only scope for a change with a measurable output is usually a scope
   that is too small, and the derivation is what notices.
+
+- **`Lane-owns:` paths are COMMA-separated, not space-separated.** A space-separated
+  list parses as ONE entry and refuses with `scope derivation FAULT: resolved 0 existing
+  files from 1 Lane-owns entrie(s)`. The message names the count that gives it away —
+  `1 entrie(s)` for five paths — but the refusal prints below several NOT CHECKED
+  reports and above a `no controlling tty` note, so it is easy to misread the tty line
+  as the cause. Read the `REFUSE phase=` line, not the last line (2026-08-04, #1163).
+
+- **Cite the IGC method as repo-root `igc-method.md`, never
+  `/home/xertrov/.claude-p/skills/ud-dreamwork/igc-method.md`.** The standing contract
+  tells lanes not to read under `~/.claude-p`, so a brief citing that path asks the lane
+  to break a rule to follow an instruction. A #1190 lane reported the contradiction; it
+  did not block only because the worktree-local copy happened to match (2026-08-04, #1190).
+
+- **Before writing "confirm the WARN row disappears", ask where the lane will be standing
+  when it looks.** Several lint checks resolve against the working tree and exclude
+  `/.worktrees/`, so a lane cannot observe them at all; the gate's own lint runs from
+  `.worktrees/.gate-*` and is equally blind. An instruction only the main checkout can
+  satisfy is unsatisfiable for a lane (2026-08-04, #1184).
