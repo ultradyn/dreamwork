@@ -6185,3 +6185,37 @@ One more thing worth keeping, from the same report: the lane refused to arm a re
 had shown would misclassify a reachable case, and reported `check --require 1` FAULTing at **exit 2**
 rather than dressing it up as inapplicable. A refusal that leaves the audit honestly red is a better
 artifact than a green one bought by proving something nobody wanted.
+
+## A finding measured on a branch has the branch's coordinates, and a task split out of it inherits a dependency on that branch landing (2026-08-03, #1042/#1174, mine, caught by the lane on dispatch)
+
+`#1042`'s round-6 review reported a P1: `client/components.js:720` emits `href="/goals"` for every
+`PG-N`, so every goal reference links to the collection instead of the goal. Real defect, well measured.
+I split it into `#1174` because fixing it needs `dev/build/src/goals.js` and `client/router.js`, and
+`#1006`'s live branch held `goals.js` — so I blocked `#1174` on `#1006`, waited for `#1006` to land,
+unblocked, and dispatched.
+
+The lane stopped immediately: **on master, `client/components.js` contains no `PG`, no `goalref`, no
+`goalRef`, and no `'/goals'` production literal at all.** Line 720 is inside `observeTaskRefs`. The
+emitter with the bare href exists only on `#1042`'s own branch — **it is `#1042`'s deliverable.** The
+review had measured code that has never been on master.
+
+I reasoned about **file collisions** — who currently holds `goals.js` — and that reasoning was correct
+and irrelevant. The blocking question was not *which lane holds the file* but *where does the code under
+discussion actually live*. A review reads a branch; every line number, every quoted literal, and every
+"this function does X" in its findings is a statement about that branch's tree. Split a finding out and
+the new task silently inherits the branch as a **precondition**, not just as a scheduling conflict.
+
+Two rules, both cheap:
+
+- **Before dispatching a task split out of a review, resolve one of its quoted symbols on master.** One
+  `grep` for the literal the finding names. If it is not there, the task is blocked on the reviewed
+  branch landing, whatever the file-ownership picture says.
+- **Record the dependency as the branch, not the file.** `blocked on #1042` is true for the life of the
+  defect; `blocked on #1006 because of goals.js` was true for twenty minutes and then stopped being true
+  while remaining recorded, which is the worse failure — a blocker that resolves for the wrong reason
+  looks like progress.
+
+Worth noting what did work: the lane's `handoff` derived **0 injections owed from 0 changed paths**, and
+`check` reported the honest form — *"nothing was owed, so an absent registry is the expected state —
+NOT a verification of restoration and NOT an all-clear."* A tool that distinguishes "nothing to prove"
+from "proved nothing" is why a zero-commit round is legible at all.
