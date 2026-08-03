@@ -2559,6 +2559,21 @@ class TestObserveRemainderOptionGuard:
             repo, env, "restore", "router.js", "--lane", lane)
         assert restored.returncode == 0, restored.stdout + restored.stderr
 
+    def test_carry_forward_is_not_a_redproof_option_for_begin(
+            self, repo, tmp_path):
+        env = dict(__import__("os").environ)
+        env["REDPROOF_SCRATCH_ROOT"] = str(tmp_path / "scratch-1171-scope")
+
+        result = self._run(
+            repo, env, "begin", "router.js", "--expectation",
+            "expectation.txt", "--carry-forward")
+
+        assert result.returncode == 2, result.stdout + result.stderr
+        assert (
+            "--carry-forward is valid only for check and handoff"
+            in result.stderr
+        ), result.stderr
+
     def test_guard_derives_options_and_honours_the_command_escape(self):
         parser = rp._parser()
         parser.add_argument("--future-option-989")
