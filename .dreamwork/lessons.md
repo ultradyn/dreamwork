@@ -5711,3 +5711,49 @@ correct; nothing called it.
 defect *on the path the test takes*. When the test's path is the substitute, the
 injection lands there too and the proof comes back CAUGHT with a discriminating
 message. Arm against the production symbol, and say which one you armed against.
+
+## "Cleared to merge" is not "landed", and a brief that collapses them costs a whole dispatch (2026-08-03, #1049, mine, measured)
+
+I wrote in a brief: *"#1066 and #1067 landed today ... read them before designing,
+since they are the two worked examples."* #1066 had landed. **#1067 had not** — its
+reviewer had returned MERGE and I had decided to gate it, but the gate had not run.
+It landed about twenty minutes later.
+
+The lane did the right thing and it cost only a dispatch cycle rather than an
+increment. It checked the tree it actually had, found `dev/build/src/research.js`
+still defining its own local `const ArtifactRow = fromBuilder('artifactRow', ...)`
+rather than consuming the shared export, and STOPPED with zero commits under the
+live-state rule instead of designing against a worked example that did not exist.
+
+**The failure is `#136` in the coordinator's own hands: "reviewed and cleared" and
+"landed" are two states, and I collapsed them into one.** They felt like one because
+the decision was already made — and a decision I have made reads, to me, as a fact.
+It is not a fact until the merge sha is an ancestor of master.
+
+**The check: before a brief asserts a landing, resolve it.** `git merge-base --is-ancestor
+<sha> master`, or read the state off the task record. Never from having decided it, never
+from a review verdict, never from a gate you are about to run. And when a brief must lean
+on a landing, tell the lane to **verify the premise in its own rebased tree** rather than
+take the coordinator's word — the lane is the one holding the tree, and it is cheaper for
+it to check than for it to stop.
+
+## A denominator you derived by reading is a claim; the one entry you omit will be the load-bearing one (2026-08-03, #1049, mine, measured)
+
+The same brief enumerated the `qaCard(` call sites in `client/views.js` as lines 331,
+334, 1174, 1178, 1180, 1548 and 1739 — seven — and told the lane that only the last was
+in scope. The lane ran `rg -n "qaCard\("` and found **eight**. The one I missed was
+**1747: the answered-after-fold branch** — the exact call the task's central behaviour
+depends on, in a brief whose whole argument was that fold-following is the reason the
+route exists.
+
+That is not a coincidence worth shrugging at. I read the function top-down, saw the
+open-question branch call `qaCard`, understood the shape, and stopped counting — the
+second call was in the branch I had already explained to myself. **Comprehension
+terminates enumeration.** The better I understand a function, the likelier I am to stop
+reading it before the end.
+
+**So: derive denominators with a tool and quote the tool's output, never an inventory you
+assembled by reading.** `#868` asks for both denominators; it is worth adding that a
+hand-built numerator is a claim of the same kind. And state the granularity — the lane's
+correction was precise where mine was not: 8 direct call expressions across 7 consumer
+functions, of which this task touches 2 expressions in 1 function.
