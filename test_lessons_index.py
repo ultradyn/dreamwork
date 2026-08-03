@@ -72,10 +72,10 @@ def test_red_proof_stays_skimmable():
 
 
 def test_red_proof_slice_is_truncation_detectable():
-    """#1033: the red-proof slice is the loop's largest (hundreds of lines),
-    and a reader (an agent harness) that receives a truncated prefix has no
-    way to tell it is incomplete — the consultation looks performed. The act
-    output must let a caller that received a partial slice detect it.
+    """#1033: the full red-proof match set is hundreds of lines, and a reader
+    (an agent harness) that receives a truncated prefix has no way to tell it
+    is incomplete — the consultation looks performed. The ``--all`` output
+    must let a caller that received a partial result detect it.
 
     The mechanism: a header states the magnitude up front (a truncated read
     still has the header), and a trailing sentinel restating the lesson count
@@ -93,7 +93,7 @@ def test_red_proof_slice_is_truncation_detectable():
     import io
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
-        li.main(["--act", "red-proof", "--lessons", str(LESSONS)])
+        li.main(["--act", "red-proof", "--all", "--lessons", str(LESSONS)])
     out = buf.getvalue()
     lines = out.split("\n")
 
@@ -147,6 +147,52 @@ def test_red_proof_slice_is_truncation_detectable():
     assert int(mh.group(1)) == actual, (
         f"header states {mh.group(1)} lessons but {actual} were emitted"
     )
+
+
+def test_bounded_act_reports_every_omission_and_exact_recovery_command(tmp_path):
+    """#1194: a cap without an omission count is silent truncation."""
+    fixture = tmp_path / "many-clock-lessons.md"
+    fixture.write_text(
+        "\n".join(
+            f"- **Clock lesson {n} governs elapsed time.**\n"
+            f"  Evidence {n}: a timestamp was trusted without measurement."
+            for n in range(li.DEFAULT_ACT_LIMIT + 2)
+        ) + "\n",
+        encoding="utf-8",
+    )
+    import contextlib
+    import io
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = li.main(["--act", "clock", "--lessons", str(fixture)])
+    assert rc == 0
+    out = buf.getvalue()
+
+    shown = len(re.findall(r"(?m)^lessons\.md:\d+$", out))
+    assert shown == li.DEFAULT_ACT_LIMIT, "the default act slice was not capped"
+    for n in range(li.DEFAULT_ACT_LIMIT):
+        assert f"Evidence {n}:" in out, "the cap dropped a shown lesson's evidence"
+    expected = (
+        "# omitted: 2 more matching lessons — run "
+        f"`python3 dev/lessons_index.py --act clock --all --lessons {fixture}` "
+        f"to see all {li.DEFAULT_ACT_LIMIT + 2}"
+    )
+    assert expected in out, (
+        "the bounded act silently omitted lessons or did not print the exact "
+        "command that retrieves them"
+    )
+
+    all_buf = io.StringIO()
+    with contextlib.redirect_stdout(all_buf):
+        all_rc = li.main([
+            "--act", "clock", "--all", "--lessons", str(fixture),
+        ])
+    all_out = all_buf.getvalue()
+    assert all_rc == 0
+    assert len(re.findall(r"(?m)^lessons\.md:\d+$", all_out)) == (
+        li.DEFAULT_ACT_LIMIT + 2
+    ), "the printed --all recovery command does not retrieve every match"
+    assert "# omitted:" not in all_out
 
 
 def test_empty_act_emits_no_uncounted_blank_line(tmp_path):
@@ -236,7 +282,7 @@ def test_act_output_survives_a_truncating_reader():
     # downstream reader (head) closes ITS stdin, exactly the `| head` usage.
     prod = subprocess.Popen(
         [_sys.executable, "dev/lessons_index.py",
-         "--act", "red-proof", "--lessons", str(LESSONS)],
+         "--act", "red-proof", "--all", "--lessons", str(LESSONS)],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         cwd=str(HERE),
     )
