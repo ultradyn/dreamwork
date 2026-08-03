@@ -2787,11 +2787,11 @@ def land(
 # it attempted and how many landed.
 
 # ``abort-failed`` (round 2, #1157 P1) MUST NOT collapse into
-# ``rebase-conflict`` (#136): a conflict is routine and leaves the branch
-# clean (the abort succeeded); an abort-failed rebase is a worktree the abort
-# could NOT return to a clean state — stranded mid-rebase, which is precisely
-# the state #1159 shows perturbing OTHER gates. They are two states and the
-# batch must say so loudly for the second.
+# ``rebase-conflict`` (#136): a conflict is routine and leaves the worktree
+# reattached and clean (the abort succeeded); an abort-failed rebase is a
+# worktree the abort could NOT return to a clean state — stranded mid-rebase,
+# precisely the state #1159 shows perturbing OTHER gates. They are two states,
+# and the batch must say so loudly for the second.
 BATCH_STATES = (
     "landed", "refused", "rebase-conflict", "abort-failed", "skipped",
 )
@@ -2815,7 +2815,8 @@ class BatchOutcome:
 
     States must not collapse (#136): landed / refused / rebase-conflict /
     abort-failed / skipped are five outcomes. ``rebase-conflict`` means the
-    rebase conflicted AND the abort restored the branch cleanly; ``abort-failed``
+    rebase conflicted AND the abort restored the worktree's attachment and
+    clean state; ``abort-failed``
     means a partial rebase was left that the abort could NOT clean up — a
     stranded worktree (#1159/#1157 P1). ``base_before`` / ``base_after`` let
     the summary show that master advanced once per landing (#1157 red-proof).
@@ -2875,9 +2876,9 @@ class _RebaseAttempt:
     """Resolved outcome of rebasing one entry, cleanup included.
 
     ``ok``        — the rebase applied; nothing to clean up, proceed to gate.
-    ``conflict``  — the rebase did not apply AND the abort restored the branch
-                    to a clean state; the entry did not land but is safe to
-                    leave (#1159: the worktree is not stranded).
+    ``conflict``  — the rebase did not apply AND the abort restored the
+                    worktree's attachment and clean state; the entry did not
+                    land but is safe to leave (#1159: it is not stranded).
     ``abort-failed`` — a partial rebase was left that ``--abort`` could NOT
                     clean up; the worktree is stranded mid-rebase and the
                     batch must report it loudly (#136: not collapsed with a
@@ -2908,11 +2909,11 @@ def _rebase_lane_checked(lane: Path, base: str) -> _RebaseAttempt:
        the cleanup runs in ``finally`` regardless.
 
     2. The abort's OWN result is checked. ``--abort`` succeeding is what makes
-       a conflict routine (branch clean); ``--abort`` failing is a stranded
-       worktree — a distinct ``abort-failed`` outcome (#136), reported loudly,
-       not collapsed with ``conflict``. Abort is attempted only when a rebase
-       is genuinely in progress, so a clean rebase (or a dirty-tree refusal
-       that never started one) is left untouched.
+       a conflict routine (worktree reattached and clean); ``--abort`` failing
+       is a stranded worktree — a distinct ``abort-failed`` outcome (#136),
+       reported loudly, not collapsed with ``conflict``. Abort is attempted
+       only when a rebase is genuinely in progress, so a clean rebase (or a
+       dirty-tree refusal that never started one) is left untouched.
     """
     conflict_detail: str | None = None
     abort_failed_detail: str | None = None
@@ -3183,8 +3184,9 @@ def land_batch(
             # between this rebase and land()'s staleness check.
             #
             # Cleanup is exception-safe and the abort result is checked (#1157 P1):
-            # see _rebase_lane_checked. A conflict aborts cleanly (branch restored);
-            # a FAILED abort is a stranded worktree reported as its own outcome.
+            # see _rebase_lane_checked. A conflict abort restores the worktree's
+            # attachment and clean state; a FAILED abort is a stranded worktree
+            # reported as its own outcome.
             print(f"batch: rebasing {entry.branch} onto {base}@{base_before[:12]}")
             attempt = _rebase_lane_checked(lane, base)
             if attempt.state == "abort-failed":
@@ -3206,8 +3208,8 @@ def land_batch(
                 )
                 continue
             if attempt.state == "conflict":
-                # Routine conflict: the abort restored the branch, so the
-                # worktree is clean and the entry is safe to leave (#1159).
+                # Routine conflict: the abort restored the worktree's attachment
+                # and clean state, so the entry is safe to leave (#1159).
                 outcome = BatchOutcome(
                     entry.branch, "rebase-conflict", attempt.detail,
                     base_before, base_before,

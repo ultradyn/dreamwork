@@ -3687,9 +3687,11 @@ def test_batch_summary_reports_all_five_outcomes_distinguishably(tmp_path: Path)
 # #1157 round 3 — the P1: a refusal raised before the rebase leaves the
 # lane ref byte-identical, because nothing has written it yet. The batch
 # runs its refusal checks BEFORE the rebase, holding the mutex across both.
-# These tests prove the lane SHA is byte-identical after each pre-rebase
-# refusal (#136: "refused and left alone" is a distinct state from
-# "refused after mutating").
+# These tests prove the lane SHA is byte-identical after each per-entry refusal
+# before the rebase (#136: "refused and left alone" is a distinct state from
+# "refused after mutating"). Mutex contention occurs before the batch snapshots
+# HEAD, so that regression compares the ref externally rather than expecting
+# the later ``lane-ref-mutated=False`` diagnostic.
 # ---------------------------------------------------------------------------
 
 
@@ -3714,6 +3716,28 @@ def _stale_lane_repo(tmp_path: Path) -> tuple[Path, Path]:
     _git(root, "add", "master-advance.txt")
     _git(root, "commit", "-m", "master advances")
     return root, lane
+
+
+def test_batch_refuses_mutex_contention_without_rebasing_the_lane(tmp_path: Path):
+    """A held gate mutex refuses before the stale lane's ref can be moved."""
+    root, lane = _stale_lane_repo(tmp_path)
+    lane_before = _git(root, "rev-parse", "refs/heads/lane")
+    common_git_dir = land_lane._common_git_dir(root)
+    assert common_git_dir is not None
+    gate_lock = land_lane._try_lock(common_git_dir, "dreamwork-gate.lock")
+    assert gate_lock is not None, "fixture could not acquire the gate mutex"
+    try:
+        result = _run_batch(root, "--entry", "lane")
+    finally:
+        gate_lock.close()
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "another gate holds the mutex" in result.stderr, result.stderr
+    lane_after = _git(root, "rev-parse", "refs/heads/lane")
+    assert lane_after == lane_before, (
+        f"mutex-contention refusal moved the lane ref {lane_before[:12]} -> "
+        f"{lane_after[:12]} — mutex refusal must precede the rebase"
+    )
 
 
 def test_batch_refuses_dirty_main_without_rebasing_the_lane(tmp_path: Path):
@@ -3830,14 +3854,14 @@ def test_post_conflict_exception_is_cleaned_in_finally_leaving_worktree_clean(
     """#1157 P1, finally half. A rebase that REALLY conflicted leaves a real
     paused-rebase state; an exception raised in the POST-conflict handling
     seam (``_relay``, which runs AFTER ``_git(rebase)`` has returned) must not
-    strand the worktree. Cleanup runs in a checked ``finally``, so the branch
-    ref is restored and the worktree is clean.
+    strand the worktree. Cleanup runs in a checked ``finally``, so the worktree
+    attachment is restored and its tracked state is clean.
 
     The conflicting rebase and the paused-rebase state it leaves are REAL
     (direction-2: drive a real git rebase into a real conflict, not a stubbed
     gate). Asserting 'the batch continued' would be vacuous; this asserts the
-    STATE it would continue from — no stranded rebase, branch ref restored to
-    its pre-rebase sha.
+    STATE it would continue from — no stranded rebase, with the branch ref
+    still at its pre-rebase sha.
 
     LIMIT (#651): this does NOT prove an exception raised WHILE the git
     subprocess is still running. ``_relay`` is invoked only after
@@ -3875,7 +3899,7 @@ def test_post_conflict_exception_is_cleaned_in_finally_leaving_worktree_clean(
     lane_after = _git(lane, "rev-parse", "HEAD")
     assert lane_after == lane_before, (
         f"branch ref moved {lane_before[:12]} -> {lane_after[:12]} after a "
-        f"post-conflict exception; the abort did not restore it"
+        f"post-conflict exception; the conflicted rebase must not advance it"
     )
 
 
@@ -3883,7 +3907,7 @@ def test_failed_rebase_abort_is_a_distinct_stranded_outcome(tmp_path):
     """#1157 P1, checked-abort half (#136). When ``git rebase --abort`` itself
     FAILS while a rebase is genuinely paused, that is a STRANDED worktree — a
     distinct state from a routine conflict (where the abort restored the
-    branch cleanly). The two must not collapse.
+    worktree's attachment and clean state). The two must not collapse.
 
     The paused rebase is REAL (a real add/add conflict, left in place), and
     the abort failure is REAL: a read-only git dir makes ``git rebase --abort``
