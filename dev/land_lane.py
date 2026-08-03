@@ -2771,7 +2771,15 @@ def land(
 # skipped. A batch reports BOTH denominators (#868): how many it attempted and
 # how many landed.
 
-BATCH_STATES = ("landed", "refused", "rebase-conflict", "skipped")
+# Five outcomes. ``abort-failed`` (round 2, #1157 P1) MUST NOT collapse into
+# ``rebase-conflict`` (#136): a conflict is routine and leaves the branch
+# clean (the abort succeeded); an abort-failed rebase is a worktree the abort
+# could NOT return to a clean state — stranded mid-rebase, which is precisely
+# the state #1159 shows perturbing OTHER gates. They are two states and the
+# batch must say so loudly for the second.
+BATCH_STATES = (
+    "landed", "refused", "rebase-conflict", "abort-failed", "skipped",
+)
 
 
 @dataclass
@@ -2791,8 +2799,11 @@ class BatchOutcome:
     """The verdict for one entry, carried to the summary table unchanged.
 
     States must not collapse (#136): landed / refused / rebase-conflict /
-    skipped are four outcomes. ``base_before`` / ``base_after`` let the
-    summary show that master advanced once per landing (#1157 red-proof).
+    abort-failed / skipped are five outcomes. ``rebase-conflict`` means the
+    rebase conflicted AND the abort restored the branch cleanly; ``abort-failed``
+    means a partial rebase was left that the abort could NOT clean up — a
+    stranded worktree (#1159/#1157 P1). ``base_before`` / ``base_after`` let
+    the summary show that master advanced once per landing (#1157 red-proof).
     """
     branch: str
     state: str
@@ -2820,6 +2831,116 @@ def _parse_batch_entries(
             continue
         entries.append(BatchEntry(branch=tokens[0], tests=tuple(tokens[1:])))
     return entries
+
+
+# A rebase paused on a conflict leaves a ``rebase-merge/`` (interactive) or
+# ``rebase-apply/`` (am/apply) directory inside the worktree's git dir. The
+# batch must abort that state before the entry can be left alone — a worktree
+# stranded mid-rebase is exactly what #1159 shows perturbing OTHER gates.
+_REBASE_STATE_DIRS = ("rebase-merge", "rebase-apply")
+
+
+def _rebase_in_progress(lane: Path) -> bool:
+    """True if ``lane``'s repository has a rebase paused mid-operation.
+
+    Reads only (``is_dir``), so it still answers correctly under a read-only
+    git dir — which is how the abort-failed fixture (#1157 P1) makes
+    ``git rebase --abort`` genuinely fail while this check still sees the
+    stranded state.
+    """
+    git_dir = _git_text(lane, "rev-parse", "--absolute-git-dir")
+    if not git_dir:
+        return False
+    gd = Path(git_dir)
+    return any((gd / name).is_dir() for name in _REBASE_STATE_DIRS)
+
+
+@dataclass(frozen=True)
+class _RebaseAttempt:
+    """Resolved outcome of rebasing one entry, cleanup included.
+
+    ``ok``        — the rebase applied; nothing to clean up, proceed to gate.
+    ``conflict``  — the rebase did not apply AND the abort restored the branch
+                    to a clean state; the entry did not land but is safe to
+                    leave (#1159: the worktree is not stranded).
+    ``abort-failed`` — a partial rebase was left that ``--abort`` could NOT
+                    clean up; the worktree is stranded mid-rebase and the
+                    batch must report it loudly (#136: not collapsed with a
+                    routine conflict).
+    """
+
+    state: str  # "ok" | "conflict" | "abort-failed"
+    detail: str
+
+
+def _rebase_lane_checked(lane: Path, base: str) -> _RebaseAttempt:
+    """Rebase ``lane`` onto ``base`` with exception-safe, checked cleanup.
+
+    This is the #1157 round-2 P1 fix. Round 1 reached ``git rebase --abort``
+    only on the normal non-zero path, with no ``finally`` and with the abort's
+    own result ignored — so an interruption/exception could strand the worktree
+    mid-rebase, and a FAILED abort was reported as an ordinary conflict and the
+    batch continued (the false-GREEN #1159 exists to defend against).
+
+    Two halves, both required (direction-2: a ``finally`` whose abort result is
+    still ignored fixes only the interruption half):
+
+    1. Cleanup is a checked ``finally`` path. It runs whether the rebase
+       conflicted normally OR an interruption/exception left the worktree
+       mid-rebase. An ``except Exception`` records the interruption so the
+       entry is reported (not silently dropped) and the batch continues;
+       ``BaseException`` (real Ctrl-C / SystemExit) still propagates, because
+       the cleanup runs in ``finally`` regardless.
+
+    2. The abort's OWN result is checked. ``--abort`` succeeding is what makes
+       a conflict routine (branch clean); ``--abort`` failing is a stranded
+       worktree — a distinct ``abort-failed`` outcome (#136), reported loudly,
+       not collapsed with ``conflict``. Abort is attempted only when a rebase
+       is genuinely in progress, so a clean rebase (or a dirty-tree refusal
+       that never started one) is left untouched.
+    """
+    conflict_detail: str | None = None
+    abort_failed_detail: str | None = None
+    try:
+        rebase = _git(lane, "rebase", base)
+        if rebase.returncode:
+            _relay(rebase)
+            conflict_detail = (
+                rebase.stderr.strip()
+                or rebase.stdout.strip()
+                or f"git rebase exited {rebase.returncode}"
+            )
+    except Exception as exc:
+        # An interruption mid-rebase: the finally below still aborts any
+        # partial state, so the worktree is not stranded. Record the cause in
+        # the conflict detail (the rebase did not complete) and let the batch
+        # report this entry and continue — cleanup correctness does not depend
+        # on reaching the explicit abort below.
+        conflict_detail = f"rebase interrupted before cleanup: {exc}"
+    finally:
+        # Runs on the normal conflict path AND on any interruption/exception.
+        # Only abort when a rebase is genuinely in progress, so a rebase that
+        # applied cleanly is not rolled back. The abort result is CHECKED: a
+        # failure here is a stranded worktree, its own outcome (#136). Cleanup
+        # must not itself depend on printing, so the abort's output is captured
+        # into the detail only when it FAILS (a successful abort is silent —
+        # the rebase's own message, already relayed above, is the conflict's).
+        if _rebase_in_progress(lane):
+            abort = _git(lane, "rebase", "--abort")
+            if abort.returncode:
+                abort_failed_detail = (
+                    abort.stderr.strip()
+                    or abort.stdout.strip()
+                    or f"git rebase --abort exited {abort.returncode}"
+                )
+    # A failed abort outranks a routine conflict: the worktree could NOT be
+    # returned to a clean state, so it must be visible as a distinct, loud
+    # outcome — never folded into the quiet "conflict, moving on" (#136).
+    if abort_failed_detail is not None:
+        return _RebaseAttempt("abort-failed", abort_failed_detail)
+    if conflict_detail is not None:
+        return _RebaseAttempt("conflict", conflict_detail)
+    return _RebaseAttempt("ok", "")
 
 
 def land_batch(
@@ -2930,26 +3051,39 @@ def land_batch(
         # is the whole behaviour: it absorbs each prior landing before this
         # entry's gate checks staleness. Rebase-all-up-front would reproduce
         # the original bug (#1157).
+        #
+        # Cleanup is exception-safe and the abort result is checked (#1157 P1):
+        # see _rebase_lane_checked. A conflict aborts cleanly (branch restored);
+        # a FAILED abort is a stranded worktree reported as its own outcome.
         print(f"batch: rebasing {entry.branch} onto {base}@{base_before[:12]}")
-        rebase = _git(lane, "rebase", base)
-        if rebase.returncode:
-            _relay(rebase)
-            # Clean up any partial rebase state, then leave the branch
-            # untouched. --abort is a no-op (exit 1) when no rebase is in
-            # progress, e.g. a dirty-tree refusal that never started one.
-            _git(lane, "rebase", "--abort")
-            detail = (
-                rebase.stderr.strip()
-                or rebase.stdout.strip()
-                or f"git rebase exited {rebase.returncode}"
-            )
+        attempt = _rebase_lane_checked(lane, base)
+        if attempt.state == "abort-failed":
+            # The worktree could NOT be returned to a clean state — a stranded
+            # mid-rebase worktree perturbs OTHER gates (#1159), so this is its
+            # own outcome reported loudly, not collapsed with rebase-conflict
+            # (#136). The branch did not land; the coordinator must clean up.
             outcome = BatchOutcome(
-                entry.branch, "rebase-conflict", detail,
+                entry.branch, "abort-failed",
+                f"rebase aborted but cleanup FAILED: {attempt.detail}",
                 base_before, base_before,
             )
             outcomes.append(outcome)
             print(
-                f"batch: {entry.branch}: REBASE-CONFLICT — {detail}",
+                f"batch: {entry.branch}: ABORT-FAILED — rebase left stranded "
+                f"mid-rebase; cleanup did not complete: {attempt.detail}",
+                file=sys.stderr,
+            )
+            continue
+        if attempt.state == "conflict":
+            # Routine conflict: the abort restored the branch, so the worktree
+            # is clean and the entry is safe to leave (#1159).
+            outcome = BatchOutcome(
+                entry.branch, "rebase-conflict", attempt.detail,
+                base_before, base_before,
+            )
+            outcomes.append(outcome)
+            print(
+                f"batch: {entry.branch}: REBASE-CONFLICT — {attempt.detail}",
                 file=sys.stderr,
             )
             continue
@@ -2989,18 +3123,21 @@ def land_batch(
     landed = sum(1 for o in outcomes if o.state == "landed")
     refused = sum(1 for o in outcomes if o.state == "refused")
     conflicts = sum(1 for o in outcomes if o.state == "rebase-conflict")
+    abort_failed = sum(1 for o in outcomes if o.state == "abort-failed")
     skipped = sum(1 for o in outcomes if o.state == "skipped")
 
     print(f"\n{'=' * 60}")
     print(
         f"batch summary: attempted={len(outcomes)} landed={landed} "
-        f"refused={refused} rebase-conflict={conflicts} skipped={skipped}"
+        f"refused={refused} rebase-conflict={conflicts} "
+        f"abort-failed={abort_failed} skipped={skipped}"
     )
     print(f"{'=' * 60}")
     markers = {
         "landed": "LANDED  ",
         "refused": "REFUSED ",
         "rebase-conflict": "CONFLICT",
+        "abort-failed": "ABORTBAD",
         "skipped": "SKIPPED ",
     }
     for o in outcomes:
