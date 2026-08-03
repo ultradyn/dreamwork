@@ -6916,7 +6916,12 @@ class TestTasksRoute(unittest.TestCase):
             const doc = {
               createDocumentFragment() { return {kids:[], appendChild(n){this.kids.push(n)}}; },
               createTextNode(text) { return {kind:'text', text}; },
-              createElement() { return {kind:'a', dataset:{}, setAttribute(){}}; }
+              // #1042 r6 — capture the tag so links() (kind === 'a') reflects
+              // the REAL element type.  Without this the double ignores its
+              // argument and createElement('span') in production is invisible:
+              // count, class, href and text all pass while the page ships a
+              // <span> where an <a> belongs.
+              createElement(tag) { return {tag, kind: tag, dataset:{}, setAttribute(){}}; }
             };
             // 'prose' is never skipped; 'pre' is skipped by BOTH sets.
             const node = (text, kind) => ({
@@ -6932,18 +6937,35 @@ class TestTasksRoute(unittest.TestCase):
             });
             const links = n => (n.result || []).filter(x => x.kind === 'a');
             const hrefs = n => links(n).map(x => x.href);
+            // #1042 r6 — conservation helper: reconstruct all fragment text
+            // and compare to the immutable original captured before the walker.
+            // An index or position claim rests on the result list being the one
+            // you think it is; a counter that drops text invalidates that.
+            // Pattern copied from the task-ref sibling (exit 14).
+            const conserved = (n, orig) =>
+              (n.result || []).map(x => x.text || x.textContent).join('') === orig;
 
             // PG-1 and #1 in one sentence resolve to DIFFERENT targets.
             const both = node('PG-1 is blocked on #1', 'prose');
             linkTaskRefText(both);
             const bothLinks = links(both);
-            if (bothLinks.length !== 2) process.exit(20);
+            if (bothLinks.length !== 2)
+              { console.error('both: expected 2 <a> links, got ' + bothLinks.length
+                + ' — linkTaskRefText may be creating non-anchor elements'); process.exit(20); }
             const goal = bothLinks.find(x => x.href === '/goals');
             const task = bothLinks.find(x => x.href === '/tasks?t=1');
-            if (!goal || goal.className !== 'goalref' || goal.textContent !== 'PG-1')
-              { console.error('PG-1 did not render as a goalref to /goals'); process.exit(21); }
-            if (!task || task.className !== 'taskref' || task.textContent !== '#1')
-              { console.error('#1 did not render as a taskref to /tasks?t=1'); process.exit(22); }
+            // #1042 r6 — check ELEMENT TYPE as well as class, href and text.
+            // links() already filters by kind === 'a' (the tag), so a span is
+            // excluded upstream and reds at the count above.  This explicit tag
+            // assertion is the defense-in-depth companion: an <a> missing its
+            // href (found undefined) still reds here alongside the wrong-class
+            // and wrong-text cases.
+            if (!goal || goal.tag !== 'a' || goal.className !== 'goalref' || goal.textContent !== 'PG-1')
+              { console.error('PG-1 did not render as an <a.goalref> to /goals'
+                + ' — tag=' + (goal && goal.tag)); process.exit(21); }
+            if (!task || task.tag !== 'a' || task.className !== 'taskref' || task.textContent !== '#1')
+              { console.error('#1 did not render as an <a.taskref> to /tasks?t=1'
+                + ' — tag=' + (task && task.tag)); process.exit(22); }
 
             // PG-1 must NOT link to /tasks?t=1 — the exact collision this
             // task removes. If goal.href were /tasks?t=1 this fires.
@@ -6952,11 +6974,21 @@ class TestTasksRoute(unittest.TestCase):
             // Edge cases — each is a distinct position/shape.
             // line start
             const ls = node('PG-1 starts the line', 'prose');
+            // #1042 r6 — capture original BEFORE the walker, then assert text
+            // conservation before accepting the first-link index below.  An
+            // index claim ([0]) has the same premise as gbound's character
+            // offset: the result list is the one you think it is.
+            const lsText = ls.nodeValue;
             linkTaskRefText(ls);
+            if (!conserved(ls, lsText))
+              { console.error('ls: reconstructed text diverged — text not conserved, first-link index is meaningless'); process.exit(33); }
             if (hrefs(ls)[0] !== '/goals') { console.error('line-start PG-1 failed'); process.exit(24); }
             // punctuation-adjacent
             const pa = node('see PG-1.', 'prose');
+            const paText = pa.nodeValue;
             linkTaskRefText(pa);
+            if (!conserved(pa, paText))
+              { console.error('pa: reconstructed text diverged — text not conserved, first-link index is meaningless'); process.exit(34); }
             if (hrefs(pa)[0] !== '/goals') { console.error('punctuation-adjacent PG-1 failed'); process.exit(25); }
             // PG- with no digits — must NOT link
             const nodigit = node('see PG- now', 'prose');
