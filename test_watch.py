@@ -6945,30 +6945,45 @@ class TestTasksRoute(unittest.TestCase):
             const conserved = (n, orig) =>
               (n.result || []).map(x => x.text || x.textContent).join('') === orig;
 
-            // PG-1 and #1 in one sentence resolve to DIFFERENT targets.
+            // Both token orders, with independent leading/trailing prose,
+            // resolve to the same two DIFFERENT targets in document order.
             const both = node('PG-1 is blocked on #1', 'prose');
-            const bothText = both.nodeValue;
-            linkTaskRefText(both);
-            const bothLinks = links(both);
-            if (!conserved(both, bothText))
-              { console.error('both: reconstructed text diverged — text not conserved, mixed-link assertions are meaningless'); process.exit(35); }
-            if (bothLinks.length !== 2)
-              { console.error('both: expected 2 <a> links, got ' + bothLinks.length
-                + ' — linkTaskRefText may be creating non-anchor elements'); process.exit(20); }
-            const goal = bothLinks.find(x => x.href === '/goals');
-            const task = bothLinks.find(x => x.href === '/tasks?t=1');
-            // #1042 r6 — check ELEMENT TYPE as well as class, href and text.
-            // links() already filters by kind === 'a' (the tag), so a span is
-            // excluded upstream and reds at the count above.  This explicit tag
-            // assertion is the defense-in-depth companion: an <a> missing its
-            // href (found undefined) still reds here alongside the wrong-class
-            // and wrong-text cases.
-            if (!goal || goal.tag !== 'a' || goal.className !== 'goalref' || goal.textContent !== 'PG-1')
-              { console.error('PG-1 did not render as an <a.goalref> to /goals'
-                + ' — tag=' + (goal && goal.tag)); process.exit(21); }
-            if (!task || task.tag !== 'a' || task.className !== 'taskref' || task.textContent !== '#1')
-              { console.error('#1 did not render as an <a.taskref> to /tasks?t=1'
-                + ' — tag=' + (task && task.tag)); process.exit(22); }
+            const mixedCases = [
+              ['both', both, ['goalref', 'taskref']],
+              ['forward-leading', node('see PG-1 is blocked on #1', 'prose'), ['goalref', 'taskref']],
+              ['forward-trailing', node('PG-1 is blocked on #1 today', 'prose'), ['goalref', 'taskref']],
+              ['forward-both-ends', node('see PG-1 is blocked on #1 today', 'prose'), ['goalref', 'taskref']],
+              ['reverse', node('#1 blocks PG-1', 'prose'), ['taskref', 'goalref']],
+              ['reverse-leading', node('see #1 blocks PG-1', 'prose'), ['taskref', 'goalref']],
+              ['reverse-trailing', node('#1 blocks PG-1 today', 'prose'), ['taskref', 'goalref']],
+              ['reverse-both-ends', node('see #1 blocks PG-1 today', 'prose'), ['taskref', 'goalref']],
+            ];
+            let goal, task;
+            for (const [label, mixed, expectedClasses] of mixedCases) {
+              const original = mixed.nodeValue;
+              linkTaskRefText(mixed);
+              const mixedLinks = links(mixed);
+              if (!conserved(mixed, original))
+                { console.error(label + ': reconstructed text diverged — text not conserved, mixed-link assertions are meaningless'); process.exit(35); }
+              if (mixedLinks.length !== 2)
+                { console.error(label + ': expected 2 <a> links, got ' + mixedLinks.length
+                  + ' — linkTaskRefText may be creating non-anchor elements'); process.exit(20); }
+              const expected = expectedClasses.map(className => className === 'goalref'
+                ? ['goalref', '/goals', 'PG-1']
+                : ['taskref', '/tasks?t=1', '#1']);
+              for (let i = 0; i < expected.length; i++) {
+                const [className, href, text] = expected[i];
+                const anchor = mixedLinks[i];
+                if (!anchor || anchor.tag !== 'a' || anchor.className !== className
+                    || anchor.href !== href || anchor.textContent !== text)
+                  { console.error(label + ': ordered anchor ' + i + ' was not <a.' + className
+                    + '> to ' + href + ' with text ' + text); process.exit(21 + i); }
+              }
+              if (label === 'both') {
+                goal = mixedLinks[0];
+                task = mixedLinks[1];
+              }
+            }
 
             // PG-1 must NOT link to /tasks?t=1 — the exact collision this
             // task removes. If goal.href were /tasks?t=1 this fires.
