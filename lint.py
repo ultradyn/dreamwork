@@ -40,6 +40,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
@@ -5379,6 +5380,15 @@ _SYNC_CONFLICT_SKIP_DIRS = frozenset({
 })
 _LOOSE_OBJECT_SHARD_RE = re.compile(r'[0-9a-f]{2}\Z')
 
+
+@dataclass(frozen=True)
+class _SyncConflictScanRoot:
+    path: Path
+    label: str
+    owned: bool
+    object_store: bool
+
+
 # Exact, content-bound acknowledgement for the live Worktrunk cache evidence.
 # Worktrunk enumerates every JSON file in this directory, so there is no safe
 # directory exemption. This one stale copy was triaged on 2026-08-03: it is
@@ -5504,16 +5514,20 @@ def check_sync_conflict_files(dw: Path, rep: Report) -> None:
     if common_dir is None and (base / ".git").is_dir():
         common_dir = (base / ".git").resolve()
     new_wt, old_wt = worktree_roots(base)
-    scan_roots: list[tuple[Path, str, bool, bool]] = [
-        (root, "invoking worktree", True, False),
+    scan_roots = [
+        _SyncConflictScanRoot(root, "invoking worktree", True, False),
     ]
     if common_dir is not None:
-        scan_roots.append((common_dir, "Git common dir", True, False))
+        scan_roots.append(
+            _SyncConflictScanRoot(common_dir, "Git common dir", True, False))
     if base != root:
-        scan_roots.append((base, "main checkout", False, False))
+        scan_roots.append(
+            _SyncConflictScanRoot(base, "main checkout", False, False))
     scan_roots.extend([
-        (new_wt, "out-of-repo worktree root", False, False),
-        (old_wt, "in-repo worktree root", False, False),
+        _SyncConflictScanRoot(
+            new_wt, "out-of-repo worktree root", False, False),
+        _SyncConflictScanRoot(
+            old_wt, "in-repo worktree root", False, False),
     ])
 
     alternate_errors: list[tuple[Path, str]] = []
@@ -5522,20 +5536,23 @@ def check_sync_conflict_files(dw: Path, rep: Report) -> None:
         object_stores.add((common_dir / "objects").resolve())
         borrowed, alternate_errors = _alternate_object_stores(common_dir)
         object_stores.update(path.resolve() for path in borrowed)
-        scan_roots.extend((path, "borrowed Git object store", True, True)
-                          for path in borrowed)
+        scan_roots.extend(
+            _SyncConflictScanRoot(
+                path, "borrowed Git object store", True, True)
+            for path in borrowed)
 
     # Deduplicate roots while preserving owned severity and the first label.
     merged_roots: dict[Path, tuple[str, bool, bool]] = {}
     for entry in scan_roots:
-        scan_root, label, own_root, object_store = entry
-        canonical = scan_root.resolve()
+        canonical = entry.path.resolve()
         prior = merged_roots.get(canonical)
         if prior is None:
-            merged_roots[canonical] = (label, own_root, object_store)
+            merged_roots[canonical] = (
+                entry.label, entry.owned, entry.object_store)
         else:
             merged_roots[canonical] = (
-                prior[0], prior[1] or own_root, prior[2] or object_store)
+                prior[0], prior[1] or entry.owned,
+                prior[2] or entry.object_store)
     dedicated_roots = set(merged_roots)
 
     examined = 0
