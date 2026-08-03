@@ -31,6 +31,7 @@ pass for the wrong reason:
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 
@@ -261,22 +262,45 @@ def test_wrapper_exports_states_no_markup_of_its_own():
             "thing that can diverge from it" % (rel, sorted(set(hits))))
 
 
-def test_qacard_is_the_only_design_wrapper_and_its_companion_files_ship():
+def test_every_design_wrapper_has_one_complete_companion_triad_and_vice_versa():
     wrapper = (ROOT / client_dist.WRAPPER_EXPORTS_REL).read_text(
         encoding="utf-8")
-    assert wrapper.count("export const QaCard") == 1, (
-        "QaCard is not exported exactly once")
-    assert "export const " not in wrapper.replace("export const QaCard", ""), (
-        "P5 stage 2 must stop after QaCard's early-signal wrapper")
+    exports = re.findall(r"^export const ([A-Za-z_$][\w$]*)\s*=", wrapper,
+                         re.MULTILINE)
+    assert exports, "wrapper-exports.js exports no design wrappers"
+    assert len(exports) == len(set(exports)), (
+        "design wrapper export(s) are repeated: %r" % exports)
 
-    for rel in client_dist.DS_SOURCE_RELS:
+    companions = client_dist.ds_sources(str(ROOT))
+    assert companions, "%s holds no companions" % client_dist.DS_SOURCE_DIR
+    by_export = {}
+    for rel in companions:
+        name = pathlib.Path(rel).name
+        suffix = next(s for s in client_dist.DS_SOURCE_SUFFIXES
+                      if name.endswith(s))
+        by_export.setdefault(name[:-len(suffix)], set()).add(suffix)
+
+    required = set(client_dist.DS_SOURCE_SUFFIXES)
+    for export in exports:
+        missing = sorted(required - by_export.get(export, set()))
+        assert not missing, "%s export is missing companion(s): %s" % (
+            export, ", ".join(missing))
+    for export, present in sorted(by_export.items()):
+        missing = sorted(required - present)
+        assert not missing, "%s companion set is missing companion(s): %s" % (
+            export, ", ".join(missing))
+        assert export in exports, (
+            "%s companion triad has no matching wrapper export" % export)
+
+    for rel in companions:
         source = ROOT / rel
         shipped = ROOT / client_dist.DS_DIR / source.name
         assert source.stat().st_size > 40, "%s is an empty-looking contract" % rel
         assert source.read_bytes() == shipped.read_bytes(), (
             "%s is not shipped byte-for-byte at %s" % (rel, shipped))
 
-    fixture = json.loads((ROOT / client_dist.DS_SOURCE_RELS[1]).read_text(
+    fixture = json.loads((ROOT / client_dist.DS_SOURCE_DIR /
+                          "QaCard.fixture.json").read_text(
         encoding="utf-8"))
     assert fixture["q"]["title"] and fixture["q"]["body"], (
         "QaCard fixture props do not exercise a real question")
@@ -426,6 +450,71 @@ def test_native_sources_are_all_build_inputs(tmp_path):
         "is not derived from the tree" % (client_dist.NATIVE_SRC_DIR, new))
 
 
+def test_expected_inputs_accepts_a_tree_without_wrapper_companions(tmp_path):
+    root = _clone(tmp_path)
+    companions = client_dist.ds_sources(str(root))
+    shutil.rmtree(root / client_dist.DS_SOURCE_DIR)
+
+    inputs = client_dist.expected_inputs(str(root))
+    assert inputs is not None, (
+        "repo without dev/build/ds-src must report an empty companion set, "
+        "not unknown inputs")
+    expected = (["client/" + name for name in client_dist.asset_order(str(root))]
+                + [client_dist.WRAPPER_EXPORTS_REL]
+                + client_dist.native_sources(str(root)))
+    assert inputs == expected
+    assert not set(companions) & set(inputs)
+
+
+def test_readable_empty_wrapper_companion_directory_is_an_empty_set(tmp_path):
+    root = _clone(tmp_path)
+    shutil.rmtree(root / client_dist.DS_SOURCE_DIR)
+    (root / client_dist.DS_SOURCE_DIR).mkdir()
+
+    assert client_dist.ds_sources(str(root)) == []
+    assert client_dist.expected_inputs(str(root)) is not None
+
+
+def test_unreadable_wrapper_companion_directory_refuses(tmp_path, monkeypatch):
+    root = _clone(tmp_path)
+    real_scandir = os.scandir
+    companion_dir = str(root / client_dist.DS_SOURCE_DIR)
+
+    def refuse_companion_dir(path):
+        if os.fspath(path) == companion_dir:
+            raise PermissionError("wrapper companion directory is unreadable")
+        return real_scandir(path)
+
+    monkeypatch.setattr(client_dist.os, "scandir", refuse_companion_dir)
+    assert client_dist.ds_sources(str(root)) is None
+    assert client_dist.expected_inputs(str(root)) is None
+
+
+def test_build_names_an_unreadable_wrapper_companion_directory(
+        tmp_path, monkeypatch):
+    import sys
+    sys.path.insert(0, str(ROOT / "dev"))
+    import build_client
+    _configure_toolchain(build_client)
+
+    root = _clone(tmp_path)
+    real_scandir = os.scandir
+    companion_dir = str(root / client_dist.DS_SOURCE_DIR)
+
+    def refuse_companion_dir(path):
+        if os.fspath(path) == companion_dir:
+            raise PermissionError("wrapper companion directory is unreadable")
+        return real_scandir(path)
+
+    monkeypatch.setattr(client_dist.os, "scandir", refuse_companion_dir)
+    with pytest.raises(build_client.BuildError) as exc:
+        build_client.build(str(root))
+    message = str(exc.value)
+    assert message == (
+        "%s could not be read — refusing to guess the design bundle's "
+        "wrapper companion inputs" % client_dist.DS_SOURCE_DIR)
+
+
 def test_a_new_native_source_that_the_manifest_never_saw_is_stale(tmp_path):
     """RED PROOF: the P3-shaped mistake, exactly.
 
@@ -520,15 +609,21 @@ def test_the_committed_dist_is_built_from_the_committed_tree():
         "%s holds no source — the native runtime's inputs would be an empty "
         "set, and an empty set is what every vacuous check looks like"
         % client_dist.NATIVE_SRC_DIR)
+    companions = client_dist.ds_sources(str(ROOT))
+    assert companions, (
+        "%s holds no companions — the design contract inputs would be "
+        "an empty set" % client_dist.DS_SOURCE_DIR)
     # Derived on both sides rather than a literal count: #630 P2 took this
     # from 9 to 13 and P3 will take it further, and a hard-coded total makes
     # every later phase edit a number here to make an unrelated test pass —
     # which is how a check stops being read and starts being satisfied.
-    assert len(want) == len(watch._CLIENT_ASSETS) + 1 + len(native), (
-        "expected %d inputs (%d assets + wrapper-exports + %d native "
-        "sources), derived %d"
-        % (len(watch._CLIENT_ASSETS) + 1 + len(native),
-           len(watch._CLIENT_ASSETS), len(native), len(want)))
+    expected = (len(watch._CLIENT_ASSETS) + 1 + len(companions)
+                + len(native))
+    assert len(want) == expected, (
+        "expected %d inputs (%d assets + wrapper-exports + %d companions "
+        "+ %d native sources), derived %d"
+        % (expected, len(watch._CLIENT_ASSETS), len(companions),
+           len(native), len(want)))
     reading = client_dist.check(str(ROOT))
     assert reading["state"] == client_dist.OK, (
         "client/dist is %s: %s — run `just build-client`"

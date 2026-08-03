@@ -18,16 +18,22 @@
     "client/shader.js": "e293165e637d135da651d35fa7834208a07e6dc1142d670d2cd6018a1017a462",
     "client/style.css": "cd335f737a8b6f2846e35faf184e2e3f6b3a2b793422a6b13ecde4cd5ef582fb",
     "client/views.js": "c82d6bc700a37cebefe72808c189d9a335cf8fe75ea4bea4450a3ce37e997730",
+    "dev/build/ds-src/Label.d.ts": "bfbdd203975cca4d7ff2743735ab293b30a5d971adea988f0e5dadd94f1982e4",
+    "dev/build/ds-src/Label.fixture.json": "223f05ca70ccfb17722ccc9af9831b1883add6d1a96e412b4d7d570aa2e01c20",
+    "dev/build/ds-src/Label.prompt.md": "a96e29db57e9eb4eda0b15de33d8309d6c115af81983e6e68e1cbdf5ebb34c22",
+    "dev/build/ds-src/QaCard.d.ts": "a4c1d50dbe833c951432f0275701cf5743c068f1af5f731919928aff28e86d30",
+    "dev/build/ds-src/QaCard.fixture.json": "5b233390ea719c4139cb4e95f192c730c9c0db64c1816ceec0c73b976f19f086",
+    "dev/build/ds-src/QaCard.prompt.md": "0036ca1f279f529447f21ec1504e21caffbcda3cbc2ca760aa1ccd3395f039c2",
     "dev/build/src/delegate.js": "8cbeb4bce8ccaee70c8dc6ae76160eeb8dd9f8f3a92ca51e28712747ee28b293",
     "dev/build/src/goals.js": "4f493cf97a6567a0dcfa809f4130fe1356ed96d21e4faf8fb8364f0499702d83",
     "dev/build/src/native-entry.js": "42c071b11224dd1be63aa3065ae59c45cc6dafb5bb3f1200b8fa30821b10f9d4",
     "dev/build/src/probe.js": "f6c51e602a98990ca28fe31206f0aa533c77016f5a9e04cc883769e52c3f67fc",
     "dev/build/src/registry.js": "6d8b3a665afcec61e7d0ab59b32b6ee23b0fc0bff90bf23b2558823057beb0a8",
     "dev/build/src/research.js": "d792c7bd01be52922baa765afee4e5f77d9e0d35feaff0679a9f803ce1b63f73",
-    "dev/build/wrapper-exports.js": "9ea5838ef66144742cb10ec8d35cea04d92ca35ea2e11060c26510cd05b6b53b"
+    "dev/build/wrapper-exports.js": "654d01b64ee40516d09b115ce3dee94353ea9063b28cdaea36bbf9b02fa269cd"
   },
   "outputs": {
-    "client/dist/ds/index.js": "60171cfa39815e8e8581bc300c8b033ae44a4fe892cafb577e28bbfe0f50c321",
+    "client/dist/ds/index.js": "a746566dc27a1d89bee9c99b0d66f980bfa454c326b9eacef07c10ce9cd4eab6",
     "client/dist/ds/styles.css": "cd335f737a8b6f2846e35faf184e2e3f6b3a2b793422a6b13ecde4cd5ef582fb",
     "client/dist/native.js": "27b580244ee603816ac535c76b83383f71a0d74a1e0be92ed5a7fd1c8da33dc4"
   },

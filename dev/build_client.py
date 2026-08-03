@@ -222,6 +222,11 @@ def build(root=ROOT):
             "cannot read watch._CLIENT_ASSETS as a module-level literal — "
             "the bundle's asset order has no source")
     inputs = client_dist.expected_inputs(root)
+    companions = client_dist.ds_sources(root)
+    if companions is None:
+        raise BuildError(
+            "%s could not be read — refusing to guess the design bundle's "
+            "wrapper companion inputs" % client_dist.DS_SOURCE_DIR)
 
     entry_src = generate_entry(root, order)
 
@@ -267,7 +272,7 @@ def build(root=ROOT):
     # they are byte-equal is checking a copy, not a transform.
     shutil.copyfile(os.path.join(root, "client", "style.css"),
                     os.path.join(ds_dir, "styles.css"))
-    for rel in client_dist.DS_SOURCE_RELS:
+    for rel in companions:
         shutil.copyfile(os.path.join(root, rel),
                         os.path.join(ds_dir, os.path.basename(rel)))
 
