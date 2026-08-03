@@ -2092,7 +2092,7 @@ def test_block_writes_depends_and_counts_sees_it(tmp_path, capsys):
     assert "0 carrying a blocker" in before, (
         f"precondition: no blockers yet, got: {before!r}")
 
-    rc = ledger.main(["block", str(blocked), "--on", str(blocker),
+    rc = ledger.main(["block", str(blocked), "--on", f"task:{blocker}",
                       "--why", "blocker must land first",
                       "--ledger", str(ledger_path)])
     assert rc == 0, f"block must exit 0, got {rc}"
@@ -2122,7 +2122,7 @@ def test_block_records_why_in_body(tmp_path, capsys):
     recs = ledger._read_records(str(ledger_path.parent))
     blocker, blocked = recs[0]["id"], recs[1]["id"]
 
-    rc = ledger.main(["block", str(blocked), "--on", str(blocker),
+    rc = ledger.main(["block", str(blocked), "--on", f"task:{blocker}",
                       "--why", "exports not yet flipped",
                       "--ledger", str(ledger_path)])
     assert rc == 0
@@ -2141,7 +2141,7 @@ def test_block_self_edge_refused(tmp_path, capsys):
     capsys.readouterr()
     tid = ledger._read_records(str(ledger_path.parent))[0]["id"]
 
-    rc = ledger.main(["block", str(tid), "--on", str(tid), "--why", "x",
+    rc = ledger.main(["block", str(tid), "--on", f"task:{tid}", "--why", "x",
                       "--ledger", str(ledger_path)])
     assert rc == 1, f"self-edge must refuse (exit 1), got {rc}"
     err = capsys.readouterr().err
@@ -2161,14 +2161,14 @@ def test_block_cycle_refused_with_path(tmp_path, capsys):
     a, b, c = recs[0]["id"], recs[1]["id"], recs[2]["id"]
 
     # Build A → B → C (a valid chain).
-    assert ledger.main(["block", str(a), "--on", str(b), "--why", "x",
+    assert ledger.main(["block", str(a), "--on", f"task:{b}", "--why", "x",
                         "--ledger", str(ledger_path)]) == 0
-    assert ledger.main(["block", str(b), "--on", str(c), "--why", "x",
+    assert ledger.main(["block", str(b), "--on", f"task:{c}", "--why", "x",
                         "--ledger", str(ledger_path)]) == 0
     capsys.readouterr()
 
     # C → A would close the cycle: C→A but A→B→C already exists.
-    rc = ledger.main(["block", str(c), "--on", str(a), "--why", "cycle",
+    rc = ledger.main(["block", str(c), "--on", f"task:{a}", "--why", "cycle",
                       "--ledger", str(ledger_path)])
     assert rc == 1, f"cycle must refuse (exit 1), got {rc}"
     err = capsys.readouterr().err
@@ -2189,7 +2189,7 @@ def test_block_nonexistent_blocker_refused(tmp_path, capsys):
     capsys.readouterr()
     tid = ledger._read_records(str(ledger_path.parent))[0]["id"]
 
-    rc = ledger.main(["block", str(tid), "--on", "99999", "--why", "x",
+    rc = ledger.main(["block", str(tid), "--on", "task:99999", "--why", "x",
                       "--ledger", str(ledger_path)])
     assert rc == 1, f"nonexistent blocker must refuse (exit 1), got {rc}"
     err = capsys.readouterr().err
@@ -2208,7 +2208,7 @@ def test_block_then_unblock_clears_edge(tmp_path, capsys):
     recs = ledger._read_records(str(ledger_path.parent))
     blocker, blocked = recs[0]["id"], recs[1]["id"]
 
-    rc = ledger.main(["block", str(blocked), "--on", str(blocker),
+    rc = ledger.main(["block", str(blocked), "--on", f"task:{blocker}",
                       "--why", "depends", "--ledger", str(ledger_path)])
     assert rc == 0
     recs = ledger._read_records(str(ledger_path.parent))
@@ -2235,7 +2235,7 @@ def test_unblock_clears_depends_only_no_prose(tmp_path, capsys):
     recs = ledger._read_records(str(ledger_path.parent))
     blocker, blocked = recs[0]["id"], recs[1]["id"]
 
-    ledger.main(["block", str(blocked), "--on", str(blocker), "--why", "x",
+    ledger.main(["block", str(blocked), "--on", f"task:{blocker}", "--why", "x",
                  "--ledger", str(ledger_path)])
     capsys.readouterr()
     recs = ledger._read_records(str(ledger_path.parent))
@@ -2257,10 +2257,10 @@ def test_block_idempotent_reblock_is_unchanged(tmp_path, capsys):
     recs = ledger._read_records(str(ledger_path.parent))
     blocker, blocked = recs[0]["id"], recs[1]["id"]
 
-    ledger.main(["block", str(blocked), "--on", str(blocker), "--why", "first",
+    ledger.main(["block", str(blocked), "--on", f"task:{blocker}", "--why", "first",
                  "--ledger", str(ledger_path)])
     capsys.readouterr()
-    rc = ledger.main(["block", str(blocked), "--on", str(blocker), "--why", "again",
+    rc = ledger.main(["block", str(blocked), "--on", f"task:{blocker}", "--why", "again",
                       "--ledger", str(ledger_path)])
     assert rc == 0, f"re-block must exit 0, got {rc}"
     out = capsys.readouterr().out
@@ -2275,9 +2275,120 @@ def test_block_missing_why_is_argparse_error(tmp_path, capsys):
     capsys.readouterr()
     recs = ledger._read_records(str(ledger_path.parent))
     with pytest.raises(SystemExit) as ei:
-        ledger.main(["block", str(recs[0]["id"]), "--on", str(recs[1]["id"]),
+        ledger.main(["block", str(recs[0]["id"]), "--on", f"task:{recs[1]['id']}",
                      "--ledger", str(ledger_path)])
     assert ei.value.code == 2
+
+
+def test_answered_question_blocker_is_reported_as_answered_not_open(tmp_path, capsys):
+    """#1025: reproduce #630's state with a typed question referent.
+
+    The task stays open, the cited question is fully answered, and counts must
+    emit the reachable question-specific stale-blocker row. Resolving the same
+    integer against task.state makes this assertion fail with the wrong kind.
+    """
+    ledger_path = _cut_over_store(tmp_path)
+    ledger.main(["file", "open task", "--ledger", str(ledger_path)])
+    capsys.readouterr()
+    task_id = ledger._read_records(str(ledger_path.parent))[0]["id"]
+    sp = ledger.store_path(str(ledger_path.parent))
+    with ledger.open_database(
+            ledger.task_store_spec(sp), access=ledger.Access.WRITE) as store:
+        with store.transaction() as tx:
+            question_id = tx.questions.post(
+                title="May the task start?", body_markdown="ruling needed",
+                actor="test", at="2026-08-03T00:00:00Z")
+            tx.questions.answer(
+                question_id, body_markdown="Yes", author="human",
+                at="2026-08-03T00:01:00Z")
+            tx.questions.fold(
+                question_id, why="ruling incorporated", actor="test",
+                at="2026-08-03T00:02:00Z")
+
+    rc = ledger.main([
+        "block", str(task_id), "--on", f"question:{question_id}",
+        "--why", "must wait for the ruling", "--ledger", str(ledger_path)])
+    assert rc == 0
+    capsys.readouterr()
+
+    ledger.main(["counts", "--ledger", str(ledger_path)])
+    report = capsys.readouterr().err
+    expected = f"WARNING question blocker answered: #{task_id}"
+    assert expected in report, (
+        f"question:{question_id} is answered; expected the referent-kind row "
+        f"{expected!r}, got: {report!r}")
+    assert f"some named blocker still open: #{task_id}" not in report
+
+
+def test_answered_pending_fold_remains_a_distinct_blocking_state(tmp_path, capsys):
+    """An answer not yet folded is not silently collapsed into answered."""
+    ledger_path = _cut_over_store(tmp_path)
+    ledger.main(["file", "open task", "--ledger", str(ledger_path)])
+    capsys.readouterr()
+    task_id = ledger._read_records(str(ledger_path.parent))[0]["id"]
+    sp = ledger.store_path(str(ledger_path.parent))
+    with ledger.open_database(
+            ledger.task_store_spec(sp), access=ledger.Access.WRITE) as store:
+        with store.transaction() as tx:
+            question_id = tx.questions.post(
+                title="Pending fold", body_markdown="body", actor="test",
+                at="2026-08-03T00:00:00Z")
+            tx.questions.answer(
+                question_id, body_markdown="provisional answer", author="human",
+                at="2026-08-03T00:01:00Z")
+    assert ledger.main([
+        "block", str(task_id), "--on", f"question:{question_id}",
+        "--why", "fold it first", "--ledger", str(ledger_path)]) == 0
+    capsys.readouterr()
+
+    ledger.main(["counts", "--ledger", str(ledger_path)])
+    report = capsys.readouterr().err
+    assert f"question answer pending fold: #{task_id}" in report
+    assert f"WARNING question blocker answered: #{task_id}" not in report
+
+
+def test_untyped_new_blocker_is_refused_and_legacy_text_never_defaults_to_task(
+        tmp_path, capsys):
+    """Close both routes for the silent task-default false green."""
+    ledger_path = _cut_over_store(tmp_path)
+    ledger.main(["file", "referent task", "--ledger", str(ledger_path)])
+    ledger.main(["file", "blocked task", "--ledger", str(ledger_path)])
+    capsys.readouterr()
+    records = ledger._read_records(str(ledger_path.parent))
+    referent_task, blocked_task = records[0]["id"], records[1]["id"]
+
+    rc = ledger.main([
+        "block", str(blocked_task), "--on", str(referent_task), "--why", "x",
+        "--ledger", str(ledger_path)])
+    assert rc == 2
+    assert "must be typed as task:NNN or question:NNN" in capsys.readouterr().err
+    assert ledger._read_records(str(ledger_path.parent))[1]["depends_on"] == ()
+
+    sp = ledger.store_path(str(ledger_path.parent))
+    with ledger.open_database(
+            ledger.task_store_spec(sp), access=ledger.Access.WRITE) as store:
+        with store.transaction() as tx:
+            question_id = tx.questions.post(
+                title="Answered ruling", body_markdown="body", actor="test",
+                at="2026-08-03T00:00:00Z")
+            tx.questions.answer(
+                question_id, body_markdown="yes", author="human",
+                at="2026-08-03T00:01:00Z")
+            tx.questions.fold(
+                question_id, why="folded", actor="test",
+                at="2026-08-03T00:02:00Z")
+    import sqlite3
+    conn = sqlite3.connect(str(sp))
+    conn.execute(
+        "UPDATE task SET blocked_on = ? WHERE id = ?",
+        (f"#{question_id}", blocked_task))
+    conn.commit()
+    conn.close()
+
+    ledger.main(["counts", "--ledger", str(ledger_path)])
+    report = capsys.readouterr().err
+    assert f"untyped blocker referent, refused: #{blocked_task}" in report
+    assert f"some named blocker still open: #{blocked_task}" not in report
 
 
 def test_reprioritise_cli_nonexistent_id_is_exit1(tmp_path, capsys):

@@ -17,6 +17,7 @@ from .core import StoreSpec
 _KNOWN_ORIGINS = ("human", "loop")
 _STORED_ORIGINS = ("human", "loop", "unknown")
 _COMMIT_SHA = re.compile(r"\(([0-9a-f]{7,40})\)")
+_BLOCKER_REF = re.compile(r"(task|question):([1-9][0-9]*)\Z")
 _NOTE_PREFIX = "  · "
 
 
@@ -135,6 +136,9 @@ class TaskRepository:
         marks = self.next_up_ordinals()
         dep_rows = self._session.execute(
             "SELECT task, needs FROM depends ORDER BY task, needs").fetchall()
+        question_rows = self._session.execute(
+            "SELECT id, status FROM question ORDER BY id").fetchall()
+        question_statuses = {int(qid): status for qid, status in question_rows}
         depends_map: dict[int, list[int]] = {}
         for task, needs in dep_rows:
             depends_map.setdefault(int(task), []).append(int(needs))
@@ -143,7 +147,8 @@ class TaskRepository:
              "priority": r[4], "type": r[5], "origin": r[6],
              "blocked_on": r[7], "date": r[8],
              "next_up": marks.get(int(r[0])),
-             "depends_on": tuple(depends_map.get(int(r[0]), ()))}
+             "depends_on": tuple(depends_map.get(int(r[0]), ())),
+             "question_statuses": question_statuses}
             for r in rows
         ]
 
@@ -343,7 +348,13 @@ class TaskRepository:
             to_state=state, actor=actor, detail=why)
 
     def block(self, task_id, *, needs, why, actor="loop", at=None) -> str:
-        """Record a task→task dependency edge in ``depends`` (#1054).
+        """Record a typed blocker without conflating landing and answering.
+
+        Task referents retain their FK-backed home in ``depends``. Question
+        referents use the legacy ``blocked_on`` column as an exact typed value;
+        their status is resolved from ``question`` by readers. Integer
+        ``needs`` remains the compatibility form for the already-typed
+        repository API; the CLI requires an explicit prefix.
 
         ``block`` writes the structured edge that ``unblock`` clears, so the
         two are genuine inverses for the edge case.  The schema's own
@@ -361,10 +372,45 @@ class TaskRepository:
             raise WriteError("why must be a non-empty string (the reason for the change)")
         at = at or _now_iso()
         row = self._session.execute(
-            "SELECT state FROM task WHERE id = ?", (task_id,)).fetchone()
+            "SELECT state, blocked_on FROM task WHERE id = ?", (task_id,)).fetchone()
         if row is None:
             raise TaskNotFound(f"cannot block #{task_id}: no such task")
-        state = row[0]
+        state, blocked_on = row
+        kind = "task"
+        if isinstance(needs, str):
+            match = _BLOCKER_REF.fullmatch(needs.strip())
+            if match is None:
+                raise WriteError(
+                    "blocker referent must be typed as task:NNN or question:NNN; "
+                    "an untyped id is refused because it could resolve against "
+                    "the wrong store")
+            kind, raw_id = match.groups()
+            needs = int(raw_id)
+
+        if kind == "question":
+            question = self._session.execute(
+                "SELECT status FROM question WHERE id = ?", (needs,)).fetchone()
+            if question is None:
+                raise TaskNotFound(
+                    f"cannot block #{task_id}: question:{needs} does not exist")
+            referent = f"question:{needs}"
+            if blocked_on == referent:
+                return "unchanged"
+            if blocked_on and blocked_on.strip():
+                raise WriteError(
+                    f"cannot block #{task_id} on {referent}: blocked_on already "
+                    f"contains {blocked_on!r}; clear it before replacing it")
+            self._session.execute(
+                "UPDATE task SET blocked_on = ? WHERE id = ?", (referent, task_id))
+            note = f"blocked on {referent}: {why}"
+            self._session.execute(
+                "UPDATE task SET body = body || ? WHERE id = ?",
+                ("\n" + _NOTE_PREFIX + note, task_id))
+            self._append_chained_event(
+                task_id=task_id, at=at, cause="blocked", from_state=state,
+                to_state=state, actor=actor, detail=why)
+            return "recorded"
+
         needs_row = self._session.execute(
             "SELECT 1 FROM task WHERE id = ?", (needs,)).fetchone()
         if needs_row is None:

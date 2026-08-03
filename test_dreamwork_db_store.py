@@ -93,6 +93,37 @@ def test_task_and_question_paths_share_one_handle_and_transaction(tmp_path):
     assert questions[0].title == "new question path"
 
 
+def test_task_records_expose_question_blocker_status_from_the_question_store(tmp_path):
+    """Typed question blockers resolve through question.status, not task.state."""
+    path = tmp_path / "ledger.sqlite3"
+    spec = dreamwork_store_spec(path)
+
+    with open_database(spec, access=Access.WRITE) as db:
+        with db.transaction() as tx:
+            task_id = tx.tasks.file(
+                "blocked task", "body", actor="test",
+                at="2026-08-03T00:00:00Z")
+            question_id = tx.questions.post(
+                title="Ruling", body_markdown="body", actor="test",
+                at="2026-08-03T00:00:01Z")
+            tx.questions.answer(
+                question_id, body_markdown="yes", author="human",
+                at="2026-08-03T00:00:02Z")
+            tx.questions.fold(
+                question_id, why="folded", actor="test",
+                at="2026-08-03T00:00:03Z")
+            tx.tasks.block(
+                task_id, needs=f"question:{question_id}", why="await ruling",
+                actor="test", at="2026-08-03T00:00:04Z")
+
+    with open_database(spec, access=Access.READ) as db:
+        record = db.tasks.records()[0]
+
+    assert record["blocked_on"] == f"question:{question_id}"
+    assert record["depends_on"] == ()
+    assert record["question_statuses"][question_id] == "answered"
+
+
 def test_refuter_population_is_store_derived_and_claim_summary_cannot_enter(tmp_path):
     path = tmp_path / "ledger.sqlite3"
     with open_database(dreamwork_store_spec(path), access=Access.WRITE) as db:
