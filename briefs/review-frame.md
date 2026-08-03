@@ -84,4 +84,14 @@ End with one verdict: **MERGE**, **MERGE WITH FIXES**, or **ANOTHER ROUND**.
 
 - **Do NOT use `attn`.** Only the coordinator contacts the human.
 - Do not write anything under `.dreamwork/`.
+- **THE LEDGER HAS A SINGLE WRITER — THE COORDINATOR. Run no mutating `dev/ledger.py` verb**, including
+  `file`, `note`, `fold`, `block`, `retitle` and `reprioritise`. This is the rule above restated as a
+  verb, because that is how it gets broken: the store is `.dreamwork/ledger.sqlite3`, so filing a task
+  *is* writing under `.dreamwork/` — but it does not feel like writing to a path, it feels like filing
+  a follow-up, and a reviewer who would never touch that directory will run `ledger.py file` without
+  noticing the rule applies. `#1071`'s round-2 review filed `#1186` exactly this way. Read-only verbs
+  (`get`, `list`, `counts`) are fine.
+- **Follow-ups belong in your report, not in the ledger.** Write the title and the body you would have
+  filed; the coordinator files it. Nothing is lost by this and the concurrent-writer hazard goes away —
+  the coordinator is writing that same sqlite store while you run.
 - Do not commit, merge, or push. Your report is your stdout; the coordinator reads it.
