@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+from datetime import date
 import json
 import os
 from pathlib import Path
@@ -619,6 +620,470 @@ def test_foreign_lane_transient_row_does_not_false_red_the_gate(
     # The gate PASSED, so master advanced (a refusal would have left it unmoved).
     assert _git(root, "rev-parse", "--verify", "refs/heads/master") != before, (
         "gate reported success but master did not advance")
+
+
+def _capture_sync_conflict_ack_rows(tmp_path, monkeypatch, *todays):
+    """Render the real acknowledged-copy row at each requested wall-clock date."""
+    t = tmp_path / "sync-conflict-clock-fixture"
+    t.mkdir()
+    _git(t, "init", "-b", "master")
+    conflict = (t / ".git" / "wt" / "cache" / "ci-status" /
+                "clock.sync-conflict-20260803-180706-QJRKU52.json")
+    _write(conflict, "known stale cache evidence\n")
+    digest = lint.hashlib.sha256(conflict.read_bytes()).hexdigest()
+    monkeypatch.setattr(
+        lint, "_SYNC_CONFLICT_ACKNOWLEDGEMENTS",
+        {("wt/cache/ci-status/" + conflict.name, digest): (
+            "2026-08-03", "2026-08-10",
+            "human disposition pending in .dreamwork/questions.md")},
+    )
+    monkeypatch.setattr(
+        lint, "worktree_roots",
+        lambda _base: (t / "missing-new-worktrees", t / "missing-old-worktrees"),
+    )
+
+    rows = []
+    for today in todays:
+        monkeypatch.setattr(
+            lint, "_sync_conflict_today",
+            lambda today=today: date.fromisoformat(today),
+        )
+        rep = lint.Report()
+        lint.check_sync_conflict_files(t / ".dreamwork", rep)
+        rows.append(next(line for line in rep.render().splitlines()
+                         if "sync-conflict" in line))
+    return rows
+
+
+def test_expiry_due_date_crossing_does_not_refuse_gate(
+        landing_repo, tmp_path, monkeypatch):
+    """OK through deadline -> clock advisory WARN must not wedge the gate."""
+    root, lane = landing_repo
+    due_row, expired_row = _capture_sync_conflict_ack_rows(
+        tmp_path, monkeypatch, "2026-08-10", "2026-08-11")
+    assert due_row.startswith("  OK"), due_row
+    assert expired_row.startswith("  WARN"), expired_row
+    line = expired_row[len("  WARN  "):]
+    _write(lane / "lint-rows.txt", "old warning\n" + line + "\n")
+    _git(lane, "add", "lint-rows.txt")
+    _git(lane, "commit", "-m", "clock crosses acknowledgement due date")
+    before = _git(root, "rev-parse", "HEAD")
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 0, (
+        "due-date crossing (compared delta added=1 removed=0) refused on the "
+        "clock-derived sync-conflict advisory:\n" + result.stdout + result.stderr)
+    assert expired_row in result.stdout, "clock advisory must remain printed"
+    assert "WARN row-set comparison: added=0 removed=0" in result.stdout
+    assert _git(root, "rev-parse", "HEAD") != before
+
+
+def test_expiry_subsequent_midnight_does_not_refuse_gate(
+        landing_repo, tmp_path, monkeypatch):
+    """Changing age and overdue text across midnight must not wedge the gate."""
+    root, lane = landing_repo
+    first_row, next_row = _capture_sync_conflict_ack_rows(
+        tmp_path, monkeypatch, "2026-08-11", "2026-08-12")
+    assert first_row != next_row
+    assert "acknowledgement is 8 day(s) old" in first_row
+    assert "acknowledgement is 9 day(s) old" in next_row
+
+    first_line = first_row[len("  WARN  "):]
+    next_line = next_row[len("  WARN  "):]
+    _write(root / "lint-rows.txt", "old warning\n" + first_line + "\n")
+    _git(root, "add", "lint-rows.txt")
+    _git(root, "commit", "-m", "baseline before midnight")
+    _git(lane, "rebase", "master")
+    _write(lane / "lint-rows.txt", "old warning\n" + next_line + "\n")
+    _git(lane, "add", "lint-rows.txt")
+    _git(lane, "commit", "-m", "clock crosses subsequent midnight")
+    before = _git(root, "rev-parse", "HEAD")
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 0, (
+        "subsequent midnight (compared delta added=1 removed=1) refused on "
+        "changing acknowledgement ages:\n" + result.stdout + result.stderr)
+    assert first_row in result.stdout and next_row in result.stdout, (
+        "both clock readings must remain printed:\n" + result.stdout)
+    assert "WARN row-set comparison: added=0 removed=0" in result.stdout
+    assert _git(root, "rev-parse", "HEAD") != before
+
+
+def test_clock_advisory_exemption_does_not_swallow_other_warn_change(
+        landing_repo):
+    """A same-label WARN without the clock marker remains gate-blocking."""
+    root, lane = landing_repo
+    real_change = "sync-conflict  Fresh unacknowledged conflict copy needs review"
+    _write(lane / "lint-rows.txt", "old warning\n" + real_change + "\n")
+    _git(lane, "add", "lint-rows.txt")
+    _git(lane, "commit", "-m", "introduce a different sync conflict warning")
+    before = _git(root, "rev-parse", "HEAD")
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 1, (
+        "match-everything exclusion swallowed a different sync-conflict WARN; "
+        "the gate should refuse its added row:\n" + result.stdout + result.stderr)
+    assert "lint-precheck WARN row-set comparison: added=1 removed=0" in result.stdout
+    assert "+   WARN  " + real_change in result.stdout
+    assert "REFUSE phase=lint-precheck: WARN row set changed" in result.stderr
+    _assert_base_unmoved(root, before)
+    _assert_retained(root, lane)
+
+
+def _capture_expired_sync_conflict_receipt_rows(
+        tmp_path, monkeypatch, *receipts):
+    """Render one real expired advisory for each tracked receipt value."""
+    t = tmp_path / "sync-conflict-receipt-identity-fixture"
+    t.mkdir()
+    _git(t, "init", "-b", "master")
+    conflict = (t / ".git" / "wt" / "cache" / "ci-status" /
+                "identity.sync-conflict-20260803-180706-QJRKU52.json")
+    _write(conflict, "known stale cache evidence\n")
+    digest = lint.hashlib.sha256(conflict.read_bytes()).hexdigest()
+    relative = "wt/cache/ci-status/" + conflict.name
+    monkeypatch.setattr(
+        lint, "worktree_roots",
+        lambda _base: (t / "missing-new-worktrees", t / "missing-old-worktrees"),
+    )
+    monkeypatch.setattr(
+        lint, "_sync_conflict_today",
+        lambda: date.fromisoformat("2026-08-20"),
+    )
+
+    rows = []
+    for receipt in receipts:
+        monkeypatch.setattr(
+            lint, "_SYNC_CONFLICT_ACKNOWLEDGEMENTS",
+            {(relative, digest): receipt},
+        )
+        rep = lint.Report()
+        lint.check_sync_conflict_files(t / ".dreamwork", rep)
+        rows.append(next(line for line in rep.render().splitlines()
+                         if "sync-conflict" in line))
+    return rows
+
+
+def _comparable_warn_delta(before, after):
+    before_compared, before_excluded, after_compared, after_excluded = (
+        land_lane._partition_warn_row_sets(before, after)
+    )
+    before_index = land_lane._warn_row_index(before_compared)
+    after_index = land_lane._warn_row_index(after_compared)
+    added = set(after_index) - set(before_index)
+    removed = set(before_index) - set(after_index)
+    counts = (
+        len(before_compared), len(before_excluded),
+        len(after_compared), len(after_excluded),
+    )
+    return counts, added, removed
+
+
+def test_expired_receipt_reason_change_produces_gate_refusal_delta(
+        tmp_path, monkeypatch):
+    """Tracked reason text is compared even inside the clock advisory."""
+    before, after = _capture_expired_sync_conflict_receipt_rows(
+        tmp_path,
+        monkeypatch,
+        ("2026-08-03", "2026-08-10", "reason A"),
+        ("2026-08-03", "2026-08-10", "reason B"),
+    )
+
+    counts, added, removed = _comparable_warn_delta([before], [after])
+
+    assert counts == (1, 1, 1, 1), (
+        "expired receipt reason changed from A to B unnoticed: tracked reason "
+        "metadata never entered the gate's comparable population")
+    assert (len(added), len(removed)) == (1, 1), (
+        "expired receipt reason changed from A to B unnoticed: the gate's "
+        "clock exemption swallowed tracked acknowledgement metadata")
+
+
+def test_expired_receipt_date_change_produces_gate_refusal_delta(
+        tmp_path, monkeypatch):
+    """Tracked reviewed/deadline dates are compared after age normalisation."""
+    before, after = _capture_expired_sync_conflict_receipt_rows(
+        tmp_path,
+        monkeypatch,
+        ("2026-08-01", "2026-08-05", "same reason"),
+        ("2026-08-02", "2026-08-06", "same reason"),
+    )
+
+    counts, added, removed = _comparable_warn_delta([before], [after])
+
+    assert counts == (1, 1, 1, 1), (
+        "expired receipt reviewed/deadline dates changed unnoticed: tracked "
+        "date metadata never entered the gate's comparable population")
+    assert (len(added), len(removed)) == (1, 1), (
+        "expired receipt reviewed/deadline dates changed unnoticed: the "
+        "gate's clock exemption swallowed tracked acknowledgement metadata")
+
+
+def _commit_fixture_warn_transition(root, lane, before_row, after_row, message):
+    before_lines = "old warning\n" + before_row[len("  WARN  "):] + "\n"
+    _write(root / "lint-rows.txt", before_lines)
+    _git(root, "add", "lint-rows.txt")
+    _git(root, "commit", "-m", "establish receipt warning baseline")
+    _git(lane, "rebase", "master")
+    after_lines = "old warning\n"
+    if after_row is not None:
+        after_lines += after_row[len("  WARN  "):] + "\n"
+    _write(lane / "lint-rows.txt", after_lines)
+    _git(lane, "add", "lint-rows.txt")
+    _git(lane, "commit", "-m", message)
+
+
+def test_expired_receipt_renewal_refuses_gate(landing_repo, tmp_path, monkeypatch):
+    """Expired WARN -> renewed OK is a tracked removal, not clock drift."""
+    root, lane = landing_repo
+    expired, = _capture_expired_sync_conflict_receipt_rows(
+        tmp_path, monkeypatch,
+        ("2026-08-03", "2026-08-10", "same reason"),
+    )
+    _commit_fixture_warn_transition(
+        root, lane, expired, None, "renew acknowledgement deadline")
+    before = _git(root, "rev-parse", "HEAD")
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 1, (
+        "expired receipt renewal passed without a WARN removal delta:\n" +
+        result.stdout + result.stderr)
+    assert "lint-precheck WARN row-set comparison: added=0 removed=1" in result.stdout
+    assert "REFUSE phase=lint-precheck: WARN row set changed" in result.stderr
+    _assert_base_unmoved(root, before)
+    _assert_retained(root, lane)
+
+
+def test_expired_receipt_path_rename_refuses_gate(
+        landing_repo, tmp_path, monkeypatch):
+    """Different receipt paths survive as add/remove; they are never paired."""
+    root, lane = landing_repo
+    before_row, = _capture_expired_sync_conflict_receipt_rows(
+        tmp_path, monkeypatch,
+        ("2026-08-03", "2026-08-10", "same reason"),
+    )
+    after_row = before_row.replace(
+        "identity.sync-conflict-", "renamed.sync-conflict-", 1)
+    assert after_row != before_row
+    _commit_fixture_warn_transition(
+        root, lane, before_row, after_row, "rename conflict receipt path")
+    before = _git(root, "rev-parse", "HEAD")
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 1, (
+        "receipt path rename passed without an add/remove delta:\n" +
+        result.stdout + result.stderr)
+    assert "lint-precheck WARN row-set comparison: added=1 removed=1" in result.stdout
+    assert "REFUSE phase=lint-precheck: WARN row set changed" in result.stderr
+    _assert_base_unmoved(root, before)
+    _assert_retained(root, lane)
+
+
+def test_marker_does_not_exclude_row_when_clock_normalisation_fails(
+        tmp_path, monkeypatch):
+    """The marker alone cannot earn the clock-derived exemption."""
+    row, = _capture_expired_sync_conflict_receipt_rows(
+        tmp_path, monkeypatch,
+        ("2026-08-03", "2026-08-10", "same reason"),
+    )
+    changed = row.replace(
+        "acknowledgement is 17 day(s) old", "acknowledgement age wording changed", 1)
+    assert changed != row
+
+    counts, added, removed = _comparable_warn_delta([row], [changed])
+
+    assert counts == (1, 1, 1, 0), (
+        "marker-bearing row stayed excluded although clock normalisation failed")
+    assert (len(added), len(removed)) == (1, 1), (
+        "changed age wording passed because the marker asserted an exemption")
+
+
+def _render_receipt_rows_at(
+        root, monkeypatch, receipts, today="2026-08-20"):
+    """Render real lint rows for exact relative-path receipt records."""
+    acknowledgements = {}
+    for relative, receipt in receipts.items():
+        conflict = root / ".git" / relative
+        _write(conflict, "known stale cache evidence\n")
+        digest = lint.hashlib.sha256(conflict.read_bytes()).hexdigest()
+        acknowledgements[(relative, digest)] = receipt
+    monkeypatch.setattr(
+        lint, "worktree_roots",
+        lambda _base: (
+            root / "missing-new-worktrees", root / "missing-old-worktrees"),
+    )
+    monkeypatch.setattr(
+        lint, "_SYNC_CONFLICT_ACKNOWLEDGEMENTS", acknowledgements)
+    monkeypatch.setattr(
+        lint, "_sync_conflict_today",
+        lambda: date.fromisoformat(today),
+    )
+    rep = lint.Report()
+    lint.check_sync_conflict_files(root / ".dreamwork", rep)
+    return tuple(line for line in rep.render().splitlines()
+                 if "sync-conflict" in line)
+
+
+def _capture_two_receipt_delimiter_rename_rows(tmp_path, monkeypatch):
+    """Emit two real receipts whose legal paths contain the old delimiter."""
+    root = tmp_path / "two-receipt-delimiter-rename"
+    root.mkdir()
+    _git(root, "init", "-b", "master")
+    filename = "identity.sync-conflict-20260803-180706-QJRKU52.json"
+    before = {
+        f"wt/cache/ci-status/shared — acknowledgement is alpha/{filename}":
+            ("2026-08-03", "2026-08-10", "reason alpha"),
+        f"wt/cache/ci-status/shared — acknowledgement is beta/{filename}":
+            ("2026-08-03", "2026-08-10", "reason beta"),
+    }
+    before_rows = _render_receipt_rows_at(root, monkeypatch, before)
+    old_parent = root / ".git" / "wt" / "cache" / "ci-status" / "shared — acknowledgement is alpha"
+    old_parent.rename(old_parent.with_name("renamed — acknowledgement is alpha"))
+    old_parent = root / ".git" / "wt" / "cache" / "ci-status" / "shared — acknowledgement is beta"
+    old_parent.rename(old_parent.with_name("renamed — acknowledgement is beta"))
+    after = {
+        relative.replace("/shared —", "/renamed —", 1): receipt
+        for relative, receipt in before.items()
+    }
+    after_rows = _render_receipt_rows_at(root, monkeypatch, after)
+    return before_rows, after_rows
+
+
+def _write_static_lint(repo, rows):
+    """Fixture lint that preserves complete real-rendered OK and WARN rows."""
+    warning_count = sum(row.startswith("  WARN") for row in rows)
+    _write(
+        repo / "lint.py",
+        "rows = " + repr(tuple(rows)) + "\n"
+        "for row in rows: print(row)\n"
+        f"print('clean ({warning_count} warning(s))')\n",
+    )
+
+
+def _commit_static_lint_transition(root, lane, before_rows, after_rows, message):
+    _write_static_lint(root, before_rows)
+    _git(root, "add", "lint.py")
+    _git(root, "commit", "-m", "establish complete lint receipt baseline")
+    _git(lane, "rebase", "master")
+    _write_static_lint(lane, after_rows)
+    _git(lane, "add", "lint.py")
+    _git(lane, "commit", "-m", message)
+
+
+def test_two_receipt_delimiter_path_rename_refuses_gate(
+        landing_repo, tmp_path, monkeypatch):
+    """Two legal delimiter-bearing paths cannot collapse to one identity."""
+    root, lane = landing_repo
+    before_rows, after_rows = _capture_two_receipt_delimiter_rename_rows(
+        tmp_path, monkeypatch)
+    assert len(before_rows) == len(after_rows) == 2
+    _commit_static_lint_transition(
+        root, lane,
+        ("  WARN  old warning", *before_rows),
+        ("  WARN  old warning", *after_rows),
+        "rename two delimiter-bearing receipt paths",
+    )
+    before = _git(root, "rev-parse", "HEAD")
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 1, (
+        "two receipt paths collapsed to a false zero after both were renamed:\n" +
+        result.stdout + result.stderr)
+    assert "lint-precheck WARN row-set comparison: added=2 removed=2" in result.stdout
+    assert "REFUSE phase=lint-precheck: WARN row set changed" in result.stderr
+    _assert_base_unmoved(root, before)
+    _assert_retained(root, lane)
+
+
+def test_receipt_identity_collision_fails_closed(tmp_path, monkeypatch):
+    """Two different emitted rows for one receipt path are ambiguous."""
+    first, second = _capture_expired_sync_conflict_receipt_rows(
+        tmp_path, monkeypatch,
+        ("2026-08-03", "2026-08-10", "reason alpha"),
+        ("2026-08-03", "2026-08-10", "reason beta"),
+    )
+
+    with pytest.raises(ValueError, match="receipt identity collision"):
+        land_lane._partition_warn_row_sets((first, second), (first, second))
+
+
+def test_path_embedded_age_phrase_midnight_does_not_refuse_gate(
+        landing_repo, tmp_path, monkeypatch):
+    """Only grammar-bound clock fields change; path text stays byte-exact."""
+    root, lane = landing_repo
+    emitted = tmp_path / "path-embedded-age-phrase"
+    emitted.mkdir()
+    _git(emitted, "init", "-b", "master")
+    relative = (
+        "wt/cache/ci-status/acknowledgement is 1 day(s) old/"
+        "identity.sync-conflict-20260803-180706-QJRKU52.json"
+    )
+    receipt = {relative: ("2026-08-03", "2026-08-10", "same reason")}
+    before_rows = _render_receipt_rows_at(
+        emitted, monkeypatch, receipt, today="2026-08-20")
+    after_rows = _render_receipt_rows_at(
+        emitted, monkeypatch, receipt, today="2026-08-21")
+    assert len(before_rows) == len(after_rows) == 1
+    assert "acknowledgement is 1 day(s) old/" in before_rows[0]
+    assert "acknowledgement is 17 day(s) old" in before_rows[0]
+    _commit_static_lint_transition(
+        root, lane,
+        ("  WARN  old warning", *before_rows),
+        ("  WARN  old warning", *after_rows),
+        "cross midnight with an age phrase in receipt path",
+    )
+    before = _git(root, "rev-parse", "HEAD")
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 0, (
+        "path text satisfied clock normalisation while the actual ages changed:\n" +
+        result.stdout + result.stderr)
+    assert "WARN row-set comparison: added=0 removed=0" in result.stdout
+    assert _git(root, "rev-parse", "HEAD") != before
+
+
+def test_second_receipt_first_expiry_does_not_wedge_existing_expired_receipt(
+        landing_repo, tmp_path, monkeypatch):
+    """A stays expired across midnight while known-OK B first expires."""
+    root, lane = landing_repo
+    emitted = tmp_path / "independent-first-expiry"
+    emitted.mkdir()
+    _git(emitted, "init", "-b", "master")
+    filename = "identity.sync-conflict-20260803-180706-QJRKU52.json"
+    receipts = {
+        f"wt/cache/ci-status/A/{filename}":
+            ("2026-08-03", "2026-08-10", "receipt A"),
+        f"wt/cache/ci-status/B/{filename}":
+            ("2026-08-13", "2026-08-20", "receipt B"),
+    }
+    before_rows = _render_receipt_rows_at(
+        emitted, monkeypatch, receipts, today="2026-08-20")
+    after_rows = _render_receipt_rows_at(
+        emitted, monkeypatch, receipts, today="2026-08-21")
+    assert sum(row.startswith("  WARN") for row in before_rows) == 1
+    assert sum(row.startswith("  OK") for row in before_rows) == 1
+    assert sum(row.startswith("  WARN") for row in after_rows) == 2
+    _commit_static_lint_transition(
+        root, lane,
+        ("  WARN  old warning", *before_rows),
+        ("  WARN  old warning", *after_rows),
+        "A crosses midnight while B first expires",
+    )
+    before = _git(root, "rev-parse", "HEAD")
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 0, (
+        "B's first expiry wedged a gate because A was already expired:\n" +
+        result.stdout + result.stderr)
+    assert "WARN row-set comparison: added=0 removed=0" in result.stdout
+    assert _git(root, "rev-parse", "HEAD") != before
 
 
 # ---------------------------------------------------------------------------
