@@ -779,7 +779,7 @@ def _batch_blobs(root: Path, commits: list[str],
             f"`git cat-file --batch` failed ({proc.returncode}): "
             f"{proc.stderr.decode('utf-8', 'replace').strip()}")
 
-    out, i, found = proc.stdout, 0, {}
+    out, i, found, missing = proc.stdout, 0, {}, []
     for spec in specs:
         nl = out.find(b"\n", i)
         if nl < 0:
@@ -788,13 +788,35 @@ def _batch_blobs(root: Path, commits: list[str],
                 f"records — the scan is incomplete and must not read as clean.")
         header = out[i:nl].decode("utf-8", "replace").split()
         i = nl + 1
-        if header[-1] in ("missing", "ambiguous"):
-            continue  # the path does not exist in that commit
+        if header[-1] == "ambiguous":
+            raise RedproofError(
+                f"`git cat-file --batch` could not resolve {spec[0]}:{spec[1]} "
+                "unambiguously; the scan is incomplete.")
+        if header[-1] == "missing":
+            missing.append(spec)
+            continue
         typ, size = header[1], int(header[2])
         payload = out[i:i + size]
         i += size + 1  # skip the record's trailing newline
         if typ == "blob":
             found[(spec[0], spec[1])] = _sha(payload)
+
+    # `cat-file` uses the same `missing` response for an absent tree path and
+    # for a tree entry whose object is corrupt. Only the former is legitimate.
+    # Ask each affected tree independently so unreadable bytes cannot become a
+    # false clean history result.
+    by_commit: dict[str, list[str]] = {}
+    for commit, path in missing:
+        by_commit.setdefault(commit, []).append(path)
+    for commit, missing_paths in by_commit.items():
+        present = set(_git(
+            root, "ls-tree", "-r", "--name-only", commit, "--",
+            *(f":(literal){path}" for path in missing_paths)).splitlines())
+        for path in missing_paths:
+            if path in present:
+                raise RedproofError(
+                    f"{commit}:{path} exists in its tree but its blob is "
+                    "unreadable; the history scan is incomplete.")
     return found
 
 
@@ -835,7 +857,22 @@ def scan_history(cwd: Path | None, entries: list[dict],
                 and (e.get("injected_sha")
                      or e.get("injected_kind") == ABSENT)]
     base_oid, base_ref = _resolve_base(root, base)
-    commits = [c for c in _git(root, "rev-list", f"{base_oid}..HEAD").split() if c]
+    current_history_list = _git(root, "rev-list", "HEAD").split()
+    current_history = set(current_history_list)
+    boundary_survives = {
+        id(e): bool(e.get("begun_head") in current_history) for e in recorded
+    }
+    # The merge base moves when a lane's work lands. Keep the ordinary branch
+    # range, but union in each surviving registration's own immutable boundary
+    # so advancing master cannot erase a committed injection from the audit.
+    candidates = set(_git(root, "rev-list", f"{base_oid}..HEAD").split())
+    surviving_boundaries = {
+        e["begun_head"] for e in recorded if boundary_survives[id(e)]
+    }
+    for begun_head in surviving_boundaries:
+        candidates.update(_git(
+            root, "rev-list", f"{begun_head}..HEAD").split())
+    commits = [c for c in current_history_list if c in candidates]
     paths = sorted({e["path"] for e in recorded})
     blobs = _batch_blobs(root, commits, paths)
     base_blobs = _batch_blobs(root, [base_oid], paths)
@@ -851,10 +888,6 @@ def scan_history(cwd: Path | None, entries: list[dict],
     # injection already present there and merely inherited by the branch's
     # leading commits was not introduced by this red-proof. Once the path
     # differs, any later match was introduced on the branch and remains a hit.
-    current_history = set(_git(root, "rev-list", "HEAD").split())
-    boundary_survives = {
-        id(e): bool(e.get("begun_head") in current_history) for e in recorded
-    }
     preexisting = {
         id(e): set(_git(root, "rev-list", e["begun_head"]).split())
         if boundary_survives[id(e)] else set()
