@@ -7586,6 +7586,34 @@ class TestGoalsRoute(unittest.TestCase):
         self.assertIn("with store.transaction():", source)
         self.assertNotIn("sqlite3", source)
 
+    def test_initial_goal_fragment_reaches_navigate_options(self):
+        """The boot location, not seeded pending state, carries goal-7."""
+        router_src = watch.ROUTER_JS
+        boot_src = router_src[router_src.rindex("(function ()"):]
+        script = textwrap.dedent("""\
+            const location = {pathname:'/goals', search:'', hash:'#goal-7'};
+            %s
+            %s
+            let received = null;
+            const navigate = (name, param, opts) => {
+              received = {name, param, opts};
+              return Promise.resolve();
+            };
+            const loadRolls = () => {};
+            const tick = () => {};
+            %s
+            if (!received || received.name !== 'goals'
+                || received.opts.fragment !== '#goal-7') {
+              const fragment = received && received.opts && received.opts.fragment;
+              console.error('boot /goals#goal-7 navigate options lost fragment; received='
+                + String(fragment));
+              process.exit(54);
+            }
+        """) % (_extract_js_fn(router_src, "function goalsUrl("),
+                _extract_js_fn(router_src, "function routeOf("),
+                boot_src)
+        _node_check(["node", "-e", script])
+
     def test_pg_goal_links_reach_distinct_rows_after_native_update(self):
         """PG-3 and PG-7 name real, distinct native-row targets, including
         after setData drives the native registry's update path."""
@@ -7596,8 +7624,6 @@ class TestGoalsRoute(unittest.TestCase):
         components_src = watch.COMPONENTS_JS
         self.assertIn("id: 'goal-' + node.id", goals_src,
                       "goal rows have no addressable goal-N identity")
-        self.assertEqual(router_src.count("fragment: r.fragment"), 3,
-                         "click, history, and initial navigation must all carry the goal fragment")
         script = textwrap.dedent("""\
             const goalSource = %s
               .replace("import React from 'react';", '')
@@ -11702,10 +11728,9 @@ class TestFileViewMode(unittest.TestCase):
                       watch.PAGE)
         # every entry point into navigate carries it, or one of them silently
         # loses the mode (the deep-link bug this was red-proved against)
-        for site in ("{ push: true, q: r.q, mode: r.mode, fragment: r.fragment }",
-                     "push: false, q: r.q, mode: r.mode, fragment: r.fragment",
-                     "{ push: false, transition: false, q: r.q, mode: r.mode,\n"
-                     "             fragment: r.fragment }"):
+        for site in ("{ push: true, q: r.q, mode: r.mode",
+                     "push: false, q: r.q, mode: r.mode",
+                     "{ push: false, transition: false, q: r.q, mode: r.mode"):
             self.assertIn(site, watch.PAGE, f"navigate call missing the mode: {site}")
 
     def test_the_switch_is_links_markdown_only_and_holds_its_own_state(self):
