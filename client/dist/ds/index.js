@@ -1927,6 +1927,7 @@ var DreamworkDesign = (() => {
   var entry_exports = {};
   __export(entry_exports, {
     Label: () => Label,
+    PipBtn: () => PipBtn,
     QaCard: () => QaCard
   });
   var import_react = __toESM(require_react(), 1);
@@ -8580,6 +8581,12 @@ var DreamworkDesign = (() => {
   });
   Label.displayName = "Label";
   Label.dwBuilder = "label";
+  var PipBtn = ({ url, label: label2 }) => import_react.default.createElement(HOST, {
+    "data-dw-delegate": "pipBtn",
+    dangerouslySetInnerHTML: { __html: pipBtn(url, label2) }
+  });
+  PipBtn.displayName = "PipBtn";
+  PipBtn.dwBuilder = "pipBtn";
   return __toCommonJS(entry_exports);
 })();
 /*! Bundled license information:

@@ -21,6 +21,9 @@
     "dev/build/ds-src/Label.d.ts": "bfbdd203975cca4d7ff2743735ab293b30a5d971adea988f0e5dadd94f1982e4",
     "dev/build/ds-src/Label.fixture.json": "223f05ca70ccfb17722ccc9af9831b1883add6d1a96e412b4d7d570aa2e01c20",
     "dev/build/ds-src/Label.prompt.md": "a96e29db57e9eb4eda0b15de33d8309d6c115af81983e6e68e1cbdf5ebb34c22",
+    "dev/build/ds-src/PipBtn.d.ts": "4de7d019e9395aff5ebf34660f1540793aa477e8cfb1fb672ed048fa498bad82",
+    "dev/build/ds-src/PipBtn.fixture.json": "9efbb9516886d9f23fbbbaa2abd5202ff5212a9a440a25dd02c751b617cb648e",
+    "dev/build/ds-src/PipBtn.prompt.md": "be2fbe34c465a0ad1484f546f88ce2c02b5ed605b9322ea7fd2dfae0b453ba3a",
     "dev/build/ds-src/QaCard.d.ts": "a4c1d50dbe833c951432f0275701cf5743c068f1af5f731919928aff28e86d30",
     "dev/build/ds-src/QaCard.fixture.json": "5b233390ea719c4139cb4e95f192c730c9c0db64c1816ceec0c73b976f19f086",
     "dev/build/ds-src/QaCard.prompt.md": "0036ca1f279f529447f21ec1504e21caffbcda3cbc2ca760aa1ccd3395f039c2",
@@ -30,10 +33,10 @@
     "dev/build/src/probe.js": "f6c51e602a98990ca28fe31206f0aa533c77016f5a9e04cc883769e52c3f67fc",
     "dev/build/src/registry.js": "6d8b3a665afcec61e7d0ab59b32b6ee23b0fc0bff90bf23b2558823057beb0a8",
     "dev/build/src/research.js": "d792c7bd01be52922baa765afee4e5f77d9e0d35feaff0679a9f803ce1b63f73",
-    "dev/build/wrapper-exports.js": "654d01b64ee40516d09b115ce3dee94353ea9063b28cdaea36bbf9b02fa269cd"
+    "dev/build/wrapper-exports.js": "ec75d86fb2a75dfb4d4d375c7d1ee4697159edafa5c16c163a3af19ef35396ce"
   },
   "outputs": {
-    "client/dist/ds/index.js": "a746566dc27a1d89bee9c99b0d66f980bfa454c326b9eacef07c10ce9cd4eab6",
+    "client/dist/ds/index.js": "d135a48bbdd698197f904ea6f7d91fc4eafa9ada8b5c1d9494db9a20fe71c258",
     "client/dist/ds/styles.css": "cd335f737a8b6f2846e35faf184e2e3f6b3a2b793422a6b13ecde4cd5ef582fb",
     "client/dist/native.js": "27b580244ee603816ac535c76b83383f71a0d74a1e0be92ed5a7fd1c8da33dc4"
   },

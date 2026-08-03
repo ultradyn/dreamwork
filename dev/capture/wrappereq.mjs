@@ -48,6 +48,11 @@ const CASES = [
     fixture: fixture('Label'),
     build: props => label(props.text),
   },
+  {
+    name: 'PipBtn', delegate: 'pipBtn', expectedClass: 'pipbtn',
+    fixture: fixture('PipBtn'),
+    build: props => pipBtn(props.url, props.label),
+  },
 ];
 const hasContent = value => {
   if (typeof value === 'string') return value.trim().length > 0;
@@ -123,7 +128,7 @@ for (const testCase of CASES) {
   ok(`${testCase.name} builder precondition: fixture output is non-empty`,
      builder.length > 0);
   ok(`${testCase.name} builder precondition: output carries class="${testCase.expectedClass}"`,
-     new RegExp(`class="${testCase.expectedClass}(?:\\s|\")`).test(builder));
+     new RegExp(`class="[^"]*\\b${testCase.expectedClass}\\b`).test(builder));
   ok(`${testCase.name} wrapper precondition: mounted output clears the runtime-derived floor`,
      readings.actual.length > floor);
   ok(`${testCase.name} wrapper serialization strictly equals ${testCase.delegate} builder serialization`,

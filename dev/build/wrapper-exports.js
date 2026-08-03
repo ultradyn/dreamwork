@@ -50,3 +50,11 @@ export const Label = ({ text }) => React.createElement(HOST, {
 
 Label.displayName = 'Label';
 Label.dwBuilder = 'label';
+
+export const PipBtn = ({ url, label }) => React.createElement(HOST, {
+  'data-dw-delegate': 'pipBtn',
+  dangerouslySetInnerHTML: { __html: pipBtn(url, label) },
+});
+
+PipBtn.displayName = 'PipBtn';
+PipBtn.dwBuilder = 'pipBtn';
