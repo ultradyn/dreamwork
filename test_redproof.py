@@ -362,7 +362,9 @@ class TestRequiredProofRemediesMatchTheProvenance:
         assert "same discriminating test" in err, err
         assert all(verb in err for verb in ("`begin`", "`observe`", "`restore`", "`check`")), err
         assert "prior worktree location for use as `--cwd`" in err, err
-        assert "foreign lane-private registry" in err, err
+        assert "audits exactly the worktree root it is given" in err, err
+        assert "can satisfy `--require` from that root's registry" in err, err
+        assert "operator is responsible" in err, err
 
 
 def test_reach_examined_fragment_formats_non_empty_population():
@@ -2523,6 +2525,40 @@ class TestObserveRemainderOptionGuard:
         assert "before --command" in result.stderr, result.stderr
         assert "command's `--` delimiter" in result.stderr, result.stderr
 
+    def test_command_may_end_with_carry_forward_as_consumer_data(
+            self, repo, tmp_path):
+        """The check/handoff affordance must not reserve a pytest argument."""
+        env = dict(__import__("os").environ)
+        env["REDPROOF_SCRATCH_ROOT"] = str(tmp_path / "scratch-1171")
+        lane = "cx-1171-command-data"
+        armed = self._run(
+            repo, env, "begin", "router.js", "--lane", lane,
+            "--expectation", "expectation.txt")
+        assert armed.returncode == 0, armed.stdout + armed.stderr
+        (repo / "router.js").write_text("CARRY FORWARD COMMAND SABOTAGE\n")
+        command_dir = tmp_path / "command-bin"
+        command_dir.mkdir()
+        pytest_command = command_dir / "pytest"
+        pytest_command.write_text(
+            "#!/bin/sh\n"
+            "printf '%s\\n' 'carry-forward consumer argument reached' >&2\n"
+            "exit 1\n",
+            encoding="utf-8",
+        )
+        pytest_command.chmod(0o755)
+        env["PATH"] = f"{command_dir}{os.pathsep}{env['PATH']}"
+
+        result = self._run(
+            repo, env, "observe", "router.js", "--lane", lane,
+            "--failure", "carry-forward consumer argument reached",
+            "--command", "pytest", "--carry-forward")
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "swallowed token" not in result.stderr, result.stderr
+        restored = self._run(
+            repo, env, "restore", "router.js", "--lane", lane)
+        assert restored.returncode == 0, restored.stdout + restored.stderr
+
     def test_guard_derives_options_and_honours_the_command_escape(self):
         parser = rp._parser()
         parser.add_argument("--future-option-989")
@@ -3653,6 +3689,25 @@ class TestHandoffDerivesRequirement:
         # The derived number is STATED in the header — the lane quotes THIS,
         # not its own "no injection owed" recollection.
         assert "1 injection(s) owed" in out, out
+        assert "Produce a fresh causal proof" in err, err
+        assert "Carry-forward provenance was supplied" not in err, err
+
+    def test_a_carry_forward_binding_diff_with_no_registry_gets_cli_remedy(
+            self, repo, capsys):
+        """handoff forwards explicit CLI provenance without changing require."""
+        base, head = _binding_branch(repo)
+        derived = rp._derived_requirement(repo, base, head)
+        assert derived["require"] == 1, derived
+        capsys.readouterr()
+
+        exit_code = _handoff(repo, carry_forward=True)
+        out, err = capsys.readouterr()
+
+        assert exit_code == 2, out + err
+        assert "1 injection(s) owed" in out, out
+        assert "Carry-forward provenance was supplied" in err, err
+        assert "audits exactly the worktree root it is given" in err, err
+        assert "Produce a fresh causal proof" not in err, err
 
     def test_a_retired_only_registry_is_refused_not_reported_clean(
             self, repo, capsys):

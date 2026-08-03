@@ -229,13 +229,21 @@ _CARRY_FORWARD_REARM = (
     "current lane, `begin` that carried path against the named expectation, "
     "sabotage it and `observe` the named discriminating test, then `restore` "
     "and `check`. Only when inspection is genuinely needed should the brief "
-    "name the prior worktree location for use as `--cwd`; never recover proof "
-    "from a foreign lane-private registry."
+    "name the prior worktree location for use as `--cwd`. `--cwd` audits "
+    "exactly the worktree root it is given and can satisfy `--require` from "
+    "that root's registry; the operator is responsible for treating a foreign "
+    "root as inspection, not as proof for the current lane."
 )
 
 
 def _proof_remedy(carry_forward: bool) -> str:
-    """Select advice from provenance supplied by the caller, never registry shape."""
+    """Select CLI advice from caller provenance, never from registry shape.
+
+    The production landing gate deliberately supplies no carry-forward claim:
+    it has no durable provenance input that can distinguish a first round from
+    a carried round.  Its refusal therefore always uses the honest generic
+    remedy; the specific branch is an explicit check/handoff CLI affordance.
+    """
     return _CARRY_FORWARD_REARM if carry_forward else _FRESH_CAUSAL_PROOF
 
 
@@ -2190,16 +2198,20 @@ def _parser() -> argparse.ArgumentParser:
                     help=f"check: base ref for the history scan (default: first "
                          f"of {', '.join(DEFAULT_BASES)} that resolves)")
     ap.add_argument("--carry-forward", action="store_true",
-                    help="check/handoff: the coordinator supplied carry-forward "
-                         "provenance in this lane's brief; changes remedy text "
-                         "only, never the evidence requirement")
+                    help="check/handoff CLI only: the operator supplied "
+                         "carry-forward provenance; changes remedy text only, "
+                         "never the evidence requirement. The production "
+                         "landing gate does not infer or pass this flag")
     ap.add_argument("--lane", default=None,
                     help="resolve a NAMED launch identity for every verb; an "
                          "explicit value wins over DREAMWORK_LANE_ID. Without "
                          "one, write verbs use the environment and check "
                          "enumerates every identity dir when the environment "
                          "is absent (#895).")
-    ap.add_argument("--cwd", default=None, help="derive for this directory")
+    ap.add_argument("--cwd", default=None,
+                    help="audit or derive for exactly this worktree root; its "
+                         "registry may satisfy --require, so a foreign root is "
+                         "inspection only by operator responsibility")
     return ap
 
 
@@ -2235,13 +2247,15 @@ def _parse_args(
 
 def _swallowed_self_option(
         ap: argparse.ArgumentParser,
-        command: list[str]) -> tuple[str, str] | None:
+        command: list[str],
+        *,
+        command_data_options: frozenset[str] = frozenset()) -> tuple[str, str] | None:
     """Return a command token argparse would recognise as our own option."""
     for token in command:
         if token == "--":
             return None
         option = _self_option(ap, token)
-        if option is not None:
+        if option is not None and option not in command_data_options:
             return token, option
     return None
 
@@ -2249,8 +2263,13 @@ def _swallowed_self_option(
 def main(argv: list[str] | None = None) -> int:
     ap = _parser()
     args = _parse_args(ap, argv)
+    if args.carry_forward and args.verb not in {"check", "handoff"}:
+        ap.error("--carry-forward is valid only for check and handoff")
     if args.verb == "observe":
-        swallowed = _swallowed_self_option(ap, args.command)
+        swallowed = _swallowed_self_option(
+            ap, args.command,
+            command_data_options=frozenset({"--carry-forward"}),
+        )
         if swallowed is not None:
             token, option = swallowed
             sys.stderr.write(
