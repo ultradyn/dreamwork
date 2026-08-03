@@ -121,3 +121,4 @@ dev/build/node_modules/
 .dreamwork/docs/briefs/
 # ignore db backups
 *.sqlite3.*
+.dreamwork/salvage/
