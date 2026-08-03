@@ -16,4 +16,4 @@ would let the defect recur unnoticed. The registry is opt-in: only named
 guards are checked, and the population is reported on every run so "checked
 0" can never read as "checked everything" (#868).
 
-- #868 test_tick_and_status_sync_agree_on_sibling_root_process_table
+- #868 test_right_count_over_wrong_set_is_rejected
