@@ -8118,6 +8118,114 @@ def check_cited_shas(dw: Path, rep: Report) -> None:
         rep.add(OK, "tasks.md", f"{len(shas)} cited commit(s) all resolve")
 
 
+# A row of the landed-guards registry: `- #NNN test_function_name`. The task
+# id is the LANDED task whose fix this test guards; the name is the test
+# function lint then verifies is still defined. Only rows that parse count;
+# prose and headings are ignored, and a row that does not match ERRORS rather
+# than reading as an absent guard (#136 — an unparseable claim must not look
+# like an absent one).
+LANDED_GUARD_ROW = re.compile(r"^-\s+#(\d+)\s+(test_[A-Za-z0-9_]+)\s*$")
+
+
+def check_landed_guards(dw: Path, rep: Report) -> None:
+    """A landed task's guard test, deleted in a later refactor (#1114).
+
+    #868 landed a regression test at 46eeba09; a later refactor (the
+    _fleet_fact / inspect_lanes cutover) deleted it, and #1084 is the
+    recurrence that absence permitted. The ledger still reads `landed`
+    because `landed` and `still guarded` are different claims and only the
+    first is tracked. This check is the second.
+
+    It reads an opt-in registry (``landed-guards.md`` at the repo root):
+    each row names a landed task and the test function that guards it, and
+    the check verifies that function is still DEFINED in the test tree. A
+    name that no longer resolves WARNs and names the task, so a deleted
+    guard is detectable instead of silent.
+
+    THE CEILING, stated in the row because a guard whose message overclaims
+    is the defect this repo files most often (#651): this can assert "a test
+    of this name is defined", NEVER "the behaviour is still guarded". A test
+    gutted to ``pass`` keeps its name and resolves clean. It also cannot
+    tell RENAMED from DELETED (#136): a name that does not resolve wants a
+    human to check ``git log -S <name>`` — a rename updates the row, a
+    deletion restores the guard or reopens the task.
+
+    WHY AN OPT-IN REGISTRY, not prose-mining: mining landed notes for
+    ``test_*`` tokens was measured on the live store (259 distinct tokens
+    across 267 entries) and is wallpaper — almost every hit is a test FILE
+    cited as a reference (``test_watch``, ``test_redproof``, …), not a guard
+    declaration. An explicit registry is precise; its cost is that it only
+    covers tasks someone registered, which is why the POPULATION is reported
+    on every run so "checked 0" can never read as "checked everything"
+    (#868 — the lesson this descends from). It is NOT #1122's unchecked
+    hand-list: lint re-derives the check against the tree, so a row whose
+    guard was deleted is caught here, not held silently.
+
+    Calm when the registry is absent: it is opt-in infrastructure, and a
+    target that does not use it has nothing to check (like
+    check_guards_registered when there is no justfile).
+    """
+    path = dw.parent / "landed-guards.md"
+    if not path.exists():
+        return
+    rows: list[tuple[int, str]] = []
+    for ln in path.read_text(encoding="utf-8").splitlines():
+        s = ln.strip()
+        if not s or s.startswith("#"):
+            continue
+        # Only list-item lines (`- …`) are registry rows; documentation
+        # prose is ignored. A list item that does not match the row grammar
+        # ERRORS rather than reading as an absent guard (#136 — an
+        # unparseable claim must not look like an absent one).
+        if not s.startswith("- "):
+            continue
+        m = LANDED_GUARD_ROW.match(s)
+        if not m:
+            rep.add(ERROR, "landed-guards.md",
+                    f"unparseable row {ln!r} — each row is "
+                    f"`- #NNN test_function_name` (see file-formats.md)")
+            continue
+        rows.append((int(m.group(1)), m.group(2)))
+    if not rows:
+        rep.add(OK, "landed-guards.md",
+                "0 guards declared — add `- #NNN test_<name>` rows so a "
+                "deleted guard is detectable instead of silent (#1114)")
+        return
+    # Resolve each against the test tree: a `def <name>(` in any test_*.py.
+    # node_modules / .git / .worktrees are skipped — they are not this repo's
+    # tests, and a long guard name will not coincide with one by accident.
+    corpus: list[str] = []
+    for p in sorted(dw.parent.rglob("test_*.py")):
+        sp = str(p)
+        if "/node_modules/" in sp or "/.git/" in sp or "/.worktrees/" in sp:
+            continue
+        corpus.append(p.read_text(encoding="utf-8", errors="replace"))
+    joined = "\n".join(corpus)
+    missing: list[tuple[int, str]] = []
+    for tid, name in rows:
+        if not re.search(r"\bdef\s+%s\s*\(" % re.escape(name), joined):
+            missing.append((tid, name))
+    for tid, name in missing:
+        rep.add(
+            WARN, "landed-guards.md",
+            f"#{tid}'s guard `{name}` is not defined in any test_*.py — "
+            f"renamed (update this row) or deleted (restore the guard or "
+            f"reopen the task); check `git log -S {name}`. This asserts the "
+            f"name is defined, NOT that the behaviour is still guarded "
+            f"(#651); renamed vs deleted are different states (#136)")
+    declared = len(rows)
+    resolved = declared - len(missing)
+    if not missing:
+        rep.add(OK, "landed-guards.md",
+                f"{declared} guard(s) declared, all defined in the test tree "
+                f"(name-defined only, not behaviour-guarded, #651)")
+    else:
+        rep.add(OK, "landed-guards.md",
+                f"{declared} guard(s) declared, {resolved} defined, "
+                f"{len(missing)} not defined — checked the registry, not "
+                f"every landed task (#1114)")
+
+
 # Case-insensitive on purpose, so a wrong case is FOUND and then errored rather
 # than silently reading as prose. Same reasoning as the origin marker's
 # vocabulary check: an unreadable claim must not look like an absent one.
@@ -8836,6 +8944,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_review_artifacts(dw, rep)
     check_lesson_line_citations(dw, rep)
     check_cited_shas(dw, rep)
+    check_landed_guards(dw, rep)
     check_placeholder_citations(dw, rep)
     check_citation_range(dw, rep)
     check_dev_task_citations(dw, rep)

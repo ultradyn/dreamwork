@@ -2915,3 +2915,51 @@ homes) are load-bearing for any sibling ingestion.
 - **Bodies carry the rulings verbatim.** Max's four planning rulings are
   embedded in the task bodies so they are not lost; the red-proof asserts a
   verbatim phrase survives.
+
+## `landed-guards.md` — the registry of landed tasks' guard tests (#1114)
+
+A landed task's guard test can be deleted in a later refactor while the
+ledger still reads `landed` — `landed` and `still guarded` are different
+claims. `#868` landed a regression test at `46eeba09`; a later refactor
+deleted it, and `#1084` is the recurrence that absence permitted. This file
+is the opt-in registry that makes a deleted guard **detectable** rather than
+silent. It lives at the **repo root** (lane-maintained, tracked, reviewed —
+not the single-writer ledger store).
+
+**Shape** — one guard per line, prose and `#` comments ignored:
+
+```markdown
+# Landed guards — regression tests landed tasks rely on
+- #868 test_tick_and_status_sync_agree_on_sibling_root_process_table
+```
+
+Each row is `- #NNN test_function_name`: the task id whose fix the test
+guards, and the test function `lint.py` then verifies is still **defined**
+somewhere in the test tree.
+
+**The ceiling, and it is not optional (#651).** The check asserts a test of
+this name is DEFINED; it can NEVER assert the behaviour is still guarded —
+a test gutted to `pass` keeps its name and resolves clean. A name that does
+not resolve could be RENAMED (update the row to the new name) or DELETED
+(restore the guard, or reopen the task); those are different remedies with
+opposite actions, and the check cannot tell them apart (#136), so the WARN
+names the task and the missing test for a human to decide (`git log -S
+<name>`).
+
+**Why an opt-in registry, not prose-mining.** Mining landed notes for
+`test_*` tokens was measured on the live store — 259 distinct tokens across
+267 entries, almost all test-FILE references (`test_watch`, `test_redproof`,
+…) not guard declarations — and is wallpaper. The registry is precise; its
+cost is that it only covers tasks someone registered, which is why the
+**population is reported on every run** so "checked 0" can never read as
+"checked everything" (#868). It is NOT #1122's unchecked hand-list: `lint`
+re-derives the check against the tree, so a row whose guard was deleted is
+caught here, not held silently.
+
+`lint.check_landed_guards` **WARNs** per unresolvable guard (naming the task
+and the missing test, never ERRORing — a missing guard is recoverable, like
+`check_cited_shas`'s dead sha), ERRORs on a malformed `- ` row (#136: an
+unparseable claim must not look like an absent one), and is **calm when the
+file is absent** (opt-in infrastructure, like `check_guards_registered` with
+no justfile). The clean/finding row carries the declared/resolved/not-defined
+counts so coverage cannot shrink to silence (#380).
