@@ -41,8 +41,9 @@ has already produced a confidently-wrong finding:
 3. **`python3 lint.py` is not necessarily clean in a review worktree, and some ERRORs are
    checkout-state artifacts** — the
    tracked `tasks.md` is a migration notice, the gitignored ledger store does not travel, and
-   worktree-drain state is stale. Compare **WARN row SETS** against `origin/master`. Never report
-   absolute warning counts, and label any clone-state ERROR as such rather than as a branch defect.
+   worktree-drain state is stale. Compare **WARN row SETS** against local `master`. Never report
+   absolute warning counts, and label any review-worktree-state ERROR as such rather than as a
+   branch defect.
 
 **Report, do not suppress.** The instruction is to mark these **unverifiable-from-here with the
 reason** — not to stay silent. A reviewer that reports nothing is worse than one that reports a
