@@ -3622,10 +3622,12 @@ def test_batch_entry_without_registered_worktree_is_skipped(tmp_path: Path):
     assert "skipped=1" in result.stdout, result.stdout
 
 
-def test_batch_summary_reports_all_four_outcomes_distinguishably(tmp_path: Path):
-    """#136: landed / refused / rebase-conflict / skipped are four states and
-    must stay distinguishable in the output. This test constructs a batch that
-    exercises as many of them as feasible in one run.
+def test_batch_summary_reports_all_five_outcomes_distinguishably(tmp_path: Path):
+    """#136: the batch has FIVE outcomes (landed / refused / rebase-conflict /
+    abort-failed / skipped) and they must stay distinguishable in the output.
+    This test constructs a batch that exercises four of them in one run and
+    asserts the fifth (abort-failed) is stated at zero, so a pass is never
+    silent about whether a worktree was stranded.
 
     Entries: (1) a doc-only lane that lands; (2) a doc-only lane that conflicts
     with #1 on rebase; (3) a code lane with no tests that refuses at selection;
@@ -3681,6 +3683,117 @@ def test_batch_summary_reports_all_four_outcomes_distinguishably(tmp_path: Path)
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# #1157 round 3 — the P1: a refused gate must not rewrite the lane's branch.
+# The batch runs the non-mutating refusal checks (breadcrumb, dirty main)
+# BEFORE the rebase, holding the mutex across both. These prove the lane SHA
+# is byte-identical after each refusal the reviewer named (#136: "refused and
+# left alone" is a distinct state from "refused after mutating").
+# ---------------------------------------------------------------------------
+
+
+def _stale_lane_repo(tmp_path: Path) -> tuple[Path, Path]:
+    """A repo where the lane is GENUINELY stale: master advanced after the lane
+    branched, so a ``git rebase master`` in the lane WOULD move its ref.
+
+    This is the discriminating substrate for the round-3 refusal tests: if the
+    rebase ran before the refusal check (the bug), the lane ref moves; if the
+    preflight ran first (the fix), it does not. A lane that is already up to
+    date would not move on rebase, so a test against it could not tell the two
+    apart — that is the false-green this fixture exists to close.
+    """
+    root, lane = _make_repo(tmp_path)
+    # Lane has a doc-only commit (inert, so no named-tests requirement).
+    _write(lane / ".dreamwork" / "docs" / "stale.md", "# stale\n")
+    _git(lane, "add", ".dreamwork/docs/stale.md")
+    _git(lane, "commit", "-m", "doc stale")
+    # Master advances AFTER the lane branched → the lane is stale. A rebase
+    # would replay the lane's commit onto this new tip, producing a new sha.
+    _write(root / "master-advance.txt", "master\n")
+    _git(root, "add", "master-advance.txt")
+    _git(root, "commit", "-m", "master advances")
+    return root, lane
+
+
+def test_batch_refuses_dirty_main_without_rebasing_the_lane(tmp_path: Path):
+    """#1157 round 3 P1. A dirty main checkout refuses at the batch preflight
+    (BEFORE the rebase), so the lane ref is byte-identical to its pre-batch
+    value. Asserting 'the batch refused' alone is vacuous — round 2 already
+    refuses; this asserts the STATE that makes the fix meaningful (#136).
+    """
+    root, lane = _stale_lane_repo(tmp_path)
+    lane_before = _git(root, "rev-parse", "refs/heads/lane")
+
+    # Dirty main: a tracked file modified, not committed (a real dirty
+    # checkout, not a mocked refusal — a mocked refusal proves the mock).
+    _write(root / "test_named.py", "MODIFIED\n")
+
+    result = _run_batch(root, "--entry", "lane")
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "REFUSE phase=preflight: tracked worktree state is not clean" in result.stderr
+    assert "lane: REFUSED" in result.stdout, result.stdout
+    # THE assertion — the lane ref did not move (#136).
+    lane_after = _git(root, "rev-parse", "refs/heads/lane")
+    assert lane_after == lane_before, (
+        f"dirty-main refusal moved the lane ref {lane_before[:12]} -> "
+        f"{lane_after[:12]} — a REFUSE must change nothing (#136)"
+    )
+    assert "lane-ref-mutated=False" in result.stderr, (
+        f"refusal reported a mutated lane ref: {result.stderr}"
+    )
+
+
+def test_batch_refuses_live_breadcrumb_without_rebasing_the_lane(tmp_path: Path):
+    """#1157 round 3 P1. A LIVE gate-in-flight breadcrumb (another gate is
+    running right now) refuses at the batch preflight before the rebase, so
+    the lane ref is unchanged. The breadcrumb's pid is THIS test process,
+    which is alive while the batch subprocess runs, so it reads as LIVE.
+    """
+    root, lane = _stale_lane_repo(tmp_path)
+    lane_before = _git(root, "rev-parse", "refs/heads/lane")
+    _write_live_breadcrumb(
+        root, branch="lane", merge_sha="livebeef", phase="named-tests",
+    )
+
+    result = _run_batch(root, "--entry", "lane")
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "REFUSE phase=gate-in-flight" in result.stderr
+    assert "LIVE" in result.stderr, result.stderr
+    lane_after = _git(root, "rev-parse", "refs/heads/lane")
+    assert lane_after == lane_before, (
+        f"live-breadcrumb refusal moved the lane ref {lane_before[:12]} -> "
+        f"{lane_after[:12]} (#136)"
+    )
+    assert "lane-ref-mutated=False" in result.stderr
+
+
+def test_batch_refuses_dead_breadcrumb_without_rebasing_the_lane(tmp_path: Path):
+    """#1157 round 3 P1. A DEAD gate-in-flight breadcrumb (a prior gate died
+    mid-flight) refuses at the batch preflight before the rebase, so the lane
+    ref is unchanged. The dead breadcrumb names an exact scratch worktree; the
+    refusal may recover (remove) it, but it never touches the lane ref.
+    """
+    root, lane = _stale_lane_repo(tmp_path)
+    lane_before = _git(root, "rev-parse", "refs/heads/lane")
+    _write_dead_breadcrumb(
+        root, branch="lane", merge_sha="deadbeef", phase="named-tests",
+    )
+
+    result = _run_batch(root, "--entry", "lane")
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "REFUSE phase=gate-in-flight" in result.stderr
+    assert "DEAD" in result.stderr, result.stderr
+    lane_after = _git(root, "rev-parse", "refs/heads/lane")
+    assert lane_after == lane_before, (
+        f"dead-breadcrumb refusal moved the lane ref {lane_before[:12]} -> "
+        f"{lane_after[:12]} (#136)"
+    )
+    assert "lane-ref-mutated=False" in result.stderr
+
+
 def _conflicting_lane_repo(tmp_path: Path) -> tuple[Path, Path]:
     """A base checkout plus a lane whose rebase onto master hits a REAL add/add
     conflict: master and the lane both add ``shared.txt`` with different bytes.
@@ -3707,48 +3820,58 @@ def _git_raw(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def test_rebase_interruption_is_cleaned_in_finally_leaving_worktree_clean(
+def test_post_conflict_exception_is_cleaned_in_finally_leaving_worktree_clean(
     tmp_path, monkeypatch
 ):
-    """#1157 P1, finally half. An exception raised mid-rebase — AFTER the
-    rebase has created a real paused-rebase state — must not strand the
-    worktree. Cleanup runs in a checked ``finally``, so the branch ref is
-    restored and the worktree is clean.
+    """#1157 P1, finally half. A rebase that REALLY conflicted leaves a real
+    paused-rebase state; an exception raised in the POST-conflict handling
+    seam (``_relay``, which runs AFTER ``_git(rebase)`` has returned) must not
+    strand the worktree. Cleanup runs in a checked ``finally``, so the branch
+    ref is restored and the worktree is clean.
 
-    The interruption is injected at ``_relay`` (a non-rebase seam that prints
-    output), NOT by faking ``git rebase``: the conflicting rebase and the
-    paused-rebase state it leaves are REAL (direction-2: drive a real git
-    rebase into a real conflict). Asserting 'the batch continued' would be
-    vacuous; this asserts the STATE it would continue from — no stranded
-    rebase, branch ref restored to its pre-rebase sha.
+    The conflicting rebase and the paused-rebase state it leaves are REAL
+    (direction-2: drive a real git rebase into a real conflict, not a stubbed
+    gate). Asserting 'the batch continued' would be vacuous; this asserts the
+    STATE it would continue from — no stranded rebase, branch ref restored to
+    its pre-rebase sha.
+
+    LIMIT (#651): this does NOT prove an exception raised WHILE the git
+    subprocess is still running. ``_relay`` is invoked only after
+    ``_git(... rebase ...)`` returns (dev/land_lane.py), so the interruption
+    lands between failure detection and cleanup, not during the rebase itself.
+    Driving a genuine mid-subprocess interruption would require coordinating a
+    blocking git hook with a mid-``subprocess.run`` signal, which is not done
+    here; the rename to 'post-conflict' is what makes the name agree with what
+    the assertions actually prove.
     """
     root, lane = _conflicting_lane_repo(tmp_path)
     lane_before = _git(lane, "rev-parse", "HEAD")
 
     # _relay is called right after the conflict is detected, before cleanup.
-    # Raising there simulates an interruption between rebase and abort. The
-    # conflicting rebase itself is real; only the output-printing seam raises.
+    # Raising there simulates an interruption between the returned conflict
+    # and the abort. The conflicting rebase itself is real; only the
+    # output-printing seam raises (see the LIMIT above — not a mid-git raise).
     def interrupting_relay(_result):
-        raise RuntimeError("RED-PROOF interruption: raised mid-rebase")
+        raise RuntimeError("RED-PROOF interruption: raised in post-conflict handling")
 
     monkeypatch.setattr(land_lane, "_relay", interrupting_relay)
 
     attempt = land_lane._rebase_lane_checked(lane, "master")
 
-    # The interruption was recorded (the rebase did not complete), and cleanup
-    # ran in the finally despite the exception.
+    # The exception was recorded (the rebase did not complete cleanly), and
+    # cleanup ran in the finally despite it.
     assert attempt.state == "conflict", attempt.detail
-    assert "raised mid-rebase" in attempt.detail, attempt.detail
+    assert "raised in post-conflict handling" in attempt.detail, attempt.detail
     # THE assertions — the state the batch would continue from:
     assert not land_lane._rebase_in_progress(lane), (
-        "worktree left mid-rebase after an interruption (finally did not clean up)"
+        "worktree left mid-rebase after a post-conflict exception (finally did not clean up)"
     )
     status = _git_raw(lane, "status", "--porcelain=v1", "--untracked-files=no").stdout
-    assert status == "", f"worktree dirty after interrupted rebase: {status}"
+    assert status == "", f"worktree dirty after post-conflict exception: {status}"
     lane_after = _git(lane, "rev-parse", "HEAD")
     assert lane_after == lane_before, (
-        f"branch ref moved {lane_before[:12]} -> {lane_after[:12]} after an "
-        f"interrupted rebase; the abort did not restore it"
+        f"branch ref moved {lane_before[:12]} -> {lane_after[:12]} after a "
+        f"post-conflict exception; the abort did not restore it"
     )
 
 
@@ -3847,5 +3970,3 @@ def test_batch_reports_abort_failed_loudly_with_distinct_marker(
     assert "attempted=2" in out, out
     assert "abort-failed=2" in out, out
     assert "rebase-conflict=0" in out, out
-
-
