@@ -262,6 +262,56 @@ class QuestionDualColumnSource(unittest.TestCase):
     throw new Error('scheduled poll silently dropped draft "' + droppedDraft +
       '": saved=1; restored-cards=0; absent target .qa[data-qid="' +
       encodeURIComponent(states.title) + '"] and no visible recovery');
+
+  // The recovery key is title-derived. Prove a retitle does not find the old
+  // draft, then require the notice to state that exact limitation.
+  const retitledTitle = states.title + ' retitled';
+  const retitledData = structuredClone(states.open);
+  retitledData.questions_open[0].title = retitledTitle;
+  liveData = retitledData;
+  pollArmed = false;
+  await page.goto('http://question.test/question?qid=' +
+    encodeURIComponent(retitledTitle), { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('#qfocus .qa[data-qkey="o0"] textarea');
+  const retitled = await page.evaluate(([oldTitle, newTitle]) => ({
+    oldStored: DraftStore.get(DraftStore.id('card', oldTitle))?.text || '',
+    newStored: DraftStore.get(DraftStore.id('card', newTitle))?.text || '',
+    restoredValue: document.querySelector('#qfocus textarea')?.value || '',
+  }), [states.title, retitledTitle]);
+  if (retitled.oldStored !== droppedDraft || retitled.newStored !== '' ||
+      retitled.restoredValue !== '' ||
+      !vanished.notice.includes('if this title returns'))
+    throw new Error('changed-title recovery promise disagreed with title key: ' +
+      'oldStored=' + JSON.stringify(retitled.oldStored) + ', newStored=' +
+      JSON.stringify(retitled.newStored) + ', restoredValue=' +
+      JSON.stringify(retitled.restoredValue));
+
+  // When storage refuses the vanished draft, the readonly recovery textarea
+  // is the only remaining copy. Assert its value, not merely its presence.
+  const refusalTitle = states.title + ' storage refusal';
+  const refusalData = structuredClone(states.open);
+  refusalData.questions_open[0].title = refusalTitle;
+  liveData = refusalData;
+  await page.goto('http://question.test/question?qid=' +
+    encodeURIComponent(refusalTitle), { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('#qfocus .qa[data-qkey="o0"] textarea');
+  await page.evaluate(() => {
+    Storage.prototype.setItem = () => { throw new Error('storage refused'); };
+  });
+  const refusedDraft = 'only copy after browser storage refusal';
+  await page.locator('#qfocus .qa[data-qkey="o0"] textarea').fill(refusedDraft);
+  liveData = states.missing;
+  liveMtime = 'poll-storage-refusal';
+  pollArmed = true;
+  await page.waitForSelector('#qfocus [role="alert"] textarea[readonly]',
+    { timeout: 5000 });
+  const refused = await page.evaluate(() => {
+    const copy = document.querySelector('#qfocus [role="alert"] textarea');
+    return { value: copy?.value || '', readOnly: copy?.readOnly === true };
+  });
+  if (!refused.readOnly || refused.value !== refusedDraft)
+    throw new Error('storage-refusal recovery textarea lost the exact draft: ' +
+      JSON.stringify(refused));
   if (pageErrors.length)
     throw new Error('shipping /question raised page errors: ' +
       pageErrors.join(' | '));
