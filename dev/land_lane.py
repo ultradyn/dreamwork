@@ -56,6 +56,8 @@ GATES = (
     "lint-comparison",
 )
 
+LANDED_NOT_RETIRED_EXIT = 2
+
 
 # ---------------------------------------------------------------------------
 # The gate-in-flight breadcrumb (#1120).
@@ -1876,15 +1878,17 @@ def _refuse(
     *,
     base_state: str,
     alert: str | None = None,
+    outcome: str = "REFUSE",
+    exit_code: int = 1,
 ) -> int:
-    print(f"REFUSE phase={phase}: {reason}", file=sys.stderr)
+    print(f"{outcome} phase={phase}: {reason}", file=sys.stderr)
     if alert:
         print(f"RECOVERY FAILED: {alert}", file=sys.stderr)
     print(f"examined: {examined}", file=sys.stderr)
     print(f"base: {base_state}", file=sys.stderr)
     print(f"retained: {retained}", file=sys.stderr)
     print("deliberately did not perform: dev/reap.py lane retirement", file=sys.stderr)
-    return 1
+    return exit_code
 
 
 def _refuse_dead_gate(repo: Path, crumb: GateInFlight, base: str) -> int:
@@ -2905,6 +2909,7 @@ def land(
             f"merge={merged_sha}; gate_worktree={gate_worktree}; breadcrumb retained",
             retained, base_state=_base_state(repo, base, base_sha),
             alert=f"master advanced safely, but exact scratch cleanup failed: {cleanup_fault}",
+            outcome="LANDED-NOT-RETIRED", exit_code=LANDED_NOT_RETIRED_EXIT,
         )
     _clear_gate_in_flight(repo)
     _restore_gate_signals()
@@ -2922,6 +2927,7 @@ def land(
             f"merge={merged_sha}; branch={branch_sha}; worktree={lane}",
             retained,
             base_state=_base_state(repo, base, base_sha),
+            outcome="LANDED-NOT-RETIRED", exit_code=LANDED_NOT_RETIRED_EXIT,
         )
     print(f"landed: merge={merged_sha}; branch retained={branch}; worktree retired by dev/reap.py")
     return 0
@@ -2975,8 +2981,8 @@ class BatchEntry:
 class BatchOutcome:
     """The verdict for one entry, carried to the summary table unchanged.
 
-    States must not collapse (#136): landed / refused / rebase-conflict /
-    abort-failed / skipped are five outcomes. ``rebase-conflict`` means the
+    States must not collapse (#136): landed / landed-not-retired / refused /
+    rebase-conflict / abort-failed / skipped are six outcomes. ``rebase-conflict`` means the
     rebase conflicted AND the abort restored the worktree's attachment and
     clean state; ``abort-failed``
     means a partial rebase was left that the abort could NOT clean up — a
@@ -2988,6 +2994,31 @@ class BatchOutcome:
     detail: str
     base_before: str
     base_after: str
+
+
+def _batch_outcome_after_land(
+    branch: str,
+    result: int,
+    base: str,
+    base_before: str,
+    base_after: str,
+) -> BatchOutcome:
+    """Classify by whether the merge advanced, not by a cleanup exit alone."""
+    if result == 0:
+        return BatchOutcome(
+            branch, "landed",
+            f"merge={base_after}; {base} {base_before[:12]} -> {base_after[:12]}",
+            base_before, base_after,
+        )
+    if base_after != "UNKNOWN" and base_after != base_before:
+        return BatchOutcome(
+            branch, "landed-not-retired",
+            f"merge={base_after}; {base} advanced; post-advance cleanup exited {result}",
+            base_before, base_after,
+        )
+    return BatchOutcome(
+        branch, "refused", f"gate exited {result}", base_before, base_after,
+    )
 
 
 def _parse_batch_entries(
@@ -3190,8 +3221,9 @@ def land_batch(
     and continues to the next entry; a gate refusal likewise continues.
     Every entry's verdict is reported individually in the summary.
 
-    Returns 0 iff every entry landed; 1 otherwise. A batch with zero entries
-    returns 1 — "the batch exited 0" must not be vacuous (#1157 trap).
+    Returns 0 iff every entry landed and retired, 2 when any merge landed but
+    cleanup did not retire its lane, and 1 for other non-success. A batch with
+    zero entries returns 1 — "the batch exited 0" must not be vacuous (#1157 trap).
 
     Does NOT address #997 (the serial, exclusive gate means the fleet idles
     while one branch gates): batching removes the coordinator's re-derivation
@@ -3398,21 +3430,20 @@ def land_batch(
             or "UNKNOWN"
         )
 
-        if result == 0:
-            outcome = BatchOutcome(
-                entry.branch, "landed",
-                f"{base} {base_before[:12]} -> {base_after[:12]}",
-                base_before, base_after,
-            )
+        outcome = _batch_outcome_after_land(
+            entry.branch, result, base, base_before, base_after,
+        )
+        if outcome.state == "landed":
             print(
                 f"batch: {entry.branch}: LANDED — "
-                f"{base} {base_before[:12]} -> {base_after[:12]}"
+                f"{outcome.detail}"
+            )
+        elif outcome.state == "landed-not-retired":
+            print(
+                f"batch: {entry.branch}: LANDED-NOT-RETIRED — {outcome.detail}",
+                file=sys.stderr,
             )
         else:
-            outcome = BatchOutcome(
-                entry.branch, "refused",
-                f"gate exited {result}", base_before, base_after,
-            )
             print(
                 f"batch: {entry.branch}: REFUSED — gate exited {result}",
                 file=sys.stderr,
@@ -3422,6 +3453,7 @@ def land_batch(
     # Summary: every entry's verdict is individually visible (#1157 req 4,
     # #136 states must not collapse, #868 both denominators).
     landed = sum(1 for o in outcomes if o.state == "landed")
+    landed_not_retired = sum(1 for o in outcomes if o.state == "landed-not-retired")
     refused = sum(1 for o in outcomes if o.state == "refused")
     conflicts = sum(1 for o in outcomes if o.state == "rebase-conflict")
     abort_failed = sum(1 for o in outcomes if o.state == "abort-failed")
@@ -3430,12 +3462,14 @@ def land_batch(
     print(f"\n{'=' * 60}")
     print(
         f"batch summary: attempted={len(outcomes)} landed={landed} "
-        f"refused={refused} rebase-conflict={conflicts} "
+        f"landed-not-retired={landed_not_retired} refused={refused} "
+        f"rebase-conflict={conflicts} "
         f"abort-failed={abort_failed} skipped={skipped}"
     )
     print(f"{'=' * 60}")
     markers = {
         "landed": "LANDED  ",
+        "landed-not-retired": "LANDED-NOT-RETIRED",
         "refused": "REFUSED ",
         "rebase-conflict": "CONFLICT",
         "abort-failed": "ABORTBAD",
@@ -3444,6 +3478,8 @@ def land_batch(
     for o in outcomes:
         print(f"  {o.branch}: {markers[o.state]}  {o.detail}")
 
+    if landed_not_retired:
+        return LANDED_NOT_RETIRED_EXIT
     return 0 if landed == len(outcomes) else 1
 
 

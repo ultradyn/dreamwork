@@ -1958,7 +1958,7 @@ def test_reap_refusal_is_binding_when_lane_becomes_dirty_during_gates(landing_re
         "unmerged-commits=0"
     ) in result.stderr
     assert "REFUSE: tracked path would be lost: feature.txt" in result.stderr
-    assert "REFUSE phase=retirement: dev/reap.py refused with exit 1" in result.stderr
+    assert "LANDED-NOT-RETIRED phase=retirement: dev/reap.py refused with exit 1" in result.stderr
     # Retirement is the one refusal that legitimately follows the advance, so
     # this is where the message must say master DID move rather than "unchanged".
     landed = _git(root, "rev-parse", "--verify", "refs/heads/master")
@@ -4123,7 +4123,7 @@ def test_batch_post_advance_retirement_failure_names_merge_and_distinct_outcome(
     branch_line = next(l for l in result.stdout.splitlines() if l.startswith("  lane:"))
     assert "LANDED-NOT-RETIRED" in branch_line
     assert f"merge={merged}" in branch_line
-    assert "REFUSE phase=retirement" in result.stderr
+    assert "LANDED-NOT-RETIRED phase=retirement" in result.stderr
     assert lane.is_dir(), "retirement failure must retain the lane worktree"
 
 
@@ -4169,9 +4169,9 @@ def test_batch_entry_without_registered_worktree_is_skipped(tmp_path: Path):
     assert "skipped=1" in result.stdout, result.stdout
 
 
-def test_batch_summary_reports_all_five_outcomes_distinguishably(tmp_path: Path):
-    """#136: the batch has FIVE outcomes (landed / refused / rebase-conflict /
-    abort-failed / skipped) and they must stay distinguishable in the output.
+def test_batch_summary_reports_all_six_outcomes_distinguishably(tmp_path: Path):
+    """#136: the batch has SIX outcomes (landed / landed-not-retired /
+    refused / rebase-conflict / abort-failed / skipped), kept distinguishable.
     This test constructs a batch that exercises four of them in one run and
     asserts the fifth (abort-failed) is stated at zero, so a pass is never
     silent about whether a worktree was stranded.
@@ -4210,6 +4210,7 @@ def test_batch_summary_reports_all_five_outcomes_distinguishably(tmp_path: Path)
     assert len(summary) == 1, f"expected one summary line, got {summary}"
     assert "attempted=4" in summary[0]
     assert "landed=1" in summary[0]
+    assert "landed-not-retired=0" in summary[0]
     assert "rebase-conflict=1" in summary[0]
     assert "refused=1" in summary[0]
     assert "skipped=1" in summary[0]
