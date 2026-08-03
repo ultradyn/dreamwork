@@ -35,73 +35,31 @@ import unittest
 
 import watch
 
-
-def _fn_src(src, name):
-    """Slice one top-level `function NAME(…)` body out of concatenated client JS.
-
-    The client is shipped as one concatenated script, so the slice runs from the
-    `function NAME` declaration to the next top-level `function ` at column 0.
-    """
-    start = src.find("function " + name + "(")
-    if start < 0:
-        return ""
-    nxt = src.find("\nfunction ", start + 1)
-    return src[start:nxt if nxt > 0 else len(src)]
+ROOT = pathlib.Path(watch.__file__).parent
+PLAYWRIGHT = pathlib.Path(
+    "/home/xertrov/.llm-general/skills/headless-browser-screenshots/"
+    "node_modules/playwright/index.mjs")
 
 
-class QuestionDualColumnSource(unittest.TestCase):
-    """The /question focus view ships a dual-column layout; the dashboard does
-    not. The split is CSS-driven and scoped to the focus container, because
-    `qaCard` is shared with the dashboard and is explicitly out of scope."""
+def question_browser_fixture(tmp_path):
+    """Return the production collector data and assembled shipping page."""
+    fixture = tmp_path / "fixture"
+    shutil.copytree(ROOT / "dev" / "capture" / "fixture", fixture)
+    return watch.collect(str(fixture)), watch._get_page()
 
-    def test_registered_question_emits_dual_column_container(self):
-        """The registered native view wraps its card in a dual container.
 
-        Production line: the `qdual` class on the `#qfocus` div in
-        dev/build/src/question.js Question. The dashboard question builders
-        (buildQuestions/buildDashboard) never emit `#qfocus`, so the dual
-        layout cannot reach them — asserted below as the dashboard half.
-        """
-        with tempfile.TemporaryDirectory() as td:
-            tmp = pathlib.Path(td)
-            fixture = tmp / "fixture"
-            shutil.copytree(pathlib.Path(watch.__file__).parent /
-                            "dev" / "capture" / "fixture", fixture)
-            base = watch.collect(str(fixture))
-            self.assertTrue(base["questions_open"])
-            self.assertTrue(base["answered_entries"])
-
-            title = "Fold-following production question"
-            long_body = " ".join(["read position survives native churn"] * 80)
-            opened = dict(base["questions_open"][0])
-            opened.update(title=title, body=long_body)
-            answered = dict(base["answered_entries"][0])
-            answered.update(title=title, body=long_body)
-            nearby = dict(opened)
-            nearby["title"] = title + " nearby, never a substitute"
-            states = {
-                "title": title,
-                "open": dict(base, questions_open=[opened],
-                             answered_entries=[]),
-                "answered": dict(base, questions_open=[],
-                                  answered_entries=[answered]),
-                "missing": dict(base, questions_open=[nearby],
-                                answered_entries=[]),
-            }
-            states_path = tmp / "states.json"
-            states_path.write_text(json.dumps(states), encoding="utf-8")
-            page_path = tmp / "page.html"
-            page_path.write_text(watch._get_page(), encoding="utf-8")
-
-            playwright = pathlib.Path(
-                "/home/xertrov/.llm-general/skills/"
-                "headless-browser-screenshots/node_modules/playwright/index.mjs")
-            self.assertTrue(
-                playwright.is_file(),
-                "the shipped /question resolver needs the browser-guard "
-                "Playwright install")
-            script = tmp / "question-live-registry.mjs"
-            script.write_text(r'''
+def run_question_browser_scenario(tmp_path, assembled, states, scenario,
+                                  script_name="question-route.mjs"):
+    """Boot /question with the shared Playwright routes, then run a scenario."""
+    assert PLAYWRIGHT.is_file(), (
+        "the shipped /question check needs the repo's browser-guard "
+        "Playwright install, but %s is absent" % PLAYWRIGHT)
+    states_path = tmp_path / "states.json"
+    states_path.write_text(json.dumps(states), encoding="utf-8")
+    page_path = tmp_path / "page.html"
+    page_path.write_text(assembled, encoding="utf-8")
+    script = tmp_path / script_name
+    harness = r'''
 import { chromium } from __PLAYWRIGHT__;
 import { readFileSync } from 'node:fs';
 
@@ -133,10 +91,73 @@ try {
       await route.fulfill({ status: 404, body: '' });
     }
   });
-  await page.goto('http://question.test/question?qid=' +
-    encodeURIComponent(states.title), { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(50);
+  const target = 'http://question.test/question?qid=' +
+    encodeURIComponent(states.title);
+  await page.goto(target, { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('[data-dw-mount="question"] #qfocus.qdual ' +
+    '.qa[data-qkey="o0"]');
+__SCENARIO__
+} finally {
+  await browser.close();
+}
+'''.replace("__PLAYWRIGHT__", json.dumps(str(PLAYWRIGHT)))
+    script.write_text(harness.replace("__SCENARIO__", scenario),
+                      encoding="utf-8")
+    return subprocess.run(
+        ["node", str(script), str(page_path), str(states_path)],
+        cwd=ROOT, capture_output=True, text=True, timeout=30)
 
+
+def _fn_src(src, name):
+    """Slice one top-level `function NAME(…)` body out of concatenated client JS.
+
+    The client is shipped as one concatenated script, so the slice runs from the
+    `function NAME` declaration to the next top-level `function ` at column 0.
+    """
+    start = src.find("function " + name + "(")
+    if start < 0:
+        return ""
+    nxt = src.find("\nfunction ", start + 1)
+    return src[start:nxt if nxt > 0 else len(src)]
+
+
+class QuestionDualColumnSource(unittest.TestCase):
+    """The /question focus view ships a dual-column layout; the dashboard does
+    not. The split is CSS-driven and scoped to the focus container, because
+    `qaCard` is shared with the dashboard and is explicitly out of scope."""
+
+    def test_registered_question_emits_dual_column_container(self):
+        """The registered native view wraps its card in a dual container.
+
+        Production line: the `qdual` class on the `#qfocus` div in
+        dev/build/src/question.js Question. The dashboard question builders
+        (buildQuestions/buildDashboard) never emit `#qfocus`, so the dual
+        layout cannot reach them — asserted below as the dashboard half.
+        """
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            base, assembled = question_browser_fixture(tmp)
+            self.assertTrue(base["questions_open"])
+            self.assertTrue(base["answered_entries"])
+
+            title = "Fold-following production question"
+            long_body = " ".join(["read position survives native churn"] * 80)
+            opened = dict(base["questions_open"][0])
+            opened.update(title=title, body=long_body)
+            answered = dict(base["answered_entries"][0])
+            answered.update(title=title, body=long_body)
+            nearby = dict(opened)
+            nearby["title"] = title + " nearby, never a substitute"
+            states = {
+                "title": title,
+                "open": dict(base, questions_open=[opened],
+                             answered_entries=[]),
+                "answered": dict(base, questions_open=[],
+                                  answered_entries=[answered]),
+                "missing": dict(base, questions_open=[nearby],
+                                answered_entries=[]),
+            }
+            scenario = r'''
   const runtime = await page.evaluate(() => ({
     routes: window.dwNative?.registry?.routes() || [],
     mounted: window.dwNative?.registry?.mounted() || [],
@@ -245,14 +266,10 @@ try {
     throw new Error('shipping /question raised page errors: ' +
       pageErrors.join(' | '));
   console.log('live /question registry and DOM preserved draft/focus/mode/scroll');
-} finally {
-  await browser.close();
-}
-'''.replace("__PLAYWRIGHT__", json.dumps(str(playwright))), encoding="utf-8")
-            run = subprocess.run(
-                ["node", str(script), str(page_path), str(states_path)],
-                cwd=pathlib.Path(watch.__file__).parent,
-                capture_output=True, text=True, timeout=30)
+'''
+            run = run_question_browser_scenario(
+                tmp, assembled, states, scenario,
+                script_name="question-live-registry.mjs")
             self.assertEqual(
                 run.returncode, 0,
                 "live /question browser check failed\nstdout:\n%s\nstderr:\n%s" %

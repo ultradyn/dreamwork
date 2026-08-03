@@ -39,6 +39,10 @@ import pytest
 
 import client_dist
 import watch
+from test_question_dual_column import (
+    question_browser_fixture,
+    run_question_browser_scenario,
+)
 
 ROOT = pathlib.Path(__file__).resolve().parent
 CLIENT = ROOT / "client"
@@ -186,15 +190,12 @@ def test_question_route_follows_the_fold_through_the_shipping_registry(tmp_path)
     registry.update seam. No component is imported or constructed by the
     test, so deleting the registered production symbol makes this red.
     """
-    assembled = watch._get_page()
+    base, assembled = question_browser_fixture(tmp_path)
     assert "function buildQuestion(" not in assembled, (
         "the converted route still ships its legacy buildQuestion authority")
     assert "return buildQuestion(view.param, d)" not in assembled, (
         "the router still dispatches /question to the deleted legacy builder")
 
-    fixture = tmp_path / "fixture"
-    shutil.copytree(ROOT / "dev" / "capture" / "fixture", fixture)
-    base = watch.collect(str(fixture))
     assert base["questions_open"] and base["answered_entries"], (
         "the production collector fixture needs both question shapes; a "
         "fabricated card would not exercise the shipping qaCard path")
@@ -214,53 +215,13 @@ def test_question_route_follows_the_fold_through_the_shipping_registry(tmp_path)
     missing_data = dict(base)
     missing_data.update(questions_open=[nearby], answered_entries=[])
 
-    states_path = tmp_path / "states.json"
-    states_path.write_text(json.dumps({
+    states = {
         "title": title,
         "open": open_data,
         "answered": answered_data,
         "missing": missing_data,
-    }), encoding="utf-8")
-    page_path = tmp_path / "page.html"
-    page_path.write_text(assembled, encoding="utf-8")
-
-    playwright = pathlib.Path(
-        "/home/xertrov/.llm-general/skills/headless-browser-screenshots/"
-        "node_modules/playwright/index.mjs")
-    assert playwright.is_file(), (
-        "the shipping-path /question check needs the repo's browser-guard "
-        "Playwright install, but %s is absent" % playwright)
-    script = tmp_path / "question-route.mjs"
-    source = r'''
-import { chromium } from __PLAYWRIGHT__;
-import { readFileSync } from 'node:fs';
-
-const html = readFileSync(process.argv[2], 'utf8');
-const states = JSON.parse(readFileSync(process.argv[3], 'utf8'));
-const browser = await chromium.launch({ headless: true });
-try {
-  const page = await browser.newPage();
-  const pageErrors = [];
-  page.on('pageerror', error => pageErrors.push(String(error)));
-  await page.route('**/*', async route => {
-    const url = new URL(route.request().url());
-    if (route.request().isNavigationRequest()) {
-      await route.fulfill({ status: 200, contentType: 'text/html', body: html });
-    } else if (url.pathname === '/data.json') {
-      await route.fulfill({ status: 200, contentType: 'application/json',
-        body: JSON.stringify(states.open) });
-    } else if (url.pathname === '/mtime') {
-      await route.fulfill({ status: 200, contentType: 'text/plain', body: '0' });
-    } else {
-      await route.fulfill({ status: 404, body: '' });
     }
-  });
-
-  const target = 'http://question.test/question?qid=' +
-    encodeURIComponent(states.title);
-  await page.goto(target, { waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('[data-dw-mount="question"] #qfocus.qdual ' +
-    '.qa[data-qkey="o0"]');
+    scenario = r'''
   const initialUrl = page.url();
   const open = await page.evaluate(() => ({
     routes: window.dwNative.registry.routes(),
@@ -312,14 +273,10 @@ try {
   if (pageErrors.length)
     throw new Error('shipping /question raised page errors: ' + pageErrors.join(' | '));
   console.log('question shipping path: open o0; stationary move a0; neutral missing');
-} finally {
-  await browser.close();
-}
-'''.replace("__PLAYWRIGHT__", json.dumps(str(playwright)))
-    script.write_text(source, encoding="utf-8")
-    run = subprocess.run(
-        ["node", str(script), str(page_path), str(states_path)],
-        cwd=ROOT, capture_output=True, text=True, timeout=30)
+'''
+    run = run_question_browser_scenario(
+        tmp_path, assembled, states, scenario,
+        script_name="question-route.mjs")
     assert run.returncode == 0, (
         "shipping /question browser check failed\nstdout:\n%s\nstderr:\n%s"
         % (run.stdout, run.stderr))
