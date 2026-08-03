@@ -517,20 +517,12 @@ def _review_runner(runner: list[str]) -> list[str]:
     if runner and runner[0] == "--":
         runner = runner[1:]
     executable = Path(runner[0]).name if runner else ""
-    plan_pairs = any(
-        runner[index:index + 2] == ["--permission-mode", "plan"]
-        for index in range(max(0, len(runner) - 1))
-    )
-    if executable != "ccc" or not plan_pairs or "@cx-reviewer" not in runner:
+    if executable != "ccc" or runner[1:] != [
+            "--permission-mode", "plan", "@cx-reviewer"]:
         raise DispatchFault(
             "review launch requires ccc --permission-mode plan @cx-reviewer; "
-            "reviewers read and report, so -y/--yolo and other write-capable "
+            "reviewers read and report, so extra controls and write-capable "
             "permission modes are refused"
-        )
-    if any(arg in {"-y", "--yolo"} for arg in runner):
-        raise DispatchFault(
-            "review launch requires ccc --permission-mode plan @cx-reviewer; "
-            "-y/--yolo would grant write permissions"
         )
     return runner
 

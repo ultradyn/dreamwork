@@ -1323,7 +1323,11 @@ def test_launch_review_creates_attached_branch_worktree_and_records_cwd(tmp_path
     )
 
 
-def test_launch_review_refuses_write_capable_runner_mode(tmp_path):
+@pytest.mark.parametrize("write_controls", [
+    ["-y"],
+    ["--permission-mode", "plan", "--permission-mode", "yolo"],
+])
+def test_launch_review_refuses_write_capable_runner_mode(tmp_path, write_controls):
     cli, root = _sandbox_review_cli(tmp_path)
     prompt = _review_prompt(tmp_path, root)
     env = {**os.environ, "DREAMWORK_ALLOW_PIPED_STDOUT": "1"}
@@ -1331,7 +1335,7 @@ def test_launch_review_refuses_write_capable_runner_mode(tmp_path):
         [
             sys.executable, str(cli), "--launch-review", str(prompt),
             "--review-branch", "cx-review", "--",
-            "ccc", "-y", "@cx-reviewer",
+            "ccc", *write_controls, "@cx-reviewer",
         ],
         capture_output=True,
         text=True,
