@@ -3117,3 +3117,82 @@ class TestFleetProbesAgreeOnLiveLane:
         finally:
             proc.kill()
             proc.wait()
+
+
+class TestDispatchRunnerIsAlsoLaneRunner:
+    """#1124: the dispatch concept must not drift from the lane-runner concept.
+
+    ``discover_lanes`` routes a lane-cwd process to ``found`` when
+    ``_is_ccc_proc`` is true (DISPATCH_RUNNERS); the tick line's cwd-live
+    channel sees it only when ``is_lane_runner`` is true (LANE_RUNNERS). The
+    two concepts are NOT equal -- DISPATCH_RUNNERS is narrower (ccc
+    dispatches only), and Agent-tool lanes (claude/grok/codex) are lane
+    runners but NOT dispatch runners by design (#675/#136). What MUST hold is
+    that every dispatch runner is also a lane runner: otherwise a dispatched
+    lane lands in status_sync's ``found`` bucket while the tick's cwd-live
+    channel is blind to it -- the #868 "fleet count lied" family, inverted.
+    ``_is_dispatch_runner`` (DISPATCH_RUNNERS, this module) is the bytes-level
+    parallel to ``is_lane_runner`` (LANE_RUNNERS, lane_runner_identity); both
+    are exercised below on synthesised cmdlines, not compared as tuples.
+    """
+
+    @staticmethod
+    def _cmdline(name):
+        """A NUL-separated cmdline whose argv[0] basename is ``name``."""
+        return name.encode() + b"\x00-y\x00@alias"
+
+    def test_each_dispatch_runner_classifies_as_a_lane_runner(self):
+        """Extending DISPATCH_RUNNERS forces LANE_RUNNERS to move (#1124).
+
+        For every name in DISPATCH_RUNNERS, BOTH classifiers run on a
+        synthesised cmdline whose argv[0] basename is that name:
+          - Path B (dispatch): ``_is_dispatch_runner`` reads DISPATCH_RUNNERS
+            and must be True.
+          - Path A (lane-runner): ``is_lane_runner`` reads LANE_RUNNERS and
+            must also be True.
+        A name added to DISPATCH_RUNNERS but absent from LANE_RUNNERS fails
+        here because ``is_lane_runner`` returns False for it -- the
+        assertion runs the classifier FUNCTION, not a tuple comparison.
+        """
+        # #868: a guard that examined nothing proves nothing.
+        assert status_sync.DISPATCH_RUNNERS, (
+            "DISPATCH_RUNNERS is empty -- the guard examined no runner and "
+            "proved nothing (#868)")
+        for name in status_sync.DISPATCH_RUNNERS:
+            raw = self._cmdline(name)
+            # Path B -- the dispatch classifier (reads DISPATCH_RUNNERS).
+            assert status_sync._is_dispatch_runner(raw), (
+                "%r is in DISPATCH_RUNNERS but _is_dispatch_runner rejected "
+                "it -- Path B is inert" % name)
+            # Path A -- the shared lane-runner classifier (reads LANE_RUNNERS).
+            assert lane_runner_identity.is_lane_runner(raw), (
+                "dispatch runner %r is not classified as a lane runner -- "
+                "the cwd-live channel (is_lane_runner/LANE_RUNNERS) is blind "
+                "to it, so a dispatched %r lane is counted by status_sync's "
+                "`found` but invisible to the tick line (#868 inverted): "
+                "add %r to LANE_RUNNERS" % (name, name, name))
+
+    def test_dispatch_and_lane_runner_classifiers_are_distinct(self):
+        """The subset guard is not a function-equals-itself proof (#1124).
+
+        A lane runner that is NOT a dispatch runner (claude/grok/codex --
+        Agent-tool lanes, #675) must classify DIFFERENTLY through the two
+        paths: ``is_lane_runner`` True, ``_is_dispatch_runner`` False. If
+        both returned the same answer for every input, the subset guard
+        above would prove nothing. This also pins the #136 three-state: the
+        two concepts MUST stay distinct, not collapse to one.
+        """
+        non_dispatch = [n for n in lane_runner_identity.LANE_RUNNERS
+                        if n not in status_sync.DISPATCH_RUNNERS]
+        assert non_dispatch, (
+            "LANE_RUNNERS == DISPATCH_RUNNERS -- the three-state distinction "
+            "(#136) has collapsed and the subset guard above cannot prove "
+            "the classifiers are distinct")
+        probe = non_dispatch[0]
+        raw = self._cmdline(probe)
+        assert lane_runner_identity.is_lane_runner(raw), (
+            "baseline: %r must be a lane runner" % probe)
+        assert not status_sync._is_dispatch_runner(raw), (
+            "%r is a lane runner but not a dispatch runner; the dispatch "
+            "classifier must REJECT it, or both paths are the same function "
+            "and the subset guard proves nothing" % probe)
