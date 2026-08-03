@@ -733,6 +733,90 @@ def test_clock_advisory_exemption_does_not_swallow_other_warn_change(
     _assert_retained(root, lane)
 
 
+def _capture_expired_sync_conflict_receipt_rows(
+        tmp_path, monkeypatch, *receipts):
+    """Render one real expired advisory for each tracked receipt value."""
+    t = tmp_path / "sync-conflict-receipt-identity-fixture"
+    t.mkdir()
+    _git(t, "init", "-b", "master")
+    conflict = (t / ".git" / "wt" / "cache" / "ci-status" /
+                "identity.sync-conflict-20260803-180706-QJRKU52.json")
+    _write(conflict, "known stale cache evidence\n")
+    digest = lint.hashlib.sha256(conflict.read_bytes()).hexdigest()
+    relative = "wt/cache/ci-status/" + conflict.name
+    monkeypatch.setattr(
+        lint, "worktree_roots",
+        lambda _base: (t / "missing-new-worktrees", t / "missing-old-worktrees"),
+    )
+    monkeypatch.setattr(
+        lint, "_sync_conflict_today",
+        lambda: date.fromisoformat("2026-08-20"),
+    )
+
+    rows = []
+    for receipt in receipts:
+        monkeypatch.setattr(
+            lint, "_SYNC_CONFLICT_ACKNOWLEDGEMENTS",
+            {(relative, digest): receipt},
+        )
+        rep = lint.Report()
+        lint.check_sync_conflict_files(t / ".dreamwork", rep)
+        rows.append(next(line for line in rep.render().splitlines()
+                         if "sync-conflict" in line))
+    return rows
+
+
+def _comparable_warn_delta(before, after):
+    before_compared, before_excluded, after_compared, after_excluded = (
+        land_lane._partition_warn_row_sets(before, after)
+    )
+    before_index = land_lane._warn_row_index(before_compared)
+    after_index = land_lane._warn_row_index(after_compared)
+    added = set(after_index) - set(before_index)
+    removed = set(before_index) - set(after_index)
+    counts = (
+        len(before_compared), len(before_excluded),
+        len(after_compared), len(after_excluded),
+    )
+    return counts, added, removed
+
+
+def test_expired_receipt_reason_change_produces_gate_refusal_delta(
+        tmp_path, monkeypatch):
+    """Tracked reason text is compared even inside the clock advisory."""
+    before, after = _capture_expired_sync_conflict_receipt_rows(
+        tmp_path,
+        monkeypatch,
+        ("2026-08-03", "2026-08-10", "reason A"),
+        ("2026-08-03", "2026-08-10", "reason B"),
+    )
+
+    counts, added, removed = _comparable_warn_delta([before], [after])
+
+    assert counts == (1, 1, 1, 1)
+    assert (len(added), len(removed)) == (1, 1), (
+        "expired receipt reason changed from A to B unnoticed: the gate's "
+        "clock exemption swallowed tracked acknowledgement metadata")
+
+
+def test_expired_receipt_date_change_produces_gate_refusal_delta(
+        tmp_path, monkeypatch):
+    """Tracked reviewed/deadline dates are compared after age normalisation."""
+    before, after = _capture_expired_sync_conflict_receipt_rows(
+        tmp_path,
+        monkeypatch,
+        ("2026-08-01", "2026-08-05", "same reason"),
+        ("2026-08-02", "2026-08-06", "same reason"),
+    )
+
+    counts, added, removed = _comparable_warn_delta([before], [after])
+
+    assert counts == (1, 1, 1, 1)
+    assert (len(added), len(removed)) == (1, 1), (
+        "expired receipt reviewed/deadline dates changed unnoticed: the "
+        "gate's clock exemption swallowed tracked acknowledgement metadata")
+
+
 # ---------------------------------------------------------------------------
 # #1040: coordinator authorisation for an intended WARN row-set change.
 #
