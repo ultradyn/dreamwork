@@ -585,8 +585,8 @@ def facts(target: str) -> str:
 
     return SEP.join([
         _guarded(lambda: _fleet_fact(target), "fleet"),
-        _guarded(lambda: _worktrees_size_fact(target), "worktrees"),
         delegation,
+        _guarded(lambda: _worktrees_size_fact(target), "worktrees"),
         _guarded(lambda: _open_fact(target), "open"),
     ] + posture_parts + [_guarded(lambda: _goal_fact(target), "goal"),
                          _stamp_fact()])

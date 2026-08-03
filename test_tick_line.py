@@ -34,6 +34,7 @@ PULSE = "[10:15] dream tick (ud-dreamwork): run the tick flow"
 def make_target(tmp_path, *, posture, open_ids=(1, 2, 3), dreamers=None,
                 policy=None, run_mode="hot", lanes=()):
     """A minimal target dir: run-mode, posture, status.json, tasks.md."""
+    (tmp_path.parent / ".worktrees").mkdir(parents=True, exist_ok=True)
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     dw = tmp_path / ".dreamwork"
     dw.mkdir(parents=True, exist_ok=True)
@@ -201,7 +202,6 @@ class TestWorktreeSizeDirection:
     def _target(tmp_path):
         target = Path(make_target(tmp_path / "repo", posture=HOT))
         root = tmp_path / ".worktrees"
-        root.mkdir()
         return target, root
 
     def test_growth_flags_regression_and_shrink_does_not(self, tmp_path):
