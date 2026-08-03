@@ -466,6 +466,30 @@ def test_expected_inputs_accepts_a_tree_without_wrapper_companions(tmp_path):
     assert not set(companions) & set(inputs)
 
 
+def test_readable_empty_wrapper_companion_directory_is_an_empty_set(tmp_path):
+    root = _clone(tmp_path)
+    shutil.rmtree(root / client_dist.DS_SOURCE_DIR)
+    (root / client_dist.DS_SOURCE_DIR).mkdir()
+
+    assert client_dist.ds_sources(str(root)) == []
+    assert client_dist.expected_inputs(str(root)) is not None
+
+
+def test_unreadable_wrapper_companion_directory_refuses(tmp_path, monkeypatch):
+    root = _clone(tmp_path)
+    real_scandir = os.scandir
+    companion_dir = str(root / client_dist.DS_SOURCE_DIR)
+
+    def refuse_companion_dir(path):
+        if os.fspath(path) == companion_dir:
+            raise PermissionError("wrapper companion directory is unreadable")
+        return real_scandir(path)
+
+    monkeypatch.setattr(client_dist.os, "scandir", refuse_companion_dir)
+    assert client_dist.ds_sources(str(root)) is None
+    assert client_dist.expected_inputs(str(root)) is None
+
+
 def test_a_new_native_source_that_the_manifest_never_saw_is_stale(tmp_path):
     """RED PROOF: the P3-shaped mistake, exactly.
 
