@@ -165,3 +165,26 @@ text shape cannot establish contradiction, scope completeness, or world truth.
 - **`lessons_index.py --act` is now bounded to six plus an explicit `N more` and
   an `--all` command** (`#1194`). It was printing 423–5189 lines per act. When an
   act's top six look wrong for the task at hand, run `--all` rather than assuming.
+
+## Reaping review worktrees (adopted 2026-08-04, from #1180's IGC)
+
+`#1180` landed `dev/reap_sweep.py` — report-only by default, `--apply` explicit, exact-basename holds
+in `dev/reap-holds.txt` loaded fail-closed, `.gate-*` always skipped, main checkout excluded
+structurally (`worktrees[1:]`). Run `python3 dev/reap_sweep.py` on a quiet tick to see
+`reaped/reapable/refused/held/live`; nothing is removed without `--apply`.
+
+**Its IGC also named a coordinator-custodial trigger that no lane can land, and I am adopting it:**
+**reap a review worktree when I read that review's verdict.** That has the smaller apply-time
+first-error blast radius than a periodic sweep (one known-finished worktree at a time, at the moment I
+have just read its output), and the periodic sweep is the fallback for everything it misses. Both, not
+one instead of the other.
+
+- **When a brief deliberately departs from its task record's own conclusion, SAY SO IN THE BRIEF.**
+  `#1180`'s record concludes a sweep is a bail-out and review-exit is the remedy; my brief closed off
+  review-exit (coordinator-custodial, not lane-landable) and mandated the sweep without saying it was
+  departing. The lane had to reconcile two authoritative texts, and said so.
+- **Do not file a finding from a summary line without checking the mechanism.** `reap_sweep`'s report
+  lists `REFUSED master`, which looks like the main checkout being caught by luck rather than excluded
+  by design. It is not — that is a *linked* worktree at `/tmp/glm1038-master-review.ep08Nq/master`
+  whose basename is coincidentally `master`, and the main checkout is excluded structurally. One
+  command settled it.
