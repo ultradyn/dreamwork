@@ -17,6 +17,7 @@ import subprocess
 import sys
 import time
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence
 
@@ -62,6 +63,43 @@ class Distribution:
     maximum_ms: float
     mean_ms: float
     stdev_ms: float
+
+
+# --- Baseline recording and comparison ----------------------------------
+#
+# The benchmark *measures* (noisy); recording and comparison are
+# *deterministic* transforms over a result dict, so they are testable
+# with fixed sample arrays — never by slowing the benchmark down.
+
+BASELINE_SCHEMA = 2
+REGRESSION_TOLERANCE = 0.25  # target-minus-interpreter p50 increase
+
+_COMPARISON_EXIT_CODES = {
+    "no_regression": 0,
+    "regression": 1,
+    "conditions_not_comparable": 3,
+}
+
+
+@dataclass(frozen=True)
+class Comparison:
+    """Structured result of comparing one measurement to a recorded baseline.
+
+    The primary metric is always ``target_minus_interpreter_p50_ms``: the
+    part of startup the codebase controls, with the interpreter floor
+    subtracted so a machine change does not masquerade as a code change.
+    """
+
+    state: str
+    metric: str
+    baseline_p50_ms: float | None
+    measured_p50_ms: float | None
+    delta_ms: float | None
+    delta_pct: float | None
+    detail: str
+
+    def exit_code(self) -> int:
+        return _COMPARISON_EXIT_CODES[self.state]
 
 
 def _percentile(sorted_values: Sequence[float], percentile: float) -> float:
@@ -274,6 +312,167 @@ def format_report(result: dict[str, object]) -> str:
     return "\n".join(lines)
 
 
+def capture_context() -> dict[str, object]:
+    """Live host and load context for a baseline record.
+
+    The load average conflates blocked-on-swap with running, so it is
+    *context for human judgment*, never a gate the comparison refuses on.
+    """
+    uname = os.uname()
+    load = os.getloadavg()
+    return {
+        "python_version": ".".join(str(v) for v in sys.version_info[:3]),
+        "python_major_minor": ".".join(str(v) for v in sys.version_info[:2]),
+        "platform": f"{uname.sysname} {uname.release} {uname.machine}",
+        "hostname": uname.nodename,
+        "cpu_count": os.cpu_count(),
+        "loadavg_1m": load[0],
+        "loadavg_5m": load[1],
+        "loadavg_15m": load[2],
+    }
+
+
+def make_baseline(
+    result: dict[str, object], context: dict[str, object] | None = None
+) -> dict[str, object]:
+    """Wrap a measurement *result* with host/load context into a baseline record.
+
+    If *context* is ``None`` it is captured live; pass a fixed dict from a
+    test to keep the function deterministic.
+    """
+    if context is None:
+        context = capture_context()
+    return {
+        "schema": BASELINE_SCHEMA,
+        "kind": "startup-baseline",
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "context": context,
+        "measured": result,
+    }
+
+
+def read_baseline_file(path: str | os.PathLike[str]) -> tuple[str, dict | None]:
+    """Read a baseline file without raising for file-state issues.
+
+    Returns ``(state, data)`` where *state* is one of ``'absent'``,
+    ``'empty'``, ``'broken'``, ``'ok'``.  Only the ``'ok'`` state yields a
+    populated *data* dict.
+    """
+    p = Path(path)
+    if not p.exists():
+        return ("absent", None)
+    raw = p.read_text()
+    if not raw.strip():
+        return ("empty", None)
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return ("broken", None)
+    if (
+        not isinstance(data, dict)
+        or data.get("schema") != BASELINE_SCHEMA
+        or data.get("kind") != "startup-baseline"
+        or "measured" not in data
+        or "context" not in data
+    ):
+        return ("broken", None)
+    return ("ok", data)
+
+
+def compare_records(
+    measured: dict[str, object], baseline: dict[str, object]
+) -> Comparison:
+    """Compare two baseline-shaped records by target-minus-interpreter p50.
+
+    Refuses to judge (``conditions_not_comparable``) when the Python
+    major.minor or the target module differs, because the interpreter floor
+    or the import graph is no longer the same thing.  Load average is
+    reported in *detail* for the human but never gates the verdict — any
+    load threshold is a tuned literal that reds on a busy box for the wrong
+    reason.
+    """
+    metric = "target_minus_interpreter_p50_ms"
+    m = measured["measured"]
+    b = baseline["measured"]
+    m_ctx = measured["context"]
+    b_ctx = baseline["context"]
+
+    def _refuse(reason: str) -> Comparison:
+        return Comparison(
+            state="conditions_not_comparable",
+            metric=metric,
+            baseline_p50_ms=b.get("target_minus_interpreter_p50_ms"),
+            measured_p50_ms=m.get("target_minus_interpreter_p50_ms"),
+            delta_ms=None,
+            delta_pct=None,
+            detail=reason,
+        )
+
+    if m["module"] != b["module"]:
+        return _refuse(
+            f"module mismatch: measured {m['module']!r} vs baseline {b['module']!r}"
+        )
+    if m_ctx["python_major_minor"] != b_ctx["python_major_minor"]:
+        return _refuse(
+            f"python major.minor mismatch: measured "
+            f"{m_ctx['python_major_minor']} vs baseline "
+            f"{b_ctx['python_major_minor']} — interpreter floor moved"
+        )
+
+    m_net = m["target_minus_interpreter_p50_ms"]
+    b_net = b["target_minus_interpreter_p50_ms"]
+    delta = m_net - b_net
+    pct = (delta / b_net * 100.0) if b_net else None
+    m_load = m_ctx.get("loadavg_1m", float("nan"))
+    b_load = b_ctx.get("loadavg_1m", float("nan"))
+    load_note = (
+        f"load 1m: measured {m_load:.2f}, baseline {b_load:.2f} "
+        "(reported for judgment; not a gate)"
+    )
+
+    if delta > b_net * REGRESSION_TOLERANCE:
+        return Comparison(
+            state="regression",
+            metric=metric,
+            baseline_p50_ms=b_net,
+            measured_p50_ms=m_net,
+            delta_ms=delta,
+            delta_pct=pct,
+            detail=(
+                f"target-minus-interpreter p50 regressed: "
+                f"{b_net:.3f} → {m_net:.3f} ms (+{delta:.3f} ms). {load_note}"
+            ),
+        )
+    direction = "improved" if delta < 0 else "within tolerance"
+    return Comparison(
+        state="no_regression",
+        metric=metric,
+        baseline_p50_ms=b_net,
+        measured_p50_ms=m_net,
+        delta_ms=delta,
+        delta_pct=pct,
+        detail=(
+            f"target-minus-interpreter p50 {direction}: "
+            f"{b_net:.3f} → {m_net:.3f} ms ({delta:+.3f} ms). {load_note}"
+        ),
+    )
+
+
+def format_comparison(cmp: Comparison) -> str:
+    lines = [
+        f"startup comparison: {cmp.metric}",
+        f"state: {cmp.state}",
+    ]
+    if cmp.baseline_p50_ms is not None:
+        lines.append(f"baseline p50: {cmp.baseline_p50_ms:.3f} ms")
+    if cmp.measured_p50_ms is not None:
+        lines.append(f"measured p50: {cmp.measured_p50_ms:.3f} ms")
+    if cmp.delta_ms is not None:
+        lines.append(f"delta: {cmp.delta_ms:+.3f} ms ({cmp.delta_pct:+.1f}%)")
+    lines.append(cmp.detail)
+    return "\n".join(lines)
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("module", help="dotted module name to import")
@@ -286,6 +485,18 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="working directory and import root (default: repository root)",
     )
     parser.add_argument("--json", action="store_true", dest="as_json")
+    parser.add_argument(
+        "--record",
+        metavar="PATH",
+        default=None,
+        help="write the result as a dated baseline record to PATH",
+    )
+    parser.add_argument(
+        "--compare",
+        metavar="PATH",
+        default=None,
+        help="compare this run against the baseline record at PATH",
+    )
     return parser.parse_args(argv)
 
 
@@ -302,6 +513,29 @@ def main(argv: Sequence[str] | None = None) -> int:
     except BenchmarkError as exc:
         print(f"startup_benchmark.py: REFUSED: {exc}", file=sys.stderr)
         return 2
+
+    if args.record:
+        record = make_baseline(result)
+        Path(args.record).write_text(
+            json.dumps(record, indent=2, sort_keys=True) + "\n"
+        )
+        print(f"baseline recorded → {args.record}", file=sys.stderr)
+
+    if args.compare:
+        state, data = read_baseline_file(args.compare)
+        if state != "ok":
+            code = {"absent": 4, "empty": 5, "broken": 6}[state]
+            print(
+                f"startup_benchmark.py: REFUSED: baseline {state}: "
+                f"{args.compare}",
+                file=sys.stderr,
+            )
+            return code
+        measured_record = make_baseline(result)
+        cmp = compare_records(measured_record, data)
+        print(format_comparison(cmp))
+        return cmp.exit_code()
+
     if args.as_json:
         print(json.dumps(result, indent=2, sort_keys=True))
     else:
