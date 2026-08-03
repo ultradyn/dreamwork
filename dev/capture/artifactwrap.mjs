@@ -162,7 +162,34 @@ const INSTRUMENT = `(() => {
 })()`;
 
 const WIDTHS = [1280, 900, 390];
-const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl'] });
+const br = await chromium.launch({
+  args: ['--use-gl=swiftshader', '--enable-webgl'],
+  ignoreDefaultArgs: ['--hide-scrollbars'],
+});
+
+/* Refuse to grade horizontal geometry through Playwright's normally hidden
+   scrollbar. Both halves matter: a zero-width reading on a page with no
+   vertical overflow means the instrument could not run, not that it passed. */
+{
+  const pctx = await br.newContext({ viewport: { width: 1280, height: 900 } });
+  const ppage = await pctx.newPage();
+  await ppage.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+  const sb = await ppage.evaluate(() => ({
+    width: window.innerWidth - document.documentElement.clientWidth,
+    scrollH: document.documentElement.scrollHeight,
+    innerH: window.innerHeight,
+  }));
+  notes.push('scrollbar precondition: ' + JSON.stringify(sb));
+  ok(`scrollbar precondition: dashboard genuinely overflows vertically `
+   + `(${sb.scrollH} > ${sb.innerH}) — else scrollbar width could not be tested`,
+     sb.scrollH > sb.innerH);
+  ok(`scrollbar precondition: this browser's scrollbar consumes width `
+   + `(sb=${sb.width}px) — else --hide-scrollbars survived ignoreDefaultArgs `
+   + `and every horizontal-overflow verdict below is blind`,
+     sb.scrollH > sb.innerH && sb.width > 0);
+  await pctx.close();
+}
+
 let served = false;
 for (const w of WIDTHS) {
   const ctx = await br.newContext({ viewport: { width: w, height: 900 } });
