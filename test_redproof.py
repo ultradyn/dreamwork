@@ -1849,7 +1849,9 @@ class TestKnownHole:
 
         entries, _ = rp._read_registry(lane)
         rep = rp.scan_history(lane, entries)
-        assert rep["commits"] == 3, rep
+        assert rep["commits"] == 3, (
+            "registration boundary did not extend mutable merge-base range: "
+            f"{rep}")
         assert [h["commit"] for h in rep["hits"]] == [poisoned], rep
 
         # ...while master demonstrably holds the injection, forever.
