@@ -6503,3 +6503,41 @@ decision on it.
 **Deferral is where a partial fix becomes indistinguishable from a complete one.** Every later round
 read `#1049` as a task whose remaining work was tracked. It was not, and the round that closed the
 visible symptom is precisely the round after which nobody looks again.
+
+## The header a tool parses is the half of my scope declaration that cannot be wrong in the way that matters
+
+2026-08-04. Two `Lane-owns:` headers of mine failed within the hour, in opposite ways, and the contrast
+is the lesson.
+
+**The loud one.** `#1071`'s brief wrapped `Lane-owns:` across two lines and put a parenthetical inside
+it — `watch.py (DATA_SIBLINGS` / `rows only), client_dist.py, …`. `just launch-lane` refused before
+spawning anything:
+
+    REFUSE phase=brief-generation: scope derivation FAULT: selected 0 existing test(s) from
+    1 existing non-inert Lane-owns file(s) by 4 rules [name=0 import=0 map=0] —
+    an empty selection is indistinguishable from broken derivation
+
+Perfect refusal. The line parsed to one path, the tool could not tell "this lane genuinely owns no
+tests" from "this header is malformed", and it said exactly that instead of guessing. Cost: two
+minutes.
+
+**The quiet one.** `#1049` round 11's brief listed neither `client/style.css` nor `watch-design.md`,
+while its own P2b required styling **and** an authoritative styleguide entry. Every path in that header
+was real, existing, and correctly formatted, so nothing refused anything. The lane did the work, then
+told me in its dogfood report — after the round.
+
+**The tool checks that the paths resolve. It cannot check that they are the right paths.** Syntactic
+completeness is machine-verifiable and therefore never survives; semantic completeness is not, and
+therefore ships. So the refusal I got is not evidence the header was good — a clean dispatch tells me
+only that I wrote paths that exist.
+
+The practical form: **derive `Lane-owns:` from the deliverables, not from memory of the diff.** Read
+back each numbered deliverable and ask which file it lands in. P2b said *style it and document it in the
+authoritative styleguide* — two files, both nameable straight off the sentence, neither in my header.
+That derivation takes seconds and is the only check there is.
+
+And the smaller consequence, worth keeping because it fooled me twice in one session: **an empty result
+from a failed command is indistinguishable from an empty result.** `ledger.py list --status open |
+grep …` returned nothing, and I filed the nothing as a measurement. `list` takes `--state`. The exit
+status died in the pipe; the grep read an empty stdin and reported honestly on it. Check the verb's own
+`--help` before quoting its output as evidence, and never take an exit status through a pipe.
