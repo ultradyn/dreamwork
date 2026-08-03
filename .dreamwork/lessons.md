@@ -6101,3 +6101,49 @@ Note the asymmetry that made this survivable: the two live lanes are not pointed
 worst case is a lane that stops and reports a refuted premise, which is the behaviour a `#1166` lane
 already demonstrated and which I want. A miscitation degrades to a stopped lane, not to wrong work.
 That is the only reason a 1-in-3 audit rate has cost this loop rounds rather than correctness.
+
+## Two green exits from commands that did not run the thing, both mine, ten minutes apart (2026-08-03, #1006/#1042, mine, measured)
+
+Diagnosing `#1006`'s gate refusal I ran `pytest test_watch.py::TestNativeGoals::test_page_wires_one_native_goals_authority`. The class name was wrong. pytest printed
+`ERROR: not found ... no tests ran in 0.46s` and **exited 0**. My harness reported
+`completed (exit code 0)` and I came within one step of recording that the assertion passes. A mistyped
+node id is not a passing test, but at the exit-code layer the two are the same value.
+
+Minutes later, auditing `#1042`'s abandoned branch, I ran
+`python3 dev/redproof.py check --require 1 --lane glm-1042r6elem 2>&1 | tail -12; echo "check_exit=$?"`.
+It printed `check: FAULT — 1 injection(s) were required but no redproof registry could be located`, and
+then `check_exit=0` — because `$?` after a pipeline is **`tail`'s** status, not the tool's. The FAULT
+text was right there on screen above a line asserting success. (The work was fine: the registry existed
+under the raw launch identity, `#1153` again. But I learned that by reading the fault's own prose, not
+from the status I had just printed.)
+
+Both are the same defect and it is this session's whole theme in the coordinator's own hands: **an exit
+code answers "did this process end without error", and I keep reading it as "did the check find the
+thing".** The two agree on the healthy path, which is exactly why the habit survives.
+
+Three rules, all cheap:
+
+- **Never take an exit status through a pipe.** Redirect to a file and check `$?` on the bare command,
+  or read `PIPESTATUS[0]`. `cmd | tail; echo $?` is a status assertion about `tail`.
+- **Quote the population, not just the verdict.** `no tests ran` and `56 passed` both exit 0; only one
+  of them is evidence. Every brief already demands lanes quote collected counts — the coordinator owes
+  the same discipline to its own diagnostic runs.
+- **When a tool prints a FAULT and a zero, the FAULT is the finding.** Prose from the tool that
+  measured the thing outranks a status computed by the shell around it.
+
+## A branch that is already stale is free to stale again — so batch coordinator commits, and take the window right after one (2026-08-03, #1055, mine)
+
+Committing to `lessons.md` re-stales every finished-but-unlanded branch, and the gate's preflight
+refuses a branch that is not rebased onto current master. I have now cost myself a gate attempt this
+way once and re-staled four completed branches a second time.
+
+The obvious reading is "commit less". The useful reading is about **timing**, and it inverts the
+intuition: the whole cost is paid by the FIRST commit after a branch finishes. Once four branches are
+one commit behind, they each need a rebase before gating, and a second, third, or tenth coordinator
+commit adds nothing to that bill. So the expensive moment is a lone commit dropped while branches sit
+gate-ready, and the cheap moment is the interval immediately AFTER one — when everything is already
+stale and the rebase is owed regardless.
+
+The practice: hold coordinator-custodial commits in a batch, and spend them in a window that is already
+dirty — right after an unavoidable commit, or while reviews are in flight and nothing is gateable — not
+in the quiet minute when four branches are sitting ready to land.
