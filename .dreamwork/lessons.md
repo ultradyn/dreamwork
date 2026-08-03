@@ -6219,3 +6219,41 @@ Worth noting what did work: the lane's `handoff` derived **0 injections owed fro
 `check` reported the honest form — *"nothing was owed, so an absent registry is the expected state —
 NOT a verification of restoration and NOT an all-clear."* A tool that distinguishes "nothing to prove"
 from "proved nothing" is why a zero-commit round is legible at all.
+
+## A blanket "stop if a premise is false" turns a partial refutation into a total stop
+
+Occasioned by `#1155` round 9.
+
+My round-9 brief had three deliverables. D1 was a boundary statement, D3 a drift test pinning it, and
+D2 asked for the `WEDGED` reason to be qualified where it renders — which I said was
+`tick_line.py:325`. The brief closed with the instruction I have been putting on every brief for a
+week: **"If a premise here is false, STOP and report."**
+
+D2's premise was false. `tick_line.py:325` does `verdicts = {v.lane: v.state ...}`, discarding every
+reason, and `_LIVENESS_CLAUSE_SPECS` renders its own hardcoded parenthetical. The lane measured it,
+refused to wire two unrelated strings together and call it one pinned behaviour, and stopped — **the
+whole round**, including D1 and D3, which never depended on D2 at all. It even reverified all seven
+boundary lines for D1 in the course of stopping, then wrote none of it down.
+
+The lane did exactly what I asked. The defect is mine: **the stop instruction had no scope.** A brief
+that lists independent deliverables and then attaches one global premise-check makes every premise
+load-bearing for every deliverable. The instruction that exists to save a round spent building on
+sand instead spent a round's worth of verified analysis and committed none of it.
+
+The fix is to give each deliverable its own premise and its own stop:
+
+- **Scope the stop to the deliverable whose premise failed.** "Drop that deliverable, do the others,
+  and say which you dropped and why." Reserve the whole-round stop for a premise about the *branch* —
+  if the starting tree is not what the brief describes, nothing downstream is safe.
+- **A premise-stop should still commit what it verified.** Round 9's re-check of seven boundary lines
+  was real work with a real result, and the report is the only place it survives.
+
+The instruction was right; five lanes stopping on false premises today is five rounds saved. It just
+needed to name what it was stopping.
+
+There is a second-order version of this worth watching for. My D2 premise was false, but round 9's
+measurement of *why* it was false produced a better finding than D2 asked for: `lane_liveness.py:227`
+states that `reason` exists *"so the tick line can carry it"*, and nothing outside that module reads
+the field. A docstring asserting an unwired consumer is the same defect shape the task has been
+chasing all along. **A refuted premise often has the real finding sitting underneath it** — the brief
+should ask for that, not just for the stop.
