@@ -259,14 +259,16 @@ def test_unavailable_guard_selection_refuses_instead_of_vacuously_running(
 
 
 @pytest.mark.parametrize(
-    "lint_body",
+    ("lint_body", "failure_kind"),
     [
-        "raise SystemExit(2)\n",
-        "print('lint ran but omitted its trailer')\n",
-        "print('clean (1 warning(s))')\n",
+        ("raise SystemExit(2)\n", "lint-failed"),
+        ("print('lint ran but omitted its trailer')\n", "report-invalid"),
+        ("print('clean (1 warning(s))')\n", "report-invalid"),
     ],
 )
-def test_missing_warn_baseline_refuses_before_merge(landing_repo, lint_body):
+def test_missing_warn_baseline_refuses_before_merge(
+    landing_repo, lint_body, failure_kind
+):
     root, lane = landing_repo
     _write(root / "lint.py", lint_body)
     _git(root, "add", "lint.py")
@@ -277,9 +279,72 @@ def test_missing_warn_baseline_refuses_before_merge(landing_repo, lint_body):
     result = _run(root, "test_named.py")
 
     assert result.returncode == 1
-    assert "REFUSE phase=lint-baseline: WARN baseline was not captured" in result.stderr
+    assert f"REFUSE phase=lint-baseline/{failure_kind}:" in result.stderr
     _assert_base_unmoved(root, before)
     _assert_retained(root, lane)
+
+
+@pytest.mark.parametrize(
+    ("lint_result", "git_result", "outcome", "phase", "evidence"),
+    [
+        (
+            subprocess.CompletedProcess(["lint"], 2, "lint stdout\n", "lint exploded\n"),
+            subprocess.CompletedProcess(["git"], 0, "", ""),
+            land_lane.LintOutcome.LINT_FAILED,
+            "lint-comparison/lint-failed",
+            "lint stdout | lint exploded",
+        ),
+        (
+            subprocess.CompletedProcess(["lint"], 0, "lint omitted trailer\n", ""),
+            subprocess.CompletedProcess(["git"], 0, "", ""),
+            land_lane.LintOutcome.REPORT_INVALID,
+            "lint-comparison/report-invalid",
+            "lint omitted trailer",
+        ),
+        (
+            subprocess.CompletedProcess(["lint"], 2, "", "lint saw git fail\n"),
+            subprocess.CompletedProcess(["git"], 128, "", "object database unreadable\n"),
+            land_lane.LintOutcome.REPOSITORY_UNREADABLE,
+            "lint-comparison/repository-unreadable",
+            "object database unreadable",
+        ),
+    ],
+)
+def test_lint_unavailable_states_have_caller_visible_identities(
+    monkeypatch, tmp_path, lint_result, git_result, outcome, phase, evidence
+):
+    """#1133: three refusals, not one prose-only unavailable sentinel."""
+    monkeypatch.setattr(land_lane, "_run", lambda *args, **kwargs: lint_result)
+    monkeypatch.setattr(land_lane, "_git", lambda *args, **kwargs: git_result)
+
+    reading = land_lane._lint(tmp_path)
+    refusal_phase, reason = land_lane._lint_refusal(
+        reading, "lint-comparison", "post-gates"
+    )
+
+    assert reading.outcome is outcome
+    assert refusal_phase == phase
+    assert evidence in reason
+
+
+def test_clean_lint_reading_does_not_run_repository_failure_probe(
+    monkeypatch, tmp_path
+):
+    lint_result = subprocess.CompletedProcess(
+        ["lint"], 0, "  WARN  expected row\nclean (1 warning(s))\n", ""
+    )
+    monkeypatch.setattr(land_lane, "_run", lambda *args, **kwargs: lint_result)
+    monkeypatch.setattr(
+        land_lane,
+        "_git",
+        lambda *args, **kwargs: pytest.fail("clean lint must not need a Git probe"),
+    )
+
+    reading = land_lane._lint(tmp_path)
+
+    assert reading.outcome is land_lane.LintOutcome.CLEAN
+    assert reading.rows == ("  WARN  expected row",)
+    assert reading.repository_probe is None
 
 
 def test_new_warn_row_refuses_and_retains_lane(landing_repo):
