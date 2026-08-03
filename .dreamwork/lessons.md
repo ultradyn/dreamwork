@@ -6923,3 +6923,47 @@ remembered; it was the amendment eleven lines down that I never saw.
 The corollary for briefs: **when the rule you are about to invoke is what makes
 a whole class of answers inadmissible, that is the citation to verify FIRST**,
 because it is the one that does its work by silence.
+
+## My own checklist is not a thing I have read; it is a thing I wrote (2026-08-04, #644/#1191)
+
+Today I broke, repeatedly, a rule that was already written in
+`briefs/coordinator-checklist.md`, in my own words, before the day started.
+
+Line 124 says: *"Never quote a WARN-count or a 'known false positives' number in
+a brief; tell the lane to pin its own."* Line 126 explains exactly why, naming
+the incident that occasioned it — *"three `lesson citations` rows" became four
+within the hour, because a coordinator lessons commit added a citation.*
+
+I then typed *"Three `lesson citations` rows are known false positives"* into
+every brief I wrote this morning. **Three separate lanes reported it back to me
+in a single tick** (`#1191`, `#1072`, `#1179`), and one of them named the irony
+precisely: *"the brief's own '3 known FPs' is an instance of the count-rot it
+warns against."*
+
+Earlier the same session I announced a tool had died on a buffered log showing
+zero lines — when the checklist already contained *"0-byte log + missing exit
+marker are NORMAL early states."*
+
+**The pattern is not forgetfulness, and treating it as forgetfulness produces
+the wrong fix.** In both cases I could have recited the rule if asked. What
+failed is that writing a rule down creates a feeling of having installed it,
+and that feeling is strongest for rules I authored myself — because I remember
+the incident, the reasoning, and the wording. A rule I derived feels *known* in
+a way that suppresses the impulse to re-read it, exactly when acting.
+
+This is the coordinator-side twin of `#644`'s F3 (a relaxed rule quoted as
+live). There the failure is remembering a rule that changed; here it is
+remembering a rule I never re-read. Both feel identical from the inside:
+complete confidence, no prompt to check.
+
+**So a checklist consulted by memory is not a checklist — it is a diary.** The
+fix cannot be "read the checklist more carefully", because the failure is not
+carelessness. It has to be mechanical, at the moment of the act: `#644` round 1
+put the first such check in `dev/brief.py` (unresolvable coordinates now refuse
+generation), and that is the right shape. The count rule needs the same
+treatment — a constant a brief cannot state by hand — which is why `#1209`
+carries it.
+
+**The tell to watch for:** when I am about to write a specific number, path, or
+prohibition into a brief *without opening anything*, that is the moment the
+checklist exists for, and it is precisely the moment it feels unnecessary.
