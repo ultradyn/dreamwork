@@ -34,6 +34,7 @@ import pathlib
 import re
 import shutil
 import subprocess
+import types
 
 import pytest
 
@@ -535,6 +536,75 @@ def _enforce_native_weight(weight):
             % (weight["components"], COMPONENT_WEIGHT_BUDGET))
 
 
+def test_runtime_measurement_matches_production_size_build_settings(
+        tmp_path, monkeypatch):
+    """The measurement build may differ in entry, never in size semantics."""
+    import sys
+    sys.path.insert(0, str(ROOT / "dev"))
+    import build_client
+    _configure_toolchain(build_client)
+
+    root = tmp_path / "production-settings"
+    src = root / client_dist.NATIVE_SRC_DIR
+    src.mkdir(parents=True)
+    shutil.copy(ROOT / client_dist.NATIVE_ENTRY_REL,
+                root / client_dist.NATIVE_ENTRY_REL)
+    captured = {}
+    run = subprocess.run
+
+    def capture(cmd, **kwargs):
+        captured.update(cmd=cmd, kwargs=kwargs)
+        return types.SimpleNamespace(returncode=0, stdout=b"", stderr=b"")
+
+    monkeypatch.setattr(build_client.subprocess, "run", capture)
+    build_client.build_native(str(root))
+
+    production = {
+        "bundle": False,
+        "define": {},
+        "minify": False,
+        "nodePaths": [captured["kwargs"]["env"]["NODE_PATH"]],
+    }
+    spellings = {
+        "--format=": "format",
+        "--global-name=": "globalName",
+        "--target=": "target",
+        "--charset=": "charset",
+        "--line-limit=": "lineLimit",
+        "--banner:js=": "banner",
+    }
+    for arg in captured["cmd"][2:]:
+        if arg == "--bundle":
+            production["bundle"] = True
+        elif arg == "--minify":
+            production["minify"] = True
+        elif arg.startswith("--define:"):
+            key, value = arg[len("--define:"):].split("=", 1)
+            production["define"][key] = value
+        elif arg.startswith("--outfile="):
+            continue
+        else:
+            matches = [(prefix, key) for prefix, key in spellings.items()
+                       if arg.startswith(prefix)]
+            assert len(matches) == 1, (
+                "production native build gained an unclassified esbuild "
+                "setting %r; runtime-size parity must decide whether it "
+                "belongs in the measurement" % arg)
+            prefix, key = matches[0]
+            value = arg[len(prefix):]
+            production[key] = (int(value) if key == "lineLimit" else value)
+    production["banner"] = {"js": production["banner"]}
+
+    res = run(
+        ["node", str(ROOT / "dev/build/measure-runtime.mjs"),
+         "--print-build-config"], capture_output=True, text=True)
+    assert res.returncode == 0, res.stderr
+    measured = json.loads(res.stdout)
+    assert measured == production, (
+        "runtime measurement build settings drifted from production: "
+        "measurement=%r production=%r" % (measured, production))
+
+
 def test_the_native_runtime_stays_inside_a_chosen_page_weight_budget():
     """#630 plan §5-P2(ii), corrected by #1190 after its premise changed.
 
@@ -571,12 +641,9 @@ def test_the_native_runtime_stays_inside_a_chosen_page_weight_budget():
 def test_runtime_growth_reds_while_larger_component_growth_stays_green(
         tmp_path):
     """The separating pair: runtime RED, ordinary component growth GREEN."""
-    root = tmp_path / "subject"
+    root = _clone(tmp_path, "subject")
     src = root / client_dist.NATIVE_SRC_DIR
-    shutil.copytree(ROOT / client_dist.NATIVE_SRC_DIR, src)
     dist = root / client_dist.NATIVE_REL
-    dist.parent.mkdir(parents=True)
-    shutil.copy(ROOT / client_dist.NATIVE_REL, dist)
     baseline = _native_weight(root)
 
     probe = src / "probe.js"
@@ -612,12 +679,22 @@ def test_runtime_growth_reds_while_larger_component_growth_stays_green(
         "\nimport { Ordinary } from './ordinary-component.js';\n"
         "registry.register('__weight_proof', { component: Ordinary });\n",
         encoding="utf-8")
+    import sys
+    sys.path.insert(0, str(ROOT / "dev"))
+    import build_client
+    _configure_toolchain(build_client)
+    build_client.build_native(str(root))
     component_growth = _native_weight(root)
+    assert component_growth["total"] > baseline["total"], (
+        "registering an ordinary component and rebuilding native.js did not "
+        "grow the shipped bundle (%d bytes before and after)"
+        % baseline["total"])
     assert component_growth["runtime"] == baseline["runtime"], (
         "an ordinary registered component changed the runtime-only reading")
-    reported = dict(component_growth)
-    reported["components"] += len(component_padding)
-    _enforce_native_weight(reported)  # default report-only component policy
+    print("component rebuild: native.js %d -> %d; runtime %d -> %d"
+          % (baseline["total"], component_growth["total"],
+             baseline["runtime"], component_growth["runtime"]))
+    _enforce_native_weight(component_growth)  # report-only component policy
 
 
 def test_native_sources_are_all_build_inputs(tmp_path):
