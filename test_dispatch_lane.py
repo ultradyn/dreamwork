@@ -1237,6 +1237,100 @@ def _run_review(cli: Path, prompt: Path, branch: str) -> subprocess.CompletedPro
     )
 
 
+def test_launch_review_creates_attached_branch_worktree_and_records_cwd(tmp_path):
+    """The supported launch path must never recreate #1163's detached checkout.
+
+    The branch-line assertion is independent of the production helper: it reads
+    Git's porcelain worktree record, the same evidence lane containment sees.
+    """
+    branch = "cx-review"
+    cli, root = _sandbox_review_cli(tmp_path, branch)
+    prompt = _review_prompt(tmp_path, root, branch)
+    observed = tmp_path / "review-runner.json"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_ccc = fake_bin / "ccc"
+    fake_ccc.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, os, pathlib, sys\n"
+        "pathlib.Path(os.environ['REVIEW_TEST_OUTPUT']).write_text(json.dumps({\n"
+        "    'argv': sys.argv[1:], 'cwd': os.getcwd(),\n"
+        "    'role': os.environ.get('DREAMWORK_LANE_ROLE'),\n"
+        "}), encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+    fake_ccc.chmod(0o755)
+    env = {
+        **os.environ,
+        "DREAMWORK_ALLOW_PIPED_STDOUT": "1",
+        "PATH": f"{fake_bin}{os.pathsep}{os.environ.get('PATH', '')}",
+        "REVIEW_TEST_OUTPUT": str(observed),
+    }
+    result = subprocess.run(
+        [
+            sys.executable, str(cli), "--launch-review", str(prompt),
+            "--review-branch", branch, "--review-round", "2", "--",
+            "ccc", "--permission-mode", "plan", "@cx-reviewer",
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    for _ in range(100):
+        if observed.is_file():
+            break
+        time.sleep(0.01)
+    payload = json.loads(observed.read_text(encoding="utf-8"))
+
+    review_lane = "cx-review-review-r2"
+    review_worktree = tmp_path / ".worktrees" / review_lane
+    porcelain = subprocess.run(
+        ["git", "worktree", "list", "--porcelain"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    block = next(
+        part for part in porcelain.split("\n\n")
+        if f"worktree {review_worktree}" in part
+    )
+    assert f"branch refs/heads/{review_lane}" in block
+    assert "detached" not in block
+    attempts = sorted((root / ".dreamwork" / "review-dispatches").glob("*.launch.json"))
+    assert len(attempts) == 1
+    attempt = json.loads(attempts[0].read_text(encoding="utf-8"))
+    persisted_prompt = Path(attempt["prompt"]).read_text(encoding="utf-8")
+    assert payload == {
+        "argv": ["--permission-mode", "plan", "@cx-reviewer", persisted_prompt],
+        "cwd": str(review_worktree),
+        "role": "reviewer",
+    }
+    assert attempt["review_lane"] == review_lane
+    assert attempt["worktree"] == str(review_worktree)
+    assert attempt["state"] == "spawned: reviewer detached; exit not observed"
+
+
+def test_launch_review_refuses_write_capable_runner_mode(tmp_path):
+    cli, root = _sandbox_review_cli(tmp_path)
+    prompt = _review_prompt(tmp_path, root)
+    env = {**os.environ, "DREAMWORK_ALLOW_PIPED_STDOUT": "1"}
+    result = subprocess.run(
+        [
+            sys.executable, str(cli), "--launch-review", str(prompt),
+            "--review-branch", "cx-review", "--",
+            "ccc", "-y", "@cx-reviewer",
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert result.returncode == 2
+    assert "review launch requires ccc --permission-mode plan @cx-reviewer" in result.stderr
+    assert not (tmp_path / ".worktrees" / "cx-review-review-r1").exists()
+
+
 def _fake_lane_runner(worktree: Path, name: str = "ccc") -> subprocess.Popen:
     """A short-lived process whose argv[0] basename is a lane runner name,
     with its cwd set inside ``worktree`` (#1056's endorsed fixture).
