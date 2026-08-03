@@ -287,6 +287,29 @@ one warning colour and names this path. `lint.py` says the same thing
 from the command line. So a file in the wrong shape now costs a red
 light rather than a morning.
 
+## Reference notations — `PG-<num>` for goals, `#<num>` for tasks (#1042)
+
+The dashboard autolinker renders `#<num>` as a link to **task** `<num>`. It
+cannot tell a goal from a task, so *"goal #1"* in a question silently links
+to task 1 — an unrelated object. **Project goals are cited as `PG-<num>`**,
+which resolves to `/goals` and never to `/tasks?t=N`. The two notations
+coexist in one sentence (*"`PG-1` is blocked on `#630`"*); a reader can tell
+which is which because a goal link and a task link carry different classes
+and hrefs.
+
+- **`PG-` is case-sensitive.** `\bPG-\d+\b` is an unambiguous grep and lexer
+  rule; `pg-1`, `PG13` (no hyphen), and ordinary prose do not match.
+- **It does not collide with `use-igcs`'s `G1`/`G2`/`G3`** decision-local
+  goal labels — the `PG-` prefix and the hyphen make the two unconfusable
+  even inside an IGC that discusses a project goal.
+- **Adopt going forward; do not retrofit history.** Existing prose saying
+  *"goal #1"* stays as written.
+- **The CLI accepts it too**: `dev/ledger.py groups` takes `PG-<num>`
+  wherever it takes a bare group id (`groups get PG-1` == `groups get 1`).
+
+DREAMWORK.md:867 carries the human-set ruling; this section is the format
+contract. Checked in `client/components.js` by `test_goal_reference_pg_links`.
+
 ## Priority on a question (#197)
 
 An entry title may begin with `P1 · `, `P2 · ` or `P3 · `. **Absent means

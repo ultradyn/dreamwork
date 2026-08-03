@@ -6804,7 +6804,7 @@ class TestTasksRoute(unittest.TestCase):
         script = textwrap.dedent("""\
             const TASK_REF_SKIP = 'a,button,code,pre,script,select,style,textarea,[data-task-ref-ui]';
             const TASK_REF_SKIP_NO_CODE = 'a,button,pre,script,select,style,textarea,[data-task-ref-ui]';
-            const TASK_REF_RE = /(^|[^\\w])#(\\d+)\\b/g;
+            const TASK_REF_RE = /(^|[^\\w])(?:#(\\d+)|PG-(\\d+))\\b/g;
             let data = null;
             %s
             %s
@@ -6849,6 +6849,86 @@ class TestTasksRoute(unittest.TestCase):
             if (codeOff.result)
               { console.error('inline code linked with setting off'); process.exit(15); }
             if (!proseOff.result || proseOff.result[1].href !== '/tasks?t=229') process.exit(16);
+        """) % (_extract_js_fn(src, "function taskRefParts("),
+                   _extract_js_fn(src, "function backtickTaskLinksOn("),
+                   _extract_js_fn(src, "function linkTaskRefText("))
+        _node_check(["node", "-e", script])
+
+    def test_goal_reference_pg_links_to_goals_not_tasks(self):
+        """#1042 — PG-<num> resolves to /goals; #<num> still resolves to the
+        task. The two share a number space but MUST render to different
+        targets, so a reader can tell a goal link from a task link. This is
+        the discriminating test the brief's direction-2 traps are aimed at:
+        it asserts the HREF and CLASS, not merely that *a* link rendered."""
+        src = watch.COMPONENTS_JS
+        self.assertIn("PG-(\\d+)", src)  # the combined RE carries the goal branch
+        self.assertIn("a.className = 'goalref'", src)
+        self.assertIn("a.href = '/goals'", src)
+        script = textwrap.dedent("""\
+            const TASK_REF_SKIP = 'a,button,code,pre,script,select,style,textarea,[data-task-ref-ui]';
+            const TASK_REF_SKIP_NO_CODE = 'a,button,pre,script,select,style,textarea,[data-task-ref-ui]';
+            const TASK_REF_RE = /(^|[^\\w])(?:#(\\d+)|PG-(\\d+))\\b/g;
+            let data = null;
+            %s
+            %s
+            %s
+            const doc = {
+              createDocumentFragment() { return {kids:[], appendChild(n){this.kids.push(n)}}; },
+              createTextNode(text) { return {kind:'text', text}; },
+              createElement() { return {kind:'a', dataset:{}, setAttribute(){}}; }
+            };
+            // 'prose' is never skipped; 'pre' is skipped by BOTH sets.
+            const node = (text, kind) => ({
+              nodeValue:text, ownerDocument:doc,
+              parentElement:{closest(selector){
+                if (selector === TASK_REF_SKIP)
+                  return (kind === 'pre' || kind === 'code' || kind === 'a') ? {} : null;
+                if (selector === TASK_REF_SKIP_NO_CODE)
+                  return (kind === 'pre' || kind === 'a') ? {} : null;
+                return selector === '.md' ? {} : null;
+              }},
+              replaceWith(frag){this.result=frag.kids}
+            });
+            const links = n => (n.result || []).filter(x => x.kind === 'a');
+            const hrefs = n => links(n).map(x => x.href);
+
+            // PG-1 and #1 in one sentence resolve to DIFFERENT targets.
+            const both = node('PG-1 is blocked on #1', 'prose');
+            linkTaskRefText(both);
+            const bothLinks = links(both);
+            if (bothLinks.length !== 2) process.exit(20);
+            const goal = bothLinks.find(x => x.href === '/goals');
+            const task = bothLinks.find(x => x.href === '/tasks?t=1');
+            if (!goal || goal.className !== 'goalref' || goal.textContent !== 'PG-1')
+              { console.error('PG-1 did not render as a goalref to /goals'); process.exit(21); }
+            if (!task || task.className !== 'taskref' || task.textContent !== '#1')
+              { console.error('#1 did not render as a taskref to /tasks?t=1'); process.exit(22); }
+
+            // PG-1 must NOT link to /tasks?t=1 — the exact collision this
+            // task removes. If goal.href were /tasks?t=1 this fires.
+            if (goal.href === '/tasks?t=1') process.exit(23);
+
+            // Edge cases — each is a distinct position/shape.
+            // line start
+            const ls = node('PG-1 starts the line', 'prose');
+            linkTaskRefText(ls);
+            if (hrefs(ls)[0] !== '/goals') { console.error('line-start PG-1 failed'); process.exit(24); }
+            // punctuation-adjacent
+            const pa = node('see PG-1.', 'prose');
+            linkTaskRefText(pa);
+            if (hrefs(pa)[0] !== '/goals') { console.error('punctuation-adjacent PG-1 failed'); process.exit(25); }
+            // PG- with no digits — must NOT link
+            const nodigit = node('see PG- now', 'prose');
+            linkTaskRefText(nodigit);
+            if (links(nodigit).length !== 0) { console.error('PG- with no digits linked'); process.exit(26); }
+            // lowercase pg-1 — case-sensitive, must NOT link
+            const lower = node('see pg-1 here', 'prose');
+            linkTaskRefText(lower);
+            if (links(lower).length !== 0) { console.error('lowercase pg-1 linked'); process.exit(27); }
+            // inside <pre> — must NOT link (same rule as #NNN)
+            const pre = node('PG-1 in a fence', 'pre');
+            linkTaskRefText(pre);
+            if (links(pre).length !== 0) { console.error('PG-1 inside <pre> linked'); process.exit(28); }
         """) % (_extract_js_fn(src, "function taskRefParts("),
                    _extract_js_fn(src, "function backtickTaskLinksOn("),
                    _extract_js_fn(src, "function linkTaskRefText("))
