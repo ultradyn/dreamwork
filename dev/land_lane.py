@@ -1690,9 +1690,30 @@ def land(
     expect_warn_add: Sequence[str] = (),
     expect_warn_remove: Sequence[str] = (),
 ) -> int:
-    repo_text = _git_text(Path.cwd(), "rev-parse", "--show-toplevel")
-    repo = Path(repo_text).resolve() if repo_text else Path.cwd().resolve()
+    invoked = Path.cwd().resolve()
     retained = f"branch={branch}; worktree=not-yet-resolved"
+    repo_claim = _git(invoked, "rev-parse", "--show-toplevel")
+    repo_text = repo_claim.stdout.strip()
+    repo = Path(repo_text).resolve() if not repo_claim.returncode and repo_text else None
+    if repo is None or (invoked != repo and repo not in invoked.parents):
+        resolved = str(repo) if repo is not None else "UNRESOLVED"
+        reason = (
+            "Git resolved the invocation outside its worktree"
+            if repo is not None else
+            "Git could not resolve a worktree containing the invocation"
+        )
+        return _refuse(
+            "preflight",
+            reason,
+            f"invoked={invoked}; resolved={resolved}; git-exit={repo_claim.returncode}; "
+            "property=the invocation must equal or descend from Git's resolved worktree; "
+            "possible causes: shared .git/config core.worktree or GIT_WORK_TREE, "
+            "or rewritten .git indirection; remedy: inspect with "
+            "`git config --show-origin --get core.worktree`; if set, run "
+            "`git config --local --unset core.worktree`",
+            retained,
+            base_state="UNTRUSTED (repository identity was not established)",
+        )
 
     if not tests:
         return _refuse(
