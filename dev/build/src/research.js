@@ -3,16 +3,20 @@
  * The shell is React-owned. Artifact rows are not: /reviews and the dashboard
  * still consume artifactRow, so the component delegates each row through the
  * P2 wrapper. There is one row implementation and no fallback copy here.
+ *
+ * #1066 — Label is the shared native component defined in
+ * wrapper-exports.js (the design-package authority, landed #1060). It calls
+ * label() at render time — one markup statement, one React component,
+ * consumed by both the runtime (here, via import) and the design package
+ * (in-scope by construction). The fromBuilder('label') delegate that used to
+ * live here is gone: authority moved, it was not copied.
  */
 import React from 'react';
 import { fromBuilder } from './delegate.js';
+import { Label } from '../wrapper-exports.js';
 
 const ArtifactRow = fromBuilder('artifactRow', function (props) {
   return artifactRow(props.row, 'research');
-});
-
-const Label = fromBuilder('label', function (props) {
-  return label(props.text);
 });
 
 export function Research(props) {
