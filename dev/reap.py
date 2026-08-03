@@ -14,6 +14,14 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 try:
+    from lane_runner_identity import is_lane_runner
+except ModuleNotFoundError as exc:
+    if exc.name != "lane_runner_identity":
+        raise
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from lane_runner_identity import is_lane_runner
+
+try:
     from dev.land_lane import _read_gate_in_flight
 except ModuleNotFoundError as exc:
     if exc.name != "dev":
@@ -25,6 +33,72 @@ except ModuleNotFoundError as exc:
 class StatusPath:
     kind: str
     path: str
+
+
+@dataclass(frozen=True)
+class WorktreeLiveness:
+    """Processes whose current directory is inside a worktree.
+
+    ``unknown`` is deliberately separate from an empty ``pids`` tuple: an
+    incomplete process-table scan cannot safely prove that a lane is idle.
+    """
+
+    pids: tuple[int, ...]
+    unknown: tuple[str, ...]
+
+
+def worktree_liveness(target: Path) -> WorktreeLiveness:
+    """Find known lane runners whose cwd is inside ``target``.
+
+    Runner identity comes from the repo's shared argv[0] classifier.  This
+    avoids making unrelated same-user processes with protected cwd links a
+    fleet-wide veto while an unreadable *runner* cwd remains unknown.
+    """
+    target = target.resolve()
+    live: list[int] = []
+    unknown: list[str] = []
+    try:
+        entries = tuple(os.scandir("/proc"))
+    except OSError as exc:
+        return WorktreeLiveness((), (f"/proc: {exc}",))
+
+    for entry in entries:
+        if not entry.name.isdigit():
+            continue
+        pid = int(entry.name)
+        try:
+            if entry.stat(follow_symlinks=False).st_uid != os.geteuid():
+                continue
+        except (FileNotFoundError, ProcessLookupError):
+            continue
+        except OSError as exc:
+            unknown.append(f"pid {pid}: cannot identify owner: {exc.strerror or exc}")
+            continue
+        try:
+            raw = Path(f"/proc/{pid}/cmdline").read_bytes()
+        except (FileNotFoundError, ProcessLookupError):
+            continue
+        except OSError:
+            # A process whose identity cannot be read is outside the named
+            # ccc/agent population; the shared classifier cannot select it.
+            continue
+        if not is_lane_runner(raw):
+            continue
+        try:
+            cwd = os.readlink(f"/proc/{pid}/cwd")
+        except (FileNotFoundError, ProcessLookupError):
+            continue
+        except OSError as exc:
+            unknown.append(f"pid {pid}: {exc.strerror or exc}")
+            continue
+        try:
+            inside = os.path.commonpath((str(target), cwd)) == str(target)
+        except (OSError, ValueError):
+            unknown.append(f"pid {pid}: invalid cwd {cwd!r}")
+            continue
+        if inside:
+            live.append(pid)
+    return WorktreeLiveness(tuple(sorted(live)), tuple(unknown))
 
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[bytes]:
@@ -319,6 +393,28 @@ def reap(target_arg: str, *, base: str = "master", force: bool = False,
         print("reap gate OK (check only)")
         ownership.close()
         return 0
+
+    # The periodic sweep scans liveness before it runs this gate, but a lane
+    # can start while the gate is executing.  Re-probe here, immediately before
+    # the one supported removal call, so the scan-time answer is never treated
+    # as a removal-time answer.
+    liveness = worktree_liveness(target)
+    if liveness.unknown:
+        print(
+            "REFUSE: process liveness scan incomplete at removal time: "
+            + "; ".join(liveness.unknown),
+            file=sys.stderr,
+        )
+        ownership.close()
+        return 1
+    if liveness.pids:
+        print(
+            "REFUSE: active process cwd inside worktree at removal time: pids="
+            + ",".join(str(pid) for pid in liveness.pids),
+            file=sys.stderr,
+        )
+        ownership.close()
+        return 1
 
     # git's --force and the tool's --force are two different flags (#762).
     # `git worktree remove` refuses on ANY untracked file, and BRIEF.md is

@@ -1,0 +1,5 @@
+# Standing worktree holds. One exact worktree basename per line.
+cx-867briefgit
+cx-867cut2
+cx-867idcutoff
+cx-1140ingest

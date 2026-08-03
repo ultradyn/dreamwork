@@ -14,6 +14,7 @@ import pytest
 
 REPO = Path(__file__).resolve().parent
 CLI = REPO / "dev" / "reap.py"
+SWEEP_CLI = REPO / "dev" / "reap_sweep.py"
 
 
 def _load_reap():
@@ -28,6 +29,14 @@ def _load_reap():
 def _run(*args: object) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["python3", str(CLI), *(str(arg) for arg in args)],
+        capture_output=True,
+        text=True,
+    )
+
+
+def _run_sweep(*args: object) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["python3", str(SWEEP_CLI), *(str(arg) for arg in args)],
         capture_output=True,
         text=True,
     )
@@ -441,6 +450,77 @@ def test_real_lane_scratch_is_removed_without_force(lane):
     # The discriminating evidence: the gate passed AND the removal completed.
     assert not worktree.exists()
     assert str(worktree.resolve()) not in _git(root, "worktree", "list", "--porcelain")
+
+
+def test_running_process_cwd_refuses_then_dead_process_allows_check(lane):
+    root, worktree = lane
+    process = subprocess.Popen(
+        ["codex", "-c", "import time; time.sleep(30)"],
+        executable=sys.executable,
+        cwd=worktree,
+    )
+    try:
+        result = _run(worktree)
+        assert result.returncode == 1
+        assert "active process cwd inside worktree at removal time" in result.stderr
+        assert str(process.pid) in result.stderr
+        assert worktree.exists()
+    finally:
+        process.terminate()
+        process.wait(timeout=5)
+
+    result = _run("--check", worktree)
+    assert result.returncode == 0, result.stderr
+    assert str(worktree.resolve()) in _git(root, "worktree", "list", "--porcelain")
+
+
+def test_periodic_sweep_reaps_only_gate_passed_fixture_and_reports_every_skip(tmp_path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    _git(root, "init", "-q", "-b", "master")
+    _git(root, "config", "user.email", "t@t")
+    _git(root, "config", "user.name", "t")
+    (root / "tracked.txt").write_text("base\n", encoding="utf-8")
+    _git(root, "add", "tracked.txt")
+    _git(root, "commit", "-qm", "base")
+
+    paths = {}
+    for name in ("clean", "dirty", "held", "live"):
+        path = tmp_path / name
+        _git(root, "worktree", "add", "-q", "-b", f"wt/{name}", str(path), "master")
+        paths[name] = path
+    (paths["dirty"] / "tracked.txt").write_text("unfinished\n", encoding="utf-8")
+    holds = tmp_path / "holds.txt"
+    holds.write_text("held\n", encoding="utf-8")
+    process = subprocess.Popen(
+        ["codex", "-c", "import time; time.sleep(30)"],
+        executable=sys.executable,
+        cwd=paths["live"],
+    )
+    try:
+        result = _run_sweep("--repo", root, "--holds", holds, "--apply")
+        assert result.returncode == 0, result.stderr
+        assert not paths["clean"].exists(), "gate-passing fixture was not reaped"
+        assert paths["dirty"].exists(), "gate-refused fixture was removed"
+        assert paths["held"].exists(), "held worktree was removed"
+        assert paths["live"].exists(), "live worktree was removed"
+        assert "REFUSED dirty: REFUSE: tracked path would be lost: tracked.txt" in result.stdout
+        assert "HELD held:" in result.stdout
+        assert f"LIVE live: active process cwd pids={process.pid}" in result.stdout
+        assert "SUMMARY mode=apply examined=4 reaped=1 reapable=0 refused=1 held=1 live=1" in result.stdout
+    finally:
+        process.terminate()
+        process.wait(timeout=5)
+
+
+def test_periodic_sweep_missing_hold_list_fails_closed_before_scan(lane, tmp_path):
+    root, worktree = lane
+    result = _run_sweep(
+        "--repo", root, "--holds", tmp_path / "missing-holds", "--apply"
+    )
+    assert result.returncode == 2
+    assert "REFUSE sweep: cannot read hold list" in result.stderr
+    assert worktree.exists()
 
 
 def test_just_recipe_routes_lane_reap_through_the_checked_tool():
