@@ -79,6 +79,30 @@ from ledger_parse import store_path
 # ` · ` the ledger and hand-off rows already use for co-ordinate lists.
 SEP = " · "
 
+# The four live-liveness state clauses, derived from lane_liveness's state
+# constants so a fifth state surfaces as a missing entry rather than silently
+# dropping its count (#1155 P2a / #868: a count that disappears when zero is a
+# denominator the reader must reconstruct). Each entry is (state_constant,
+# template_for_nonzero, label_for_zero). The non-zero template uses %(n)d and
+# %(lanes)s; the zero label is compact (no names, no parenthetical) so the
+# line does not grow unboundedly (#612). WEDGED keeps its uppercase alarm only
+# in the non-zero form; the zero form is lowercase "wedged 0" — nothing is
+# alarming about zero wedged lanes.
+_LIVENESS_CLAUSE_SPECS = (
+    (lane_liveness.LIVE_WORKING,
+     "working %(n)d [%(lanes)s] (cpu above floor)",
+     "working 0"),
+    (lane_liveness.LIVE_WEDGED,
+     "WEDGED %(n)d [%(lanes)s] (live runner, positive wedge evidence)",
+     "wedged 0"),
+    (lane_liveness.LIVE_UNKNOWN,
+     "live-liveness-unknown %(n)d [%(lanes)s] (could not classify)",
+     "live-liveness-unknown 0"),
+    (lane_liveness.LIVE_NOT_YET,
+     "not-yet-observed %(n)d",
+     "not-yet-observed 0"),
+)
+
 # The current goal's title is elided to a HARD 48 characters (#862 design call
 # 2). He writes real acceptance criteria into the title, so it WILL be long,
 # and #612 is the failure being designed around: a long field pushing the fleet
@@ -300,29 +324,18 @@ def _fleet_fact(target: str) -> str:
     # collapse #136 forbids. The denominator is the live set itself.
     verdicts = {v.lane: v.state for v in inspection.live_liveness}
     if verdicts:
-        working = sorted(l for l, s in verdicts.items()
-                         if s == lane_liveness.LIVE_WORKING)
-        wedged = sorted(l for l, s in verdicts.items()
-                        if s == lane_liveness.LIVE_WEDGED)
-        unknown = sorted(l for l, s in verdicts.items()
-                         if s == lane_liveness.LIVE_UNKNOWN)
-        not_yet = sorted(l for l, s in verdicts.items()
-                         if s == lane_liveness.LIVE_NOT_YET)
-        # #868: RENDER every count rather than leaving "classified" as a
-        # subtraction the reader must perform. working + wedged + unknown +
-        # not_yet = live; if any is omitted, the reader cannot derive it from
-        # the line alone.
-        if working:
-            fact += " · working %d [%s] (cpu above floor)" % (
-                len(working), ", ".join(working))
-        if wedged:
-            fact += " · WEDGED %d [%s] (live runner, positive wedge evidence)" % (
-                len(wedged), ", ".join(wedged))
-        if unknown:
-            fact += " · live-liveness-unknown %d [%s] (could not classify)" % (
-                len(unknown), ", ".join(unknown))
-        if not_yet:
-            fact += " · not-yet-observed %d" % len(not_yet)
+        # #868 / #1155 P2a: RENDER every count — including zeros — derived
+        # from the state enumeration (_LIVENESS_CLAUSE_SPECS), so a count
+        # that is zero is not a denominator the reader must reconstruct. A
+        # fifth state added to lane_liveness surfaces as a missing entry
+        # here rather than silently under-reporting.
+        for state, template, zero_label in _LIVENESS_CLAUSE_SPECS:
+            lanes = sorted(l for l, s in verdicts.items() if s == state)
+            if lanes:
+                fact += " · " + template % {
+                    "n": len(lanes), "lanes": ", ".join(lanes)}
+            else:
+                fact += " · " + zero_label
     if inspection.cwd_live:
         fact += " · cwd-only %d [%s] (live runner, no live lane.lock)" % (
             len(inspection.cwd_live), ", ".join(inspection.cwd_live))

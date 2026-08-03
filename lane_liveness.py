@@ -348,16 +348,65 @@ def read_proc_cpu(pid: int) -> tuple[float, float | None] | None:
     return (cpu_seconds, max(0.0, now - start_epoch))
 
 
+# Untracked paths that are NOT a deliverable — lane scratch and tool churn a
+# working lane produces without committing. This is the exclusion list the P1
+# fix hinges on (#1155 round 3): too broad and the hazard returns (every lane
+# looks busy forever), too narrow and a lane holding an uncommitted deliverable
+# reads wedged. Each entry names what it is and why excluding it is safe:
+#
+#   BRIEF.md — coordinator-written per-lane scratch, never tracked (#1154's
+#     same exclusion). Counting it would call an idle lane "in progress".
+#   .pytest_cache — pytest creates this on every run; the repo's .gitignore
+#     lists __pycache__/ but omits .pytest_cache/, so it reads as ?? (untracked)
+#     in a real fleet worktree. Tool churn, not a deliverable.
+#   .dreamwork — lane-local state. Most entries are gitignored (lane.lock,
+#     status.json); entries the .gitignore omits (e.g. a coordinator-written
+#     transcript) must not read as progress — they are lane state, not work.
+#
+# __pycache__/ and *.pyc ARE gitignored and appear as !! (ignored), not ??
+# (untracked), so git status --porcelain never lists them and they need no
+# exclusion here. The list is the MINIMUM set the real fleet produces as
+# untracked non-deliverables: it does not guess at future churn, because an
+# unrecognised untracked path is progress (a lane that wrote something new did
+# work), and the probe's age and CPU gates still protect against false
+# negatives (#1155 blind spot at :401).
+_LIVE_PROGRESS_UNTRACKED_SCRATCH = frozenset({
+    "BRIEF.md", ".pytest_cache", ".dreamwork"})
+
+
+def _is_live_progress_scratch(path: str) -> bool:
+    """Whether an untracked porcelain path is scratch, not a deliverable.
+
+    Checks the TOP-LEVEL path component: ``.pytest_cache/sub/file`` is scratch
+    because ``.pytest_cache`` is, and ``new_module.py`` at the worktree root is
+    NOT scratch because its top-level component (itself) is not in the set.
+    This is the precise boundary the brief names (#1155 round 3 direction-2):
+    ``*.py`` under a scratch dir is scratch; ``new_module.py`` at the root is
+    work.
+    """
+    return path.split("/", 1)[0] in _LIVE_PROGRESS_UNTRACKED_SCRATCH
+
+
 def _worktree_has_progress(worktree: Path) -> bool | None:
     """Whether a live lane's worktree shows git progress (#1155).
 
-    Returns True when the branch has commits ahead of ``master`` OR the working
-    tree has dirty tracked files — either is positive evidence the runner did
-    work. Returns False when the worktree is at base with a clean tree (the
-    shape of a permission-wedged lane that never got past its first rejected
-    ``git status``). Returns None when git could not answer (not a repo, git
-    failed) — the caller treats None as "cannot tell" rather than guessing
-    clean (#136).
+    Returns True when the branch has commits ahead of ``master``, the working
+    tree has dirty tracked files, OR an untracked deliverable exists — any is
+    positive evidence the runner did work. Returns False when the worktree is
+    at base with a clean tree and only scratch untracked files (the shape of a
+    permission-wedged lane that never got past its first rejected ``git
+    status``). Returns None when git could not answer (not a repo, git failed)
+    — the caller treats None as "cannot tell" rather than guessing clean
+    (#136).
+
+    An untracked deliverable is an untracked file BEYOND known lane scratch
+    (BRIEF.md, .pytest_cache, .dreamwork — see
+    ``_LIVE_PROGRESS_UNTRACKED_SCRATCH``). A lane that wrote ``new_module.py``
+    and has not committed it is the NORMAL state of a lane mid-increment, and
+    classifying it wedged would point the destructive reaping tool at
+    precisely the lane whose work exists only in the working tree (#1155 round
+    3 P1 / #702 / #760: reap separates untracked from ignored for exactly
+    this reason).
     """
     cherry = subprocess.run(
         ["git", "-C", str(worktree), "cherry", "master", "HEAD"],
@@ -373,11 +422,19 @@ def _worktree_has_progress(worktree: Path) -> bool | None:
         capture_output=True, text=True, check=False)
     if status.returncode != 0:
         return None
-    # Dirty tracked files (not untracked) indicate the runner modified code.
-    has_dirty = any(
-        line and not line.startswith("??")
-        for line in status.stdout.splitlines())
-    return has_dirty
+    for line in status.stdout.splitlines():
+        if not line:
+            continue
+        if line.startswith("?? "):
+            # An untracked file BEYOND known scratch is a deliverable (#1155
+            # round 3 P1): a lane that wrote new_module.py and has not
+            # committed it is doing work, not wedged.
+            if not _is_live_progress_scratch(line[3:]):
+                return True
+        else:
+            # Dirty tracked file — the runner modified committed code.
+            return True
+    return False
 
 
 def _default_wedge_probe(
@@ -815,11 +872,16 @@ def _classify_lane_pid(lane, pid, wt_by_name, cpu_reader, wedge):
     marker = None
     if worktree is not None:
         try:
-            marker = wedge(worktree, pid, cpu_s=cpu_s,
-                           elapsed_seconds=elapsed)
-        except TypeError:
-            # Backward-compatible injected probe: f(worktree, pid) only.
-            marker = wedge(worktree, pid)
+            try:
+                marker = wedge(worktree, pid, cpu_s=cpu_s,
+                               elapsed_seconds=elapsed)
+            except TypeError:
+                # Backward-compatible injected probe: f(worktree, pid) only.
+                marker = wedge(worktree, pid)
         except Exception:  # noqa: BLE001 — a probe error degrades to unknown
+            # #1155 P2b: a probe that raises (either the keyword form or the
+            # backward-compat fallback) leaves the lane unclassified, not
+            # propagating. The failure is a state (unknown via marker=None),
+            # not an exception that crashes the tick.
             marker = None
     return classify_live_lane(lane, cpu_s, elapsed, marker)
