@@ -2029,8 +2029,8 @@ def test_real_code_beside_a_doc_map_row_still_requires_an_injection(
         ".dreamwork/docs/doc-map.md"
     ) in result.stdout
     assert "1 injection(s) were required (--require)" in result.stderr
-    assert "re-arm the ancestor's injection" in result.stderr
-    assert "same carried production path" in result.stderr
+    assert "Produce a fresh causal proof" in result.stderr
+    assert "ancestor's injection" not in result.stderr
     assert "do not invent an unrelated injection" in result.stderr
     _assert_base_unmoved(root, before)
 

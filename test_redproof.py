@@ -302,6 +302,69 @@ class TestZeroStatesAreDistinct:
         assert "unparseable" in err or "FAULT" in err
 
 
+class TestRequiredProofRemediesMatchTheProvenance:
+    """Missing, empty, and short populations need one honest default remedy."""
+
+    FRESH = "Produce a fresh causal proof"
+
+    def test_missing_registry_asks_for_fresh_proof_not_an_ancestor(
+            self, repo, capsys):
+        exit_code = _check(repo, require=1)
+        _, err = capsys.readouterr()
+
+        assert exit_code == 2
+        assert self.FRESH in err, (
+            "missing registry received the wrong remedy; expected fresh causal "
+            "proof guidance:\n" + err)
+        assert "ancestor's injection" not in err, err
+
+    def test_empty_registry_asks_for_fresh_proof_not_an_ancestor(
+            self, repo, capsys):
+        rp._write_registry(repo, [])
+
+        exit_code = _check(repo, require=1)
+        _, err = capsys.readouterr()
+
+        assert exit_code == 1
+        assert "registry empty" in err, err
+        assert self.FRESH in err, (
+            "empty registry received the wrong remedy; expected fresh causal "
+            "proof guidance:\n" + err)
+        assert "ancestor's injection" not in err, err
+
+    def test_under_count_registry_asks_for_fresh_proof_not_an_ancestor(
+            self, repo, capsys):
+        _begin(repo, "router.js")
+        (repo / "router.js").write_text("UNDER COUNT SABOTAGE\n")
+        _restore(repo, "router.js")
+        capsys.readouterr()
+
+        exit_code = _check(repo, require=2)
+        _, err = capsys.readouterr()
+
+        assert exit_code == 1
+        assert "1 injection(s) registered, but --require 2 was set" in err, err
+        assert self.FRESH in err, (
+            "under-count registry received the wrong remedy; expected fresh "
+            "causal proof guidance:\n" + err)
+        assert "ancestor's injection" not in err, err
+
+    def test_explicit_carry_forward_names_the_coordinator_and_current_lane_cycle(
+            self, repo, capsys):
+        exit_code = _check(repo, require=1, carry_forward=True)
+        _, err = capsys.readouterr()
+
+        assert exit_code == 2
+        assert "Carry-forward provenance was supplied" in err, err
+        assert "coordinator's brief must name" in err, err
+        assert "same carried production path" in err, err
+        assert "same expectation" in err, err
+        assert "same discriminating test" in err, err
+        assert all(verb in err for verb in ("`begin`", "`observe`", "`restore`", "`check`")), err
+        assert "prior worktree location for use as `--cwd`" in err, err
+        assert "foreign lane-private registry" in err, err
+
+
 def test_reach_examined_fragment_formats_non_empty_population():
     """#1038 Finding 2: the shared denominator formatter must handle a
     NON-empty population. The calm path's population is structurally empty
@@ -2140,8 +2203,7 @@ class TestCoordinatorAuditSeesTheLane:
             "must FAULT, not pass (#671)")
         assert "1 injection(s) were required" in err1, err1
         assert "cannot be verified" in err1, err1
-        assert "re-arm the ancestor's injection" in err1, err1
-        assert "same carried production path" in err1, err1
+        assert "Produce a fresh causal proof" in err1, err1
         assert "do not invent an unrelated injection" in err1, err1
         # THE discrimination: one fixture, two flags, two different verdicts.
         assert exit0 != exit1, (
@@ -2372,12 +2434,15 @@ class TestCoordinatorModeBlindCaseViaCli:
         env[rp._ls.ROLE_ENV] = rp._ls.ROLE_AUTHOR
         r = subprocess.run(
             ["python3", str(CLI_PATH), "check", "--cwd", str(repo),
-             "--require", "1"],
+             "--require", "1", "--carry-forward"],
             capture_output=True, text=True, env=env)
         assert r.returncode == 2, r.stdout + r.stderr
         assert "1 injection(s) were required" in r.stderr, r.stderr
-        assert "re-arm the ancestor's injection" in r.stderr, r.stderr
-        assert "`path` and `injected_hint` fields" in r.stderr, r.stderr
+        assert "coordinator's brief must name" in r.stderr, r.stderr
+        assert "same carried production path" in r.stderr, r.stderr
+        assert "same expectation" in r.stderr, r.stderr
+        assert "same discriminating test" in r.stderr, r.stderr
+        assert "prior worktree location for use as `--cwd`" in r.stderr, r.stderr
 
     def test_adoption_is_not_a_cli_proof_path(self, repo, tmp_path):
         """A candidate-authored foreign registry has no adoption entrypoint."""

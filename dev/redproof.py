@@ -213,17 +213,30 @@ _EXPECTATION_DRIFT_REARM = (
     "a clean restore, so repeat that cycle after the final rebase."
 )
 
-# A carry-forward lane owns the carried production bytes and can repeat the
-# same causal observation.  Name that legitimate remedy whenever the
-# cumulative gate finds no current-lane proof, while explicitly rejecting an
-# unrelated injection performed only to satisfy the count.
-_CARRY_FORWARD_REARM = (
-    " A carry-forward round must repeat the causal observation: re-arm the "
-    "ancestor's injection on the same carried production path with the same "
-    "expectation and test; do not invent an unrelated injection. Recover the "
-    "prior seam from its hand-off, or from the prior registry's `path` and "
-    "`injected_hint` fields."
+# A refusal cannot infer ancestry from an absent or short registry.  Ask for a
+# fresh causal proof by default; only a caller that explicitly supplies
+# carry-forward provenance gets the more specific coordinator/lane protocol.
+_FRESH_CAUSAL_PROOF = (
+    " Produce a fresh causal proof on a production path that the expectation "
+    "and discriminating test actually bind; do not invent an unrelated "
+    "injection merely to satisfy the count."
 )
+
+_CARRY_FORWARD_REARM = (
+    " Carry-forward provenance was supplied. The coordinator's brief must "
+    "name the same carried production path, the same expectation, and the "
+    "same discriminating test; do not invent an unrelated injection. In the "
+    "current lane, `begin` that carried path against the named expectation, "
+    "sabotage it and `observe` the named discriminating test, then `restore` "
+    "and `check`. Only when inspection is genuinely needed should the brief "
+    "name the prior worktree location for use as `--cwd`; never recover proof "
+    "from a foreign lane-private registry."
+)
+
+
+def _proof_remedy(carry_forward: bool) -> str:
+    """Select advice from provenance supplied by the caller, never registry shape."""
+    return _CARRY_FORWARD_REARM if carry_forward else _FRESH_CAUSAL_PROOF
 
 
 def _now() -> str:
@@ -1572,7 +1585,7 @@ def _reach_report(restored: list[dict]) -> tuple[str, list[str], bool]:
 
 
 def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
-          lane: str | None = None) -> int:
+          lane: str | None = None, carry_forward: bool = False) -> int:
     """Hand-off gate: refuse if a registered injection survives in tree OR history.
 
     Exit 0 = restoration clean, or no evidence when no injection is registered.
@@ -1781,7 +1794,7 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
                 f"read; its absence means the proof cannot be verified, not "
                 f"that it passed. If the lane ran, pass "
                 f"`--lane <DREAMWORK_LANE_ID>` or inspect its scratch by "
-                f"hand." + _CARRY_FORWARD_REARM)
+                f"hand." + _proof_remedy(carry_forward))
         else:
             # Name the identity actually audited (#651): "the named lane" when
             # no --lane was passed is how instance 1's FAULT read as a proof
@@ -1795,7 +1808,7 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
                 f"{label} (role: {role}). A required red-proof must leave a "
                 f"registry this audit can read; its absence means the proof "
                 f"cannot be verified, not that it passed.{hint}")
-            sys.stderr.write(_CARRY_FORWARD_REARM.lstrip() + "\n")
+            sys.stderr.write(_proof_remedy(carry_forward).lstrip() + "\n")
         return 2
 
     # RETIRED records are history-scan evidence and nothing else (#942), so
@@ -1826,7 +1839,7 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
                 f"check: REFUSED — {label} (role: {role}), but --require "
                 f"{require} was set. A hand-off that the brief mandated "
                 f"red-proofing must show at least one registered injection."
-                + _CARRY_FORWARD_REARM)
+                + _proof_remedy(carry_forward))
             return 1
         if not retired:
             print(f"check: no evidence — {label} (role: {role}); injection "
@@ -1876,7 +1889,7 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
             f"--require {require} was set."
             + (f" ({len(retired)} retired registration(s) are in history scope "
                f"but are not live evidence.)" if retired else "")
-            + _CARRY_FORWARD_REARM)
+            + _proof_remedy(carry_forward))
         return 1
 
     # Unknown states are refused FIRST and distinctly (#950). They are the
@@ -2093,7 +2106,7 @@ def _derived_requirement(root: Path, base_oid: str, head: str) -> dict:
 
 
 def handoff(cwd: Path | None, *, base: str | None = None,
-            lane: str | None = None) -> int:
+            lane: str | None = None, carry_forward: bool = False) -> int:
     """Derive the diff's injection requirement, then run the hand-off check.
 
     The requirement is DERIVED from the branch diff (#868) — never from the
@@ -2142,7 +2155,8 @@ def handoff(cwd: Path | None, *, base: str | None = None,
     print(f"this is the number to quote: {require} injection(s) owed, derived "
           f"from the diff — not the registered count.")
     print("--- check below (quote this block verbatim in your report) ---")
-    return check(cwd, require=require, base=base, lane=lane)
+    return check(cwd, require=require, base=base, lane=lane,
+                 carry_forward=carry_forward)
 
 
 # --------------------------------------------------------------------------- #
@@ -2175,6 +2189,10 @@ def _parser() -> argparse.ArgumentParser:
     ap.add_argument("--base", default=None,
                     help=f"check: base ref for the history scan (default: first "
                          f"of {', '.join(DEFAULT_BASES)} that resolves)")
+    ap.add_argument("--carry-forward", action="store_true",
+                    help="check/handoff: the coordinator supplied carry-forward "
+                         "provenance in this lane's brief; changes remedy text "
+                         "only, never the evidence requirement")
     ap.add_argument("--lane", default=None,
                     help="resolve a NAMED launch identity for every verb; an "
                          "explicit value wins over DREAMWORK_LANE_ID. Without "
@@ -2245,9 +2263,11 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         if args.verb == "check":
-            return check(cwd, require=args.require, base=args.base, lane=args.lane)
+            return check(cwd, require=args.require, base=args.base, lane=args.lane,
+                         carry_forward=args.carry_forward)
         if args.verb == "handoff":
-            return handoff(cwd, base=args.base, lane=args.lane)
+            return handoff(cwd, base=args.base, lane=args.lane,
+                           carry_forward=args.carry_forward)
         if args.path is None:
             ap.error(f"{args.verb} requires a path argument")
         if args.verb == "begin":
