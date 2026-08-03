@@ -501,6 +501,13 @@ try {
         (result.stdout, result.stderr))
     readings = json.loads(result.stdout.strip().splitlines()[-1])
     assert {r["state"] for r in readings} == {"loading", "empty", "multi"}
+    for reading in readings:
+        assert reading["expected"], (
+            "Reviews %s builder precondition: fixture output is non-empty" %
+            reading["state"])
+        assert reading["actual"], (
+            "Reviews %s wrapper precondition: mounted output is non-empty" %
+            reading["state"])
     mismatches = [
         "%s differs at %d: builder=%r wrapper=%r" %
         (r["state"], r["at"],
