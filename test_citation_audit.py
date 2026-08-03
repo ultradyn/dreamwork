@@ -308,6 +308,22 @@ def test_report_names_unresolvable_count():
     assert "UNRESOLVABLE:     1" in text
 
 
+def test_verbose_report_shows_unclassifiable_rows():
+    from dev.citation_audit import AuditReport
+    citation = Citation(
+        brief="bold-house-form",
+        task_id=140,
+        wording="a check that could not run must not look like one that ran",
+        line=7,
+        status="UNCLASSIFIABLE",
+        detail="tool cannot judge paraphrase validity",
+    )
+    text = format_report(
+        AuditReport(examined=1, unclassifiable=[citation]), quiet=False
+    )
+    assert "[UNCLASSIFIABLE] bold-house-form:7 #140" in text
+
+
 # -- audit_briefs end-to-end --------------------------------------------------
 
 def test_audit_briefs_end_to_end(tmp_path):

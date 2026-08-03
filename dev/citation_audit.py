@@ -386,7 +386,12 @@ def format_report(report: AuditReport, quiet: bool = False) -> str:
             suffix = f"; {len(items) - 3} more" if len(items) > 3 else ""
             lines.append(f"    {form}: {len(items)} ({examples}{suffix})")
     if report.unclassifiable:
-        lines.append(f"  ({len(report.unclassifiable)} UNCLASSIFIABLE — not shown, use --verbose)")
+        for cit in report.unclassifiable:
+            lines.append(
+                f"  [UNCLASSIFIABLE] {cit.brief}:{cit.line} "
+                f"#{cit.task_id} — {cit.wording[:60]}"
+            )
+            lines.append(f"    {cit.detail}")
     return "\n".join(lines)
 
 
