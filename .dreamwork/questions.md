@@ -2,6 +2,34 @@
 
 ## Open
 
+- **P1 · 2026-08-03 — the React port's remaining surfaces each need a hand-added `watch.py` deploy
+  row. Do I keep paying that per increment, or derive it first? (#1165)**
+  **This is the measured reason `/question` did not flip in one increment, and it is not about
+  React at all.** #1049 was dispatched deliberately as a measurement: if `/question` flipped inside
+  one increment, the estimates for the rest of the cluster held; if not, they were all too low.
+  - The lane built the whole flip — component, registration, `buildQuestion` deleted, dist rebuilt,
+    and a browser test that mounted through the real registry and asserted `buildQuestion` was gone.
+    Every hard part worked.
+  - It was then stopped by one line: `DATA_SIBLINGS does not declare
+    ['dev/build/src/question.js'] — deploy would ship a snapshot whose client/dist check can never
+    come back clean`.
+  - `watch.py::DATA_SIBLINGS` is a **hand-maintained** list of what deploy must ship. Every new
+    native source needs a row added by hand, and nothing derives it from what the build consumed.
+    So every remaining surface in the port pays this, and any increment scoped without `watch.py`
+    hits the wall *after* doing all the work.
+  - **Option 1** — each future increment owns its own `watch.py` row. Cheap per increment; keeps a
+    list that is wrong by default until someone remembers.
+  - **Option 2** — derive it: deploy asks the build what it consumed. Single-truth, removes the
+    whole "forgot the row" class. But it touches the deploy path, which has bricked the dashboard
+    twice (#425, #480), so it wants its own increment with real deploy verification on a scratch
+    checkout.
+  - **My recommendation is option 2, before the cluster starts** — the cluster is precisely a run of
+    new native sources, and option 1 pays the toll once per surface while leaving the trap armed.
+    I have not acted on that: it is a deploy-path change, which is the one place here where being
+    wrong is expensive, so it is your call rather than my inference. I have unblocked #1049 for now
+    by putting `watch.py` in its Lane-owns for that single row (option 1 for one surface), which
+    does not foreclose either answer.
+
 - **P1 · 2026-08-03 — do I widen the native-agent sandbox to reach `../.worktrees/`, or route your
   "use an Opus 5 subagent" instructions to a different agent? (#1009)**
   **Two of your own standing decisions now contradict each other, and the effect is that you have
