@@ -271,6 +271,86 @@ def test_generation_does_not_treat_fenced_history_as_a_live_citation(lane):
     assert "missing.py:999" in generated
 
 
+def _lesson_citation_false_positive_count_at(sha: str) -> int:
+    """Independent expectation for #1209; mirror the lint contract, not brief.py."""
+    paths = subprocess.run(
+        [
+            "git", "ls-tree", "-r", "--name-only", sha, "--",
+            ".dreamwork/lessons.md", "briefs",
+        ],
+        cwd=ROOT, capture_output=True, text=True, check=True,
+    ).stdout.splitlines()
+    lessons = subprocess.run(
+        ["git", "show", f"{sha}:.dreamwork/lessons.md"],
+        cwd=ROOT, capture_output=True, text=True, check=True,
+    ).stdout.splitlines()
+    findings = 0
+    for path in paths:
+        if path != ".dreamwork/lessons.md" and not (
+            path.startswith("briefs/") and path.endswith(".md")
+        ):
+            continue
+        text = subprocess.run(
+            ["git", "show", f"{sha}:{path}"],
+            cwd=ROOT, capture_output=True, text=True, check=True,
+        ).stdout
+        for match in re.finditer(r"lessons\.md:(\d+)", text):
+            target = int(match.group(1))
+            actual = lessons[target - 1] if 1 <= target <= len(lessons) else None
+            findings += actual is None or not actual.startswith("- **")
+    return findings
+
+
+def test_generation_refuses_a_rotted_lesson_citation_warn_count(lane):
+    """Direction 2: before #1209 this known-wrong count passed build().
+
+    The expectation derives from lint.py's tracked subject contract: numeric
+    lesson citations in lessons.md and briefs/**/*.md must resolve to a lesson
+    head.  The test independently counts that base-SHA population, then makes
+    the authored claim wrong by one so the assertion cannot rot with the tree.
+    """
+    base = subprocess.run(
+        ["git", "rev-parse", "master"], cwd=ROOT,
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    actual = _lesson_citation_false_positive_count_at(base)
+    stale = actual + 1
+    core = GOOD_CORE.replace(
+        "`## Standing rules` was retyped 33 times and produced 32 distinct bodies.",
+        f"There are {stale} known `lesson citations` rows.",
+    )
+    with pytest.raises(
+        brief.BriefFault,
+        match=rf"claims {stale} known `lesson citations` row\(s\).*has {actual}",
+    ):
+        brief.build(881, lane, ["dev/brief.py", "test_brief.py"], core)
+
+
+def test_generation_accepts_the_derived_lesson_citation_warn_count(lane):
+    """A correct precise count remains generatable; the guard has no FP here."""
+    base = subprocess.run(
+        ["git", "rev-parse", "master"], cwd=ROOT,
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    actual = _lesson_citation_false_positive_count_at(base)
+    core = GOOD_CORE.replace(
+        "`## Standing rules` was retyped 33 times and produced 32 distinct bodies.",
+        f"There are {actual} known `lesson citations` rows.",
+    )
+    generated = brief.build(881, lane, ["dev/brief.py", "test_brief.py"], core)
+    assert f"There are {actual} known `lesson citations` rows." in generated
+
+
+def test_generation_ignores_a_quoted_rotted_count_example(lane):
+    """Quoted history is evidence, not a live count claim (#644 dogfood)."""
+    core = GOOD_CORE.replace(
+        "`## Standing rules` was retyped 33 times and produced 32 distinct bodies.",
+        'The old brief said "There are 999 known `lesson citations` rows."',
+    )
+    generated = brief.build(881, lane, ["dev/brief.py", "test_brief.py"], core)
+    assert "999 known `lesson citations` rows" in generated
+
+
 def test_worktree_is_asked_of_git_not_guessed(lane, lane_checkout):
     """A guessed convention would be wrong for 14 of the 40 most recent briefs (#846 moved it)."""
     assert lane == lane_checkout[0], (
