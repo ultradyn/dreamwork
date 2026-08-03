@@ -63,7 +63,8 @@ def lane(tmp_path: Path) -> tuple[Path, Path]:
     _git(root, "config", "user.email", "t@t")
     _git(root, "config", "user.name", "t")
     (root / ".gitignore").write_text(
-        "__pycache__/\n.dreamwork/applied.md\n*.tmp.*\nnode_modules/\n",
+        "__pycache__/\n.dreamwork/applied.md\n.dreamwork/ledger.sqlite3\n"
+        "*.tmp.*\nnode_modules/\n",
         encoding="utf-8",
     )
     (root / "tracked.txt").write_text("base\n", encoding="utf-8")
@@ -121,18 +122,32 @@ def test_brief_and_ignored_cache_do_not_fire_the_gate(lane):
     assert "NOTE:" not in result.stderr
 
 
-def test_ignored_evidence_is_named_without_changing_the_gate(lane):
-    _, worktree = lane
+def test_non_disposable_ignored_file_refuses_removal_and_names_path(lane):
+    root, worktree = lane
     evidence = worktree / ".dreamwork" / "applied.md"
     evidence.parent.mkdir()
     evidence.write_text("actor=coordinator-drain\n", encoding="utf-8")
 
+    result = _run(worktree)
+
+    assert result.returncode == 1
+    assert "ignored=1" in result.stderr
+    assert "ignored: examined 1 file; 0 disposable, 1 NOT disposable" in result.stderr
+    assert "REFUSE: ignored path would be lost: .dreamwork/applied.md" in result.stderr
+    assert worktree.exists()
+    assert str(worktree.resolve()) in _git(root, "worktree", "list", "--porcelain")
+
+
+def test_empty_ignored_regular_file_is_disposable(lane):
+    _, worktree = lane
+    ledger = worktree / ".dreamwork" / "ledger.sqlite3"
+    ledger.parent.mkdir()
+    ledger.touch()
+
     result = _run("--check", worktree)
 
     assert result.returncode == 0, result.stderr
-    assert "ignored=1" in result.stdout
-    assert "ignored: examined 1 file; 0 disposable, 1 NOT disposable" in result.stdout
-    assert ".dreamwork/applied.md" in result.stdout
+    assert "ignored: examined 1 file; 1 disposable, 0 NOT disposable" in result.stdout
 
 
 def test_unforeseen_ignored_file_type_falls_through_allowlist(lane):
