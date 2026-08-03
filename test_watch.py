@@ -6947,8 +6947,11 @@ class TestTasksRoute(unittest.TestCase):
 
             // PG-1 and #1 in one sentence resolve to DIFFERENT targets.
             const both = node('PG-1 is blocked on #1', 'prose');
+            const bothText = both.nodeValue;
             linkTaskRefText(both);
             const bothLinks = links(both);
+            if (!conserved(both, bothText))
+              { console.error('both: reconstructed text diverged — text not conserved, mixed-link assertions are meaningless'); process.exit(35); }
             if (bothLinks.length !== 2)
               { console.error('both: expected 2 <a> links, got ' + bothLinks.length
                 + ' — linkTaskRefText may be creating non-anchor elements'); process.exit(20); }
