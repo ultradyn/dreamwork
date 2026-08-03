@@ -6257,3 +6257,41 @@ states that `reason` exists *"so the tick line can carry it"*, and nothing outsi
 the field. A docstring asserting an unwired consumer is the same defect shape the task has been
 chasing all along. **A refuted premise often has the real finding sitting underneath it** — the brief
 should ask for that, not just for the stop.
+
+## A derived field and a hand-kept field describing the same thing, and the counts agreed
+
+Occasioned by `#1175`, measured 2026-08-04.
+
+`status.json` carries two lists of the live fleet. `dreamers` is derived by `status_sync` from a
+process probe. `lanes` is author-owned — mine to keep. I checked them against each other for the first
+time today: `dreamers` had six entries with six real pids, exactly the fleet. `lanes` had six entries
+and **every one was wrong** — `cx-1006goals2` (landed hours earlier as `3ca384d0`), `cx-1157rev1`
+(landed as `03acf707`), and four more that had not been live all day.
+
+Six and six. That is the whole reason it survived: **the count was true while the set was entirely
+false.** Nothing on the dashboard read as broken, because the number a glance lands on was right. And
+the field with the drift is the one carrying `what` — the human-readable description — so the false
+list is the one that *looks* authoritative next to a bare list of pids.
+
+The instrument was not silent. `just status-sync` printed
+`lanes reap examined 6, pruned 0, kept 6, unparseable 6` on every tick. **`unparseable 6` out of six
+entries means it could not parse a single one** — a total failure of the field — and it is phrased
+identically to a healthy population report. I read past it at least twice in one session and described
+it in my own notes as designed-honest population naming, which it is, and which is not the same as
+harmless.
+
+Two things to take:
+
+- **Two records of the same fact, one derived and one hand-kept, is the defect** — not the staleness
+  that follows from it. The hand-kept one always drifts; the question is only whether anything ever
+  compares them. Derive what can be derived and keep authored only the part that genuinely needs an
+  author (here: `what`, keyed by lane, so it is dropped when its lane goes).
+- **A saturated denominator should not read like a census.** `unparseable N` where `N` is the entry
+  count is a different event from `unparseable 1 of 40`, and it should say so. A diagnostic that
+  reports total failure in the register of routine bookkeeping is an instrument that cannot raise its
+  voice.
+
+The skill's own text warned about exactly this one field over — *"hand-maintaining them is how
+`current_task_ids` came to name three tasks that had closed hours earlier while the dashboard rendered
+them."* The fix went to `current_task_ids` and `lanes` kept the old shape, which is the ordinary way a
+lesson lands on the instance instead of the class.
