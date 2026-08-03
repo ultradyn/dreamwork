@@ -511,6 +511,8 @@ def test_waiting_flock_identity_binds_device_and_inode():
 12: -> FLOCK ADVISORY WRITE 123 08:01:456 0 EOF
 13: -> FLOCK ADVISORY WRITE 124 00:2a:789 0 EOF
 14: FLOCK ADVISORY WRITE 125 08:01:456 0 EOF
+15: POSIX ADVISORY WRITE 126 08:01:not-an-inode 0 EOF
+16: OFDLCK ADVISORY WRITE 127 08:01:not-an-inode 0 EOF
 """
     identities = _waiting_flock_identities(locks)
     assert (0x08, 0x01, 456) in identities
