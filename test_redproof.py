@@ -1688,6 +1688,34 @@ class TestHistoryScanRegistrationBoundary:
         assert "rebase-stable merge-base prefix" in out, out
         assert "REFUSED" not in err, err
 
+    def test_rebase_still_catches_reintroduction_after_pre_fix_prefix(
+            self, repo, capsys):
+        old = "export function route() { return false; /* OLD BUG */ }\n"
+        fixed = "export function route() { return Boolean(guard); }\n"
+        (repo / "router.js").write_text(old)
+        _commit(repo, "router.js", msg="feat(#1179): production before fix")
+        _git(repo, "switch", "-q", "-c", "lane-fixture")
+        (repo / "carry.txt").write_text("work before the fix\n")
+        _commit(repo, "carry.txt", msg="feat(#1179): carried pre-fix work")
+        (repo / "router.js").write_text(fixed)
+        _commit(repo, "router.js", msg="fix(#1179): repair old bug")
+
+        _begin(repo, "router.js")
+        (repo / "router.js").write_text(old)
+        _commit(repo, "router.js", msg="wip(#1179): committed reversion")
+        _restore(repo, "router.js")
+        _commit(repo, "router.js", msg="fix(#1179): restore after injection")
+        _git(repo, "rebase", "--force-rebase", "master")
+
+        poisoned = _git(
+            repo, "log", "--format=%H",
+            "--grep=^wip(#1179): committed reversion$")
+        assert _check(repo) == 1
+        out, err = capsys.readouterr()
+        assert "1 holding a recorded injection" in out, out
+        assert poisoned[:12] in err, err
+        assert "wip(#1179): committed reversion" in err, err
+
     def test_a_pre_begin_pre_fix_commit_is_not_an_armed_injection(
             self, lane, capsys):
         # The canonical direction-1 sabotage restores the pre-fix bytes.  That
