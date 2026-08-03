@@ -208,6 +208,23 @@ def _extract_js_fn(page, sig):
     raise AssertionError("unbalanced braces extracting " + sig)
 
 
+def _extract_js_const(page, name):
+    """Extract one ``const NAME = …;`` declaration from the generated shell, so
+    a node-eval test runs the PRODUCTION constant — not a hand-restated copy.
+
+    #1042 — a test that restates ``TASK_REF_RE`` as a literal is blind to the
+    shipping autolinker: if production diverges the test still passes against
+    its own copy. Reaching the real constant means deleting or breaking the
+    production line makes the test go red (``ValueError`` on a deleted line, a
+    wrong render on a broken one). The three consts this reaches
+    (TASK_REF_SKIP, TASK_REF_SKIP_NO_CODE, TASK_REF_RE) carry no embedded ``;``
+    so the first one after the ``=`` ends the declaration cleanly."""
+    marker = "const " + name + " ="
+    start = page.index(marker)
+    end = page.index(";", start)
+    return page[start:end + 1]
+
+
 # #509 — a fixture DERIVED FROM the real answered #229 entry's triggering
 # features: a hard-wrapped title, a `-> answered` resolution head inside a
 # long rewrappable prose body, and a note carrying a box-drawing (nested)
@@ -6801,10 +6818,14 @@ class TestTasksRoute(unittest.TestCase):
         # three contexts a rendered-HTML regex cannot distinguish. #1017 adds
         # a setting: inline <code> links when it is ON (default), stays literal
         # when OFF; a #NNN already inside an <a> never double-links.
+        # #1042 — the skip sets AND the autolinker RE are pulled from the
+        # production source (not restated as literals), so the node-eval runs
+        # the SHIPPING TASK_REF_RE. Break the production regex and this test
+        # goes red (ValueError or a wrong render).
         script = textwrap.dedent("""\
-            const TASK_REF_SKIP = 'a,button,code,pre,script,select,style,textarea,[data-task-ref-ui]';
-            const TASK_REF_SKIP_NO_CODE = 'a,button,pre,script,select,style,textarea,[data-task-ref-ui]';
-            const TASK_REF_RE = /(^|[^\\w])(?:#(\\d+)|PG-(\\d+))\\b/g;
+            %s
+            %s
+            %s
             let data = null;
             %s
             %s
@@ -6849,9 +6870,12 @@ class TestTasksRoute(unittest.TestCase):
             if (codeOff.result)
               { console.error('inline code linked with setting off'); process.exit(15); }
             if (!proseOff.result || proseOff.result[1].href !== '/tasks?t=229') process.exit(16);
-        """) % (_extract_js_fn(src, "function taskRefParts("),
-                   _extract_js_fn(src, "function backtickTaskLinksOn("),
-                   _extract_js_fn(src, "function linkTaskRefText("))
+        """) % (_extract_js_const(src, "TASK_REF_SKIP"),
+                _extract_js_const(src, "TASK_REF_SKIP_NO_CODE"),
+                _extract_js_const(src, "TASK_REF_RE"),
+                _extract_js_fn(src, "function taskRefParts("),
+                _extract_js_fn(src, "function backtickTaskLinksOn("),
+                _extract_js_fn(src, "function linkTaskRefText("))
         _node_check(["node", "-e", script])
 
     def test_goal_reference_pg_links_to_goals_not_tasks(self):
@@ -6864,10 +6888,14 @@ class TestTasksRoute(unittest.TestCase):
         self.assertIn("PG-(\\d+)", src)  # the combined RE carries the goal branch
         self.assertIn("a.className = 'goalref'", src)
         self.assertIn("a.href = '/goals'", src)
+        # #1042 — same extraction as the task-ref test: skip sets AND the RE
+        # come from production source so this node-eval reaches the SHIPPING
+        # TASK_REF_RE, not a restated copy. Break the goal branch in the
+        # production regex and the PG-1 assertions below go red.
         script = textwrap.dedent("""\
-            const TASK_REF_SKIP = 'a,button,code,pre,script,select,style,textarea,[data-task-ref-ui]';
-            const TASK_REF_SKIP_NO_CODE = 'a,button,pre,script,select,style,textarea,[data-task-ref-ui]';
-            const TASK_REF_RE = /(^|[^\\w])(?:#(\\d+)|PG-(\\d+))\\b/g;
+            %s
+            %s
+            %s
             let data = null;
             %s
             %s
@@ -6929,9 +6957,12 @@ class TestTasksRoute(unittest.TestCase):
             const pre = node('PG-1 in a fence', 'pre');
             linkTaskRefText(pre);
             if (links(pre).length !== 0) { console.error('PG-1 inside <pre> linked'); process.exit(28); }
-        """) % (_extract_js_fn(src, "function taskRefParts("),
-                   _extract_js_fn(src, "function backtickTaskLinksOn("),
-                   _extract_js_fn(src, "function linkTaskRefText("))
+        """) % (_extract_js_const(src, "TASK_REF_SKIP"),
+                _extract_js_const(src, "TASK_REF_SKIP_NO_CODE"),
+                _extract_js_const(src, "TASK_REF_RE"),
+                _extract_js_fn(src, "function taskRefParts("),
+                _extract_js_fn(src, "function backtickTaskLinksOn("),
+                _extract_js_fn(src, "function linkTaskRefText("))
         _node_check(["node", "-e", script])
 
     def test_task_reference_states_and_origin_fail_closed(self):
