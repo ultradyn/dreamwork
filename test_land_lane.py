@@ -902,6 +902,190 @@ def test_marker_does_not_exclude_row_when_clock_normalisation_fails(
         "changed age wording passed because the marker asserted an exemption")
 
 
+def _render_receipt_rows_at(
+        root, monkeypatch, receipts, today="2026-08-20"):
+    """Render real lint rows for exact relative-path receipt records."""
+    acknowledgements = {}
+    for relative, receipt in receipts.items():
+        conflict = root / ".git" / relative
+        _write(conflict, "known stale cache evidence\n")
+        digest = lint.hashlib.sha256(conflict.read_bytes()).hexdigest()
+        acknowledgements[(relative, digest)] = receipt
+    monkeypatch.setattr(
+        lint, "worktree_roots",
+        lambda _base: (
+            root / "missing-new-worktrees", root / "missing-old-worktrees"),
+    )
+    monkeypatch.setattr(
+        lint, "_SYNC_CONFLICT_ACKNOWLEDGEMENTS", acknowledgements)
+    monkeypatch.setattr(
+        lint, "_sync_conflict_today",
+        lambda: date.fromisoformat(today),
+    )
+    rep = lint.Report()
+    lint.check_sync_conflict_files(root / ".dreamwork", rep)
+    return tuple(line for line in rep.render().splitlines()
+                 if "sync-conflict" in line)
+
+
+def _capture_two_receipt_delimiter_rename_rows(tmp_path, monkeypatch):
+    """Emit two real receipts whose legal paths contain the old delimiter."""
+    root = tmp_path / "two-receipt-delimiter-rename"
+    root.mkdir()
+    _git(root, "init", "-b", "master")
+    filename = "identity.sync-conflict-20260803-180706-QJRKU52.json"
+    before = {
+        f"wt/cache/ci-status/shared — acknowledgement is alpha/{filename}":
+            ("2026-08-03", "2026-08-10", "reason alpha"),
+        f"wt/cache/ci-status/shared — acknowledgement is beta/{filename}":
+            ("2026-08-03", "2026-08-10", "reason beta"),
+    }
+    before_rows = _render_receipt_rows_at(root, monkeypatch, before)
+    old_parent = root / ".git" / "wt" / "cache" / "ci-status" / "shared — acknowledgement is alpha"
+    old_parent.rename(old_parent.with_name("renamed — acknowledgement is alpha"))
+    old_parent = root / ".git" / "wt" / "cache" / "ci-status" / "shared — acknowledgement is beta"
+    old_parent.rename(old_parent.with_name("renamed — acknowledgement is beta"))
+    after = {
+        relative.replace("/shared —", "/renamed —", 1): receipt
+        for relative, receipt in before.items()
+    }
+    after_rows = _render_receipt_rows_at(root, monkeypatch, after)
+    return before_rows, after_rows
+
+
+def _write_static_lint(repo, rows):
+    """Fixture lint that preserves complete real-rendered OK and WARN rows."""
+    warning_count = sum(row.startswith("  WARN") for row in rows)
+    _write(
+        repo / "lint.py",
+        "rows = " + repr(tuple(rows)) + "\n"
+        "for row in rows: print(row)\n"
+        f"print('clean ({warning_count} warning(s))')\n",
+    )
+
+
+def _commit_static_lint_transition(root, lane, before_rows, after_rows, message):
+    _write_static_lint(root, before_rows)
+    _git(root, "add", "lint.py")
+    _git(root, "commit", "-m", "establish complete lint receipt baseline")
+    _git(lane, "rebase", "master")
+    _write_static_lint(lane, after_rows)
+    _git(lane, "add", "lint.py")
+    _git(lane, "commit", "-m", message)
+
+
+def test_two_receipt_delimiter_path_rename_refuses_gate(
+        landing_repo, tmp_path, monkeypatch):
+    """Two legal delimiter-bearing paths cannot collapse to one identity."""
+    root, lane = landing_repo
+    before_rows, after_rows = _capture_two_receipt_delimiter_rename_rows(
+        tmp_path, monkeypatch)
+    assert len(before_rows) == len(after_rows) == 2
+    _commit_static_lint_transition(
+        root, lane,
+        ("  WARN  old warning", *before_rows),
+        ("  WARN  old warning", *after_rows),
+        "rename two delimiter-bearing receipt paths",
+    )
+    before = _git(root, "rev-parse", "HEAD")
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 1, (
+        "two receipt paths collapsed to a false zero after both were renamed:\n" +
+        result.stdout + result.stderr)
+    assert "lint-precheck WARN row-set comparison: added=2 removed=2" in result.stdout
+    assert "REFUSE phase=lint-precheck: WARN row set changed" in result.stderr
+    _assert_base_unmoved(root, before)
+    _assert_retained(root, lane)
+
+
+def test_receipt_identity_collision_fails_closed(tmp_path, monkeypatch):
+    """Two different emitted rows for one receipt path are ambiguous."""
+    first, second = _capture_expired_sync_conflict_receipt_rows(
+        tmp_path, monkeypatch,
+        ("2026-08-03", "2026-08-10", "reason alpha"),
+        ("2026-08-03", "2026-08-10", "reason beta"),
+    )
+
+    with pytest.raises(ValueError, match="receipt identity collision"):
+        land_lane._partition_warn_row_sets((first, second), (first, second))
+
+
+def test_path_embedded_age_phrase_midnight_does_not_refuse_gate(
+        landing_repo, tmp_path, monkeypatch):
+    """Only grammar-bound clock fields change; path text stays byte-exact."""
+    root, lane = landing_repo
+    emitted = tmp_path / "path-embedded-age-phrase"
+    emitted.mkdir()
+    _git(emitted, "init", "-b", "master")
+    relative = (
+        "wt/cache/ci-status/acknowledgement is 1 day(s) old/"
+        "identity.sync-conflict-20260803-180706-QJRKU52.json"
+    )
+    receipt = {relative: ("2026-08-03", "2026-08-10", "same reason")}
+    before_rows = _render_receipt_rows_at(
+        emitted, monkeypatch, receipt, today="2026-08-20")
+    after_rows = _render_receipt_rows_at(
+        emitted, monkeypatch, receipt, today="2026-08-21")
+    assert len(before_rows) == len(after_rows) == 1
+    assert "acknowledgement is 1 day(s) old/" in before_rows[0]
+    assert "acknowledgement is 17 day(s) old" in before_rows[0]
+    _commit_static_lint_transition(
+        root, lane,
+        ("  WARN  old warning", *before_rows),
+        ("  WARN  old warning", *after_rows),
+        "cross midnight with an age phrase in receipt path",
+    )
+    before = _git(root, "rev-parse", "HEAD")
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 0, (
+        "path text satisfied clock normalisation while the actual ages changed:\n" +
+        result.stdout + result.stderr)
+    assert "WARN row-set comparison: added=0 removed=0" in result.stdout
+    assert _git(root, "rev-parse", "HEAD") != before
+
+
+def test_second_receipt_first_expiry_does_not_wedge_existing_expired_receipt(
+        landing_repo, tmp_path, monkeypatch):
+    """A stays expired across midnight while known-OK B first expires."""
+    root, lane = landing_repo
+    emitted = tmp_path / "independent-first-expiry"
+    emitted.mkdir()
+    _git(emitted, "init", "-b", "master")
+    filename = "identity.sync-conflict-20260803-180706-QJRKU52.json"
+    receipts = {
+        f"wt/cache/ci-status/A/{filename}":
+            ("2026-08-03", "2026-08-10", "receipt A"),
+        f"wt/cache/ci-status/B/{filename}":
+            ("2026-08-13", "2026-08-20", "receipt B"),
+    }
+    before_rows = _render_receipt_rows_at(
+        emitted, monkeypatch, receipts, today="2026-08-20")
+    after_rows = _render_receipt_rows_at(
+        emitted, monkeypatch, receipts, today="2026-08-21")
+    assert sum(row.startswith("  WARN") for row in before_rows) == 1
+    assert sum(row.startswith("  OK") for row in before_rows) == 1
+    assert sum(row.startswith("  WARN") for row in after_rows) == 2
+    _commit_static_lint_transition(
+        root, lane,
+        ("  WARN  old warning", *before_rows),
+        ("  WARN  old warning", *after_rows),
+        "A crosses midnight while B first expires",
+    )
+    before = _git(root, "rev-parse", "HEAD")
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 0, (
+        "B's first expiry wedged a gate because A was already expired:\n" +
+        result.stdout + result.stderr)
+    assert "WARN row-set comparison: added=0 removed=0" in result.stdout
+    assert _git(root, "rev-parse", "HEAD") != before
+
+
 # ---------------------------------------------------------------------------
 # #1040: coordinator authorisation for an intended WARN row-set change.
 #
