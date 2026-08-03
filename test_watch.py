@@ -6826,6 +6826,7 @@ class TestTasksRoute(unittest.TestCase):
             %s
             %s
             %s
+            %s
             let data = null;
             %s
             %s
@@ -7713,6 +7714,78 @@ class TestGoalsRoute(unittest.TestCase):
                 _extract_js_fn(components_src, "function taskRefParts("),
                 _extract_js_fn(components_src, "function backtickTaskLinksOn("),
                 _extract_js_fn(components_src, "function linkTaskRefText("),
+                _extract_js_fn(router_src, "function goalsUrl("),
+                _extract_js_fn(router_src, "function scrollGoalTarget("))
+        _node_check(["node", "-e", script])
+
+    def test_late_goal_data_reaches_the_pending_fragment_once(self):
+        """A cold /goals#goal-7 waits for the native row, not for a timer."""
+        root = os.path.dirname(watch.__file__)
+        goals_src = watch.read_text(os.path.join(
+            root, "dev", "build", "src", "goals.js"))
+        router_src = watch.ROUTER_JS
+        script = textwrap.dedent("""\
+            const goalSource = %s
+              .replace("import React from 'react';", '')
+              .replace("import { fromBuilder } from './delegate.js';",
+                "const fromBuilder = (_n, fn) => fn;")
+              .replace('export function registerGoals', 'function registerGoals');
+            const React = {
+              createElement(type, props, ...children) {
+                props = Object.assign({}, props || {}, {children});
+                return typeof type === 'function' ? type(props) : {type, props};
+              },
+              useState(initial) {
+                return [typeof initial === 'function' ? initial() : initial, () => {}];
+              },
+              useEffect() {}, useRef() { return {current:null}; },
+            };
+            const mdB = text => ({type:'details', props:{text, children:[]}});
+            let goalComponent = null;
+            eval(goalSource);
+            registerGoals({register(name, spec) { goalComponent = spec.component; }});
+            const walk = (node, visit) => {
+              if (!node || typeof node !== 'object') return;
+              visit(node);
+              for (const kid of (node.props && node.props.children || []).flat(Infinity))
+                walk(kid, visit);
+            };
+            const renderIds = next => {
+              const ids = [];
+              walk(goalComponent({data:next}), node => {
+                if (node.type === 'li' && node.props.className === 'goaltree-row')
+                  ids.push(node.props.id);
+              });
+              return ids;
+            };
+            let renderedIds = [], data = null, events = [];
+            const registry = {update(next) {
+              renderedIds = renderIds(next); events.push('render:' + renderedIds.join(','));
+            }};
+            const window = {dwNative:{registry}};
+            const document = {getElementById(id) {
+              return renderedIds.includes(id)
+                ? {scrollIntoView(){events.push('scroll:' + id)}} : null;
+            }};
+            %s
+            %s
+            %s
+            %s
+            const node = {id:7, title:'Seven', parent_id:null, state:'open',
+              state_error:null, completed_count:0, total_count:0, blockers:[],
+              details:'', criteria:[], member_tasks:[], verdicts:[]};
+            if (scrollGoalTarget('#goal-7')) {
+              console.error('cold goal-7 unexpectedly existed before data'); process.exit(50);
+            }
+            setData({goals:{health:'ok', examined_count:1, expected_count:1,
+              current_goal_id:null, nodes:[node]}});
+            if (events.join(',') !== 'render:goal-7,scroll:goal-7') {
+              console.error('delayed goal target goal-7 was never reached after late setData; events='
+                + events.join(',')); process.exit(51);
+            }
+        """) % (json.dumps(goals_src),
+                _extract_js_fn(router_src, "function nativeRegistry("),
+                _extract_js_fn(router_src, "function setData("),
                 _extract_js_fn(router_src, "function goalsUrl("),
                 _extract_js_fn(router_src, "function scrollGoalTarget("))
         _node_check(["node", "-e", script])
@@ -11609,7 +11682,8 @@ class TestFileViewMode(unittest.TestCase):
         # loses the mode (the deep-link bug this was red-proved against)
         for site in ("{ push: true, q: r.q, mode: r.mode, fragment: r.fragment }",
                      "push: false, q: r.q, mode: r.mode, fragment: r.fragment",
-                     "push: false, transition: false, q: r.q, mode: r.mode,"):
+                     "{ push: false, transition: false, q: r.q, mode: r.mode,\n"
+                     "             fragment: r.fragment }"):
             self.assertIn(site, watch.PAGE, f"navigate call missing the mode: {site}")
 
     def test_the_switch_is_links_markdown_only_and_holds_its_own_state(self):
