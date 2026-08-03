@@ -6313,3 +6313,39 @@ The skill's own text warned about exactly this one field over — *"hand-maintai
 `current_task_ids` came to name three tasks that had closed hours earlier while the dashboard rendered
 them."* The fix went to `current_task_ids` and `lanes` kept the old shape, which is the ordinary way a
 lesson lands on the instance instead of the class.
+
+## A correct policy asking the wrong question refuses in a way that reads as the policy working
+
+Occasioned by `#1177`, measured 2026-08-04.
+
+`dev/reap.py` refuses to remove a worktree whose branch holds commits not on master: *"unmerged commit
+would become easier to delete unseen."* That policy is right and should not change — `#349`'s posture
+is that nothing gets deleted on a guess.
+
+But it tests **sha** identity (`git rev-list master..<branch>`), and this loop's carry-forward workflow
+guarantees that question answers wrong. Each round cherry-picks the previous round's commits, so when a
+task finally lands, the landed content carries **different shas** than every intermediate round's
+branch. Those branches are permanently unmerged by sha and permanently superseded in fact. Thirty-three
+worktrees accumulated behind refusals that were each, individually, the safety check working as
+designed.
+
+`git cherry` asks **patch** identity and separates them in one command. `cx-1006r2rev` returns six `-`:
+every commit has an equivalent patch on master, `#1006` having landed as `3ca384d0`. It is provably
+safe to reap and `reap.py` cannot say so.
+
+What makes this hard to notice is the shape of the failure. **A refusal is not silence** — it prints,
+it names a commit, it cites a reason, and every instance of it looks like a system protecting work. I
+read those refusals as evidence the tool was right, which it was, about a question that was not the one
+I needed answered. I had even reported to the loop that the backlog was blocked on "unmerged commits",
+repeating the tool's framing back as a finding.
+
+Two things to carry:
+
+- **When a check's refusals pile up without any of them ever resolving, suspect the predicate, not the
+  population.** A guard that has said no thirty-three times and yes zero times is describing its own
+  question more than its subject.
+- **Prefer the asymmetric fix.** `git cherry`'s `-` is strong evidence (an equivalent patch is
+  demonstrably present); `+` is weak (patch-id is context-sensitive, so an amended cherry-pick reads
+  `+` while being substantively landed). So let `-` authorise and keep refusing on `+`: the common case
+  clears and no new deletion authority is created. A widened check that starts saying yes on weak
+  evidence would be strictly worse than today's over-refusal.
