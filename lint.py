@@ -6777,6 +6777,44 @@ def _lane_name_from_worktree_path(path: Path, roots: tuple[Path, Path]) -> str |
     )
 
 
+def _in_flight_gate_worktree(main_checkout: Path) -> Path | None:
+    """Resolved path of the gate's OWN registered scratch, when one is in flight.
+
+    `#1128` moved the landing gate's provisional merge into a registered
+    DETACHED worktree under a lane root — which is precisely the state
+    ``_live_lane_worktrees`` raises on. lint then emitted an ERROR, and
+    ``land_lane`` refuses at ``phase=lint-baseline`` on any lint ERROR, so
+    after `#1128` landed EVERY gate refused, for every branch, for a reason no
+    branch caused. Two branches refusing identically with different scratch
+    pids is what identified it.
+
+    Identity comes from the breadcrumb ``dev/land_lane.py`` writes
+    (``land_lane.py:71,180``), not from the ``.gate-`` name alone. That
+    distinction is the point: a ``.gate-*`` directory with NO live breadcrumb is
+    an ABANDONED gate, and must stay a loud fault (`#136` — the gate's live
+    scratch and a dead gate's leftovers are different states, and only one of
+    them is expected). Matching on the name alone would disable this check
+    permanently the first time a gate died.
+
+    Returns None whenever the breadcrumb is absent, unreadable, or names
+    nothing — every one of which leaves the existing fault reporting intact.
+    """
+    path = main_checkout / ".dreamwork" / "gate-in-flight.json"
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(record, dict):
+        return None
+    raw = record.get("gate_worktree")
+    if not raw:
+        return None
+    try:
+        return Path(str(raw)).resolve()
+    except OSError:
+        return None
+
+
 def _live_lane_worktrees(root: Path) -> LaneWorktrees:
     """Return registered lanes, distinguishing idle from failed classification.
 
@@ -6839,9 +6877,17 @@ def _live_lane_worktrees(root: Path) -> LaneWorktrees:
     lanes: list[tuple[str, str]] = []
     transient: list[tuple[str, str]] = []
     linked: list[str] = []
+    gate_scratch = _in_flight_gate_worktree(main_checkout)
     for raw_path, record_branch in records:
         candidate = Path(raw_path)
         if candidate.resolve() == root_resolved:
+            continue
+        # The landing gate's own in-flight scratch is not a lane and never was
+        # one (#1128). Skipped BEFORE `linked` so the "linked worktree(s) failed
+        # lane classification" fault below cannot fire on it either — during a
+        # gate of an idle fleet the scratch is the ONLY linked worktree, which
+        # is exactly when that second fault would trigger.
+        if gate_scratch is not None and candidate.resolve() == gate_scratch:
             continue
         linked.append(raw_path)
         lane_name = _lane_name_from_worktree_path(candidate, roots)

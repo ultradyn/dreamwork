@@ -8185,6 +8185,97 @@ class TestLaneContainmentBackstop:
             ["git", "-C", str(lane_wt), "rebase", "--abort"],
             capture_output=True, text=True, check=False)
 
+    def _repo_with_gate_scratch(self, tmp_path):
+        """A real lane PLUS the landing gate's own detached scratch (#1128).
+
+        Real worktrees, per this class's standing rule: the subject is git's
+        worktree registry, so faking it would put the fake in front of the
+        thing under test.
+        """
+        import subprocess
+        t, git = self._repo_with_lane(tmp_path)
+        base = subprocess.run(
+            ["git", "-C", str(t), "rev-parse", "HEAD"],
+            capture_output=True, text=True, check=True).stdout.strip()
+        scratch = t / ".worktrees" / f".gate-999-{base[:12]}"
+        git("worktree", "add", "--detach", str(scratch), base)
+        return t, git, scratch
+
+    def _write_crumb(self, t, gate_worktree):
+        import json
+        (t / ".dreamwork" / "gate-in-flight.json").write_text(
+            json.dumps({"gate_worktree": str(gate_worktree)}), encoding="utf-8")
+
+    def test_the_gates_own_in_flight_scratch_is_not_an_unclassifiable_lane(
+            self, tmp_path):
+        """#1128 landed a gate whose scratch is detached UNDER a lane root.
+
+        Production seam: the ``_in_flight_gate_worktree`` skip in
+        ``_live_lane_worktrees``. Without it lint ERRORs, and ``land_lane``
+        refuses at ``phase=lint-baseline`` on any lint ERROR — so after #1128
+        landed, EVERY gate refused for EVERY branch, for a reason no branch
+        caused. Two branches refusing identically with different scratch pids
+        is what identified it.
+
+        The real lane must still be classified: exempting the scratch must not
+        cost the check its actual subject.
+        """
+        t, _, scratch = self._repo_with_gate_scratch(tmp_path)
+
+        # Precondition: the scratch really is detached in the porcelain, or
+        # this test passes for a reason unrelated to the bug (#868).
+        import subprocess
+        porcelain = subprocess.run(
+            ["git", "-C", str(t), "worktree", "list", "--porcelain"],
+            capture_output=True, text=True, check=True).stdout
+        block = False
+        for line in porcelain.splitlines():
+            if line.startswith("worktree ") and str(scratch) in line:
+                block = True
+            elif block and line.startswith("detached"):
+                break
+        else:
+            assert False, "gate scratch is not detached in porcelain — " \
+                          "fixture does not reproduce the #1128 state"
+
+        self._write_crumb(t, scratch.resolve())
+
+        lanes = lint._live_lane_worktrees(t)
+        assert [b for _, b in lanes] == ["wt/lane"], list(lanes)
+        rep = self._rows(t)
+        levels = {lvl for lvl, w, _ in rep.rows if w == "lane-containment"}
+        assert lint.ERROR not in levels, rep.render()
+
+    def test_a_gate_scratch_is_exempt_only_when_the_breadcrumb_names_it(
+            self, tmp_path):
+        """The `.gate-` NAME must not be what grants the exemption.
+
+        Two states that must stay loud (#136 — they are not the live gate):
+        an ABANDONED scratch whose gate died leaving no breadcrumb, and a
+        scratch whose breadcrumb names some other path. Matching on the name
+        alone would disable this check permanently the first time a gate died,
+        which is exactly the shape of #651.
+        """
+        t, _, scratch = self._repo_with_gate_scratch(tmp_path)
+        crumb = t / ".dreamwork" / "gate-in-flight.json"
+
+        # (a) no breadcrumb at all — the abandoned gate.
+        assert not crumb.exists()
+        with pytest.raises(lint.LaneEnumerationError) as a:
+            lint._live_lane_worktrees(t)
+        assert str(scratch) in str(a.value)
+
+        # (b) breadcrumb naming a DIFFERENT path — same name, wrong identity.
+        self._write_crumb(t, t / ".worktrees" / ".gate-000-deadbeefcafe")
+        with pytest.raises(lint.LaneEnumerationError) as b:
+            lint._live_lane_worktrees(t)
+        assert str(scratch) in str(b.value)
+
+        # (c) and the positive control, so (a)/(b) are not passing because the
+        # fixture is broken in some way that would redden any input.
+        self._write_crumb(t, scratch.resolve())
+        assert [br for _, br in lint._live_lane_worktrees(t)] == ["wt/lane"]
+
     def test_mid_rebase_worktree_ownership_is_still_checked(self, tmp_path):
         """A transient (mid-rebase) lane's owned paths are still protected.
 
