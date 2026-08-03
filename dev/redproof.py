@@ -400,7 +400,19 @@ def _role(cwd: Path | None = None) -> str:
 
 
 def _identity_segment(lane: str | None = None) -> str:
-    """Resolve one launch identity; an explicit ``--lane`` wins over env."""
+    """THE ONE definition of 'which registry is this lane's' (#992/#1153).
+
+    An explicit ``--lane`` token wins over the ``DREAMWORK_LANE_ID`` env; both
+    map through ``identity_segment`` to one ``lane-<slug>-<digest>`` segment.
+    Every verb (begin/observe/restore/forget/check/handoff) resolves through
+    THIS function, so the concept is stated once rather than re-derived per
+    verb — a second definition is how a token ``begin`` accepts came to be one
+    ``forget`` refused (#1148 added that guard; #1153 removes the disagreement
+    by routing forget here too). ``--lane`` takes the RAW launch token (the
+    same value passed to begin), never the canonical dir name check prints:
+    two spellings for one lane is a typo that silently resolves something, and
+    normalising in one verb but not the others is the per-verb drift itself.
+    """
     if lane is not None:
         lane = lane.strip()
         if not lane:
@@ -408,6 +420,28 @@ def _identity_segment(lane: str | None = None) -> str:
                 "--lane names an empty launch identity; pass a non-empty "
                 "DREAMWORK_LANE_ID value")
     return _ls.identity_segment(lane)
+
+
+def _other_identity_hint(cwd: Path | None, audited_segment: str) -> str:
+    """Name identity dirs the resolved identity did NOT cover (#136/#1153).
+
+    "No registry for THIS identity" and "no registry anywhere" are different
+    states; collapsing them is how a bare verb's FAULT read as "your proof
+    failed" when the proof lived under a different identity (#1153 instance 1:
+    bare handoff resolved the env identity while the work sat under ``--lane``).
+    Returns "" when the audited identity is the only one or none exist, so a
+    genuinely empty lane stays calm and the hint only fires when there is
+    somewhere else the work could be.
+    """
+    others = [d.name for d in _ls.lane_identity_dirs(cwd)
+              if d.name != audited_segment]
+    if not others:
+        return ""
+    return (f" NOTE: {len(others)} other launch-identity dir(s) exist under "
+            f"this lane ({', '.join(sorted(others))}); this audit examined "
+            f"only the resolved identity. If the red-proof was registered "
+            f"under a different identity, pass the matching `--lane <token>` "
+            f"(the raw value used at `begin`) or run bare to use the env one.")
 
 
 def _snap_dir(cwd: Path | None, role: str | None = None,
@@ -1376,27 +1410,22 @@ def forget(cwd: Path | None, path: str, *, lane: str | None = None) -> int:
     root = _ls.worktree_root(cwd)
     try:
         role = _role(cwd)
-        if lane is None:
-            identity_dir = _snap_dir(cwd, role=role)
-        else:
-            lane = lane.strip()
-            derived = _identity_segment(lane)
-            existing = {d.name for d in _ls.lane_identity_dirs(cwd)}
-            segment = lane if lane in existing else derived
-            if segment not in existing:
-                known = ", ".join(sorted(existing)) or "(none)"
-                raise RedproofError(
-                    f"--lane {lane!r} did not resolve to an existing launch "
-                    f"identity (raw-token form maps to {derived!r}; known "
-                    f"canonical identity dir(s): {known})")
-            identity_dir = _redproof_dir(cwd, segment, role)
+        # ONE resolution rule for every verb (#1153): the same
+        # ``_identity_segment`` begin/observe/restore use. forget must not
+        # re-derive identity via a dir-name match or an existence check begin
+        # does not apply — that per-verb disagreement is what made a token
+        # begin accepts one forget refused (#1148's guard, #1153's defect).
+        # A token whose registry does not (yet) exist resolves to "nothing to
+        # forget" (exit 1), not a FAULT: begin creates, forget drops, but both
+        # resolve the SAME segment so a lane can address what it created.
+        identity_dir = _snap_dir(cwd, lane=lane)
         print(f"forget: resolved identity dir {identity_dir} (role: {role})")
         posix, _ = _worktree_path(root, path)
     except RedproofError as exc:
         sys.stderr.write(f"forget: REFUSED — {exc}\n")
         return 2
     registry = identity_dir / "registry.json"
-    entries, _ = _read_registry_at(registry)
+    entries, population_state = _read_registry_at(registry)
     kept: list[dict] = []
     dropped = retired_now = already_retired = 0
     for e in entries:
@@ -1417,11 +1446,21 @@ def forget(cwd: Path | None, path: str, *, lane: str | None = None) -> int:
         else:
             dropped += 1
     if not dropped and not retired_now:
-        sys.stderr.write(
-            f"forget: nothing to forget for {posix!r}"
-            + (f" — {already_retired} retired record(s) remain in history scope "
-               f"and cannot be dropped (#942)" if already_retired else
-               " (nothing registered)") + "\n")
+        msg = f"forget: nothing to forget for {posix!r}"
+        if already_retired:
+            msg += (f" — {already_retired} retired record(s) remain in history "
+                    f"scope and cannot be dropped (#942)")
+        else:
+            msg += " (nothing registered)"
+            # #1153/#136: "absent for THIS identity" is not "absent
+            # everywhere". A lane mixing tokens accumulates registries under
+            # several segments; if this one is empty but others hold work,
+            # name them so a token mismatch is diagnosed, not silent.
+            if population_state == "absent":
+                hint = _other_identity_hint(cwd, _identity_segment(lane))
+                if hint:
+                    msg += hint
+        sys.stderr.write(msg + "\n")
         return 1
     _write_registry_at(registry, kept)
     _release_snapshot(_snapshot_path_at(identity_dir, posix))
@@ -1701,14 +1740,20 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
                     f"pass `--lane <DREAMWORK_LANE_ID>` or inspect its scratch "
                     f"by hand.")
             else:
-                # Named-lane calm: one exact path was audited and found absent.
+                # One exact identity was audited and found absent. Name THAT
+                # identity (the label is "--lane <tok>" or "this lane"), never
+                # "the named lane" when no lane was named (#651); and if other
+                # identity dirs hold work, say so (#136) so the absence cannot
+                # read as "you have no registry" when it is "not THIS one".
+                label = audit_sources[0][0]
+                hint = _other_identity_hint(cwd, seg)
                 print(
                     "check: no injection required and none registered — 0 "
-                    f"required, the named lane's registry is absent (role: "
+                    f"required, the registry for {label} is absent (role: "
                     f"{role}). Nothing was owed (--require 0), so an absent "
                     f"registry is the expected state — NOT a verification of "
                     f"restoration (nothing was registered to restore) and NOT "
-                    f"an all-clear.")
+                    f"an all-clear.{hint}")
             print(reach_line)
             print(identity_scope)
             return 0
@@ -1726,12 +1771,18 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
                 f"`--lane <DREAMWORK_LANE_ID>` or inspect its scratch by "
                 f"hand.")
         else:
+            # Name the identity actually audited (#651): "the named lane" when
+            # no --lane was passed is how instance 1's FAULT read as a proof
+            # failure rather than "you looked in the wrong registry". If other
+            # identity dirs exist, name them (#136) so the lane sees its work.
+            label = audit_sources[0][0]
+            hint = _other_identity_hint(cwd, seg)
             _check_error(identity_scope,
                 f"check: FAULT — {require} injection(s) were required "
                 f"(--require) but no redproof registry could be located for "
-                f"the named lane (role: {role}). A required red-proof must "
-                f"leave a registry this audit can read; its absence means the "
-                f"proof cannot be verified, not that it passed.")
+                f"{label} (role: {role}). A required red-proof must leave a "
+                f"registry this audit can read; its absence means the proof "
+                f"cannot be verified, not that it passed.{hint}")
         return 2
 
     # RETIRED records are history-scan evidence and nothing else (#942), so
