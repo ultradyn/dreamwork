@@ -77,6 +77,30 @@ the review path deliberately is not — collapsing generator and validator for
 review is the point, because a hand-assembled review prompt is exactly what
 there is no second instrument to witness.
 
+## #644 IGC: one mechanical mitigation, not a bundle
+
+Context: a precise authored core can carry (F1) a remembered/inferred specific,
+(F2) mutable ledger state, (F3) a relaxed rule remembered as live, or (F4) a
+derived count that rotted. G1 is independent of author confidence; G2 keeps a
+correct, precise brief generatable; G3 closes a live defect without another
+author convention. “partial” catches only a subset of a family.
+
+| Rival | All | F1 | F2 | F3 | F4 | Refuses correct? | G1 | G2 | G3 |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| inline confidence labels | ✘ | ✔ | — | — | — | no | ✘ | ✔ | ✘ |
+| derive boilerplate constants | ✘ | — | — | — | ✔ | no | ✔ | ✔ | ✘ |
+| resolve repo `file:line` at base SHA | ✔ | partial | — | — | — | no | ✔ | ✔ | ✔ |
+| date/SHA on rule citations | ✘ | — | — | partial | — | yes | ✘ | ✘ | ✘ |
+| omit mutable ledger fields | ✘ | — | ✔ | — | — | yes | ✔ | ✘ | ✘ |
+
+Decisive errors: confidence labels still trust the confidently-wrong author;
+the stale count named by this task has already been removed, so a new derived
+token would not close typed counts; a ruling date exposes age but cannot prove
+the ruling remains live and rejects a correct undated citation; forbidding a
+currently-correct ledger field rejects a correct brief. Base-SHA resolution is
+the sole survivor: it closes the observed wrong-path coordinate mechanically,
+while stating plainly that a resolving line can still support a false claim.
+
 ## Storage
 
 This tool writes no files and opens no store for writing; it emits text on
