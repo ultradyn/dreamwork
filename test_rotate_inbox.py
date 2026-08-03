@@ -79,13 +79,10 @@ def _fixture_append_command(target: Path, boilerplate: str | None = None) -> str
         BOILERPLATE.read_text() if boilerplate is None else boilerplate
     )
     inbox = target / ".dreamwork" / "inbox.md"
-    live_lock = str(LIVE_INBOX) + ".lock"
-    assert live_lock in command, "standing append recipe did not name the live lock path"
-    retargeted = command.replace(live_lock, str(inbox) + ".lock")
-    assert str(LIVE_INBOX) in retargeted, (
+    assert str(LIVE_INBOX) in command, (
         "standing append recipe did not name the live inbox path"
     )
-    retargeted = retargeted.replace(str(LIVE_INBOX), str(inbox))
+    retargeted = command.replace(str(LIVE_INBOX), str(inbox))
     assert str(LIVE_INBOX) not in retargeted, (
         "live coordinator inbox path remained after fixture retargeting"
     )
@@ -104,6 +101,8 @@ class TestAppendRecipeExtraction:
         assert "flock " in command
         assert "REPORT_END" not in command
         assert str(LIVE_INBOX) not in command
+        assert str(tmp_path / ".dreamwork" / "inbox.md.lock") in command
+        assert f"cat >> {tmp_path / '.dreamwork' / 'inbox.md'}" in command
 
     def test_no_flock_recipe_still_extracts_for_behavioural_race(self):
         boilerplate = f"""
@@ -123,7 +122,7 @@ class TestAppendRecipeExtraction:
     flock /future/coordinator/inbox.md.lock -c 'cat >> /future/coordinator/inbox.md' <<'EOF'
 {RECIPE_END}
 """
-        with pytest.raises(AssertionError, match="did not name the live lock path"):
+        with pytest.raises(AssertionError, match="did not name the live inbox path"):
             _fixture_append_command(tmp_path, boilerplate)
 
 
