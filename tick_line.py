@@ -300,12 +300,21 @@ def _fleet_fact(target: str) -> str:
     # collapse #136 forbids. The denominator is the live set itself.
     verdicts = {v.lane: v.state for v in inspection.live_liveness}
     if verdicts:
+        working = sorted(l for l, s in verdicts.items()
+                         if s == lane_liveness.LIVE_WORKING)
         wedged = sorted(l for l, s in verdicts.items()
                         if s == lane_liveness.LIVE_WEDGED)
         unknown = sorted(l for l, s in verdicts.items()
                          if s == lane_liveness.LIVE_UNKNOWN)
         not_yet = sorted(l for l, s in verdicts.items()
                          if s == lane_liveness.LIVE_NOT_YET)
+        # #868: RENDER every count rather than leaving "classified" as a
+        # subtraction the reader must perform. working + wedged + unknown +
+        # not_yet = live; if any is omitted, the reader cannot derive it from
+        # the line alone.
+        if working:
+            fact += " · working %d [%s] (cpu above floor)" % (
+                len(working), ", ".join(working))
         if wedged:
             fact += " · WEDGED %d [%s] (live runner, positive wedge evidence)" % (
                 len(wedged), ", ".join(wedged))

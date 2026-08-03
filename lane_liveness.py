@@ -292,7 +292,7 @@ def read_proc_cwd(pid: int) -> str | None:
         return None
 
 
-def read_proc_cpu(pid: int) -> tuple[float, float] | None:
+def read_proc_cpu(pid: int) -> tuple[float, float | None] | None:
     """Return ``(cpu_seconds, elapsed_seconds)`` for ``pid`` from ``/proc``.
 
     ``cpu_seconds`` is accumulated utime+stime; ``elapsed_seconds`` is wall
@@ -301,10 +301,15 @@ def read_proc_cpu(pid: int) -> tuple[float, float] | None:
     permission-wedged runner is blocked, not computing, so its CPU stays near
     zero while a working one accumulates (Case C: 31s at 9 min).
 
-    Returns None when /proc cannot be read (the pid is gone, or this is not
-    Linux). The classifier treats None as "no signal" rather than as zero, so
-    a vanished runner is ``unknown`` not ``working`` — an absent measurement
-    must not read as a zero measurement (#136).
+    Returns None when /proc/<pid>/stat cannot be read (the pid is gone, or
+    this is not Linux). The classifier treats None as "no signal" rather than
+    as zero, so a vanished runner is ``unknown`` not ``working`` — an absent
+    measurement must not read as a zero measurement (#136).
+
+    When the stat IS readable but ``/proc/uptime`` is not, ``elapsed_seconds``
+    is ``None`` (age unknown) while ``cpu_seconds`` carries a real value. This
+    is the #136 distinction: "cannot tell the age" is a state (``unknown``),
+    not a default that folds into ``not-yet-observed`` (elapsed 0 < floor).
     """
     try:
         raw = Path("/proc/%d/stat" % int(pid)).read_text()
@@ -334,33 +339,97 @@ def read_proc_cpu(pid: int) -> tuple[float, float] | None:
         with open("/proc/uptime") as handle:
             uptime = float(handle.read().split()[0])
     except (OSError, ValueError, IndexError):
-        # CPU is readable but uptime is not: return CPU with unknown age so the
-        # classifier can still clear a computing runner rather than guessing.
-        return (cpu_seconds, 0.0)
+        # CPU is readable but uptime is not: return CPU with ABSENT age so the
+        # classifier reports unknown ("cannot tell") rather than folding a
+        # missing age into not-yet-observed (the #136 collapse, #1155 P1 #2).
+        return (cpu_seconds, None)
     now = time.time()
     start_epoch = (now - uptime) + (starttime / hz if hz else 0)
     return (cpu_seconds, max(0.0, now - start_epoch))
 
 
-def no_wedge_probe(worktree: Path, pid: int) -> str | None:
-    """The conservative default wedge probe: it finds nothing, by design.
+def _worktree_has_progress(worktree: Path) -> bool | None:
+    """Whether a live lane's worktree shows git progress (#1155).
 
-    Runner logs are NOT reliably locatable from the worktree — verified: no
-    ``*.log`` lives inside a fleet worktree, and the runner's combined output
-    lands wherever the dispatcher redirected it (outside the worktree), in a
-    format that differs per runner family (grok / codex / opencode). A default
-    that guessed a location would either find the wrong file or silently read
-    nothing while claiming to scan — the #651 shape (a probe whose verdict
-    names a cause it cannot detect).
-
-    So the default returns None: the wedge marker is an INJECTABLE signal. A
-    caller that knows the runner family's log location (the tick, a future
-    dispatcher that records the redirect path) supplies a real probe, and a
-    permission-wedge with a supplied ``auto-rejecting`` line then reads
-    ``wedged``. Without one, a low-CPU lane reads ``unknown`` — the honest
-    stall signature — never a false ``wedged`` (#1155 direction-2).
+    Returns True when the branch has commits ahead of ``master`` OR the working
+    tree has dirty tracked files — either is positive evidence the runner did
+    work. Returns False when the worktree is at base with a clean tree (the
+    shape of a permission-wedged lane that never got past its first rejected
+    ``git status``). Returns None when git could not answer (not a repo, git
+    failed) — the caller treats None as "cannot tell" rather than guessing
+    clean (#136).
     """
-    return None
+    cherry = subprocess.run(
+        ["git", "-C", str(worktree), "cherry", "master", "HEAD"],
+        capture_output=True, text=True, check=False)
+    if cherry.returncode != 0:
+        return None
+    has_commits = any(
+        line.startswith("+ ") for line in cherry.stdout.splitlines())
+    if has_commits:
+        return True
+    status = subprocess.run(
+        ["git", "-C", str(worktree), "status", "--porcelain"],
+        capture_output=True, text=True, check=False)
+    if status.returncode != 0:
+        return None
+    # Dirty tracked files (not untracked) indicate the runner modified code.
+    has_dirty = any(
+        line and not line.startswith("??")
+        for line in status.stdout.splitlines())
+    return has_dirty
+
+
+def _default_wedge_probe(
+        worktree: Path, pid: int, *,
+        cpu_seconds: float | None,
+        elapsed_seconds: float | None) -> str | None:
+    """The production default wedge probe (#1155 round 2).
+
+    A real wedged lane — one whose opencode runner auto-rejected its own
+    worktree on the first ``git status`` — leaves two kinds of evidence:
+    on disk (worktree at base, zero commits, clean tree) and in the process
+    table (near-zero CPU after enough wall time to have produced some). This
+    probe combines both: it returns a wedge marker ONLY when the process is
+    old enough to expect progress, is NOT accumulating CPU, and the worktree
+    shows no git progress. A lane that fails any of those gates returns None.
+
+    WHAT IT CAN SEE (#651):
+      - git commits ahead of master and dirty tracked files (on-disk progress)
+      - CPU and elapsed (passed from the cpu_reader the tick already runs)
+
+    WHAT IT CANNOT SEE:
+      - a wedge whose runner burns CPU in a retry loop (CPU ≥ floor → the
+        probe returns None; classify_live_lane then reads WORKING — positive
+        evidence of computation wins, #1155 P1 #1)
+      - a wedge whose runner made one commit then hung (the commit is
+        progress; the probe returns None, and the lane reads UNKNOWN not
+        WEDGED — a false negative, not a false positive)
+      - a wedge on a non-Linux host or a gone pid (cpu is None → None)
+      - the auto-reject log message itself (runner output is redirected
+        outside the worktree by the dispatcher; this probe reads what IS
+        in the worktree and the process table, not what is not)
+
+    The marker is FRESH and RUNNER-BOUND (#1155 P1 #1): it is recomputed from
+    the live worktree and the live process on every tick, never from a log
+    phrase that appeared once and persists forever. A lane that recovers and
+    starts committing or burning CPU drops the marker on the next tick.
+    """
+    # A young lane has not had time to produce commits or CPU — not a wedge.
+    if elapsed_seconds is None:
+        return None
+    if elapsed_seconds < YOUNG_ELAPSED_S:
+        return None
+    # A computing runner is not wedged regardless of worktree state.
+    if cpu_seconds is not None and cpu_seconds >= WORKING_CPU_FLOOR_S:
+        return None
+    # Check on-disk progress. None = cannot tell (not a repo, git failed) →
+    # degrade to no marker so the lane reads UNKNOWN, not a false WEDGED.
+    progress = _worktree_has_progress(worktree)
+    if progress is None or progress:
+        return None
+    return ("permission-wedge: live runner %.0fs, %.1fs cpu, no git progress"
+            % (elapsed_seconds, cpu_seconds or 0.0))
 
 
 def classify_live_lane(
@@ -374,32 +443,44 @@ def classify_live_lane(
     process); the verdict is the four-state split documented on
     :class:`LiveLane`. Ordering is load-bearing:
 
-      1. wedge marker → ``wedged``. Checked FIRST so a wedged lane that also
-         burns CPU in a retry loop is still flagged wedged, not working.
-      2. CPU at/above floor → ``working`` (positive evidence of computation).
+      1. CPU at/above floor → ``working``. Checked FIRST (#1155 P1 #1): a
+         rejected call proves a rejection happened, not that the runner never
+         recovered — and 120 CPU-seconds is positive evidence it did. So a
+         marker paired with high CPU reads ``working``, not ``wedged``.
+      2. wedge marker → ``wedged``. Reachable only when CPU is below floor,
+         so a retry-loop wedge that burns CPU reads ``working`` at step 1
+         (a known false negative, stated below — better than a false positive
+         that flags a working lane for destruction).
       3. young (elapsed under floor) → ``not-yet-observed`` (too soon to
          expect CPU or a marker; never wedged).
-      4. otherwise → ``unknown``.
+      4. otherwise → ``unknown`` (the honest stall signature).
 
-    Steps 2-4 can NEVER produce ``wedged``: only the marker can. So the
-    dangerous verdict is never made on CPU/age alone (#1155 direction-2:
-    flagging Case B wedged because it had not committed would kill working).
+    Steps 3-4 can NEVER produce ``wedged``: only the marker can, and only
+    when CPU has already been checked below floor. So the dangerous verdict
+    requires BOTH a marker AND low CPU — never CPU/age alone (#1155
+    direction-2: flagging Case B wedged because it had not committed would
+    kill working).
 
     BLIND SPOTS stated (#651): a wedge that burns CPU in a tight loop reads
-    ``working`` (the marker, if any, would still catch it at step 1); a wedge
-    whose cause has no recognised marker and no log reachable reads
-    ``unknown`` (hung network, crashed interpreter, unfindable log); a young
+    ``working`` (step 1 wins — positive evidence of computation); a wedge
+    whose cause produced one commit then hung reads ``unknown`` (the commit
+    is progress, so no marker — a false negative, not a false positive); a
+    wedge whose cause has no marker and no worktree progress reads ``wedged``
+    if old and low-CPU, ``unknown`` if the age cannot be determined; a young
     lane that is already wedged reads ``not-yet-observed`` until it ages past
     ``YOUNG_ELAPSED_S`` — youth is not innocence, but a marker found under the
     age floor is still reported ``wedged`` (step 1 precedes step 3).
     """
+    if cpu_seconds is not None and cpu_seconds >= WORKING_CPU_FLOOR_S:
+        return LiveLane(lane, LIVE_WORKING, "%.1fs cpu" % cpu_seconds)
     if wedge_marker:
         return LiveLane(lane, LIVE_WEDGED, wedge_marker)
     if cpu_seconds is None or elapsed_seconds is None:
         return LiveLane(
-            lane, LIVE_UNKNOWN, "no process signal (could not read cpu)")
-    if cpu_seconds >= WORKING_CPU_FLOOR_S:
-        return LiveLane(lane, LIVE_WORKING, "%.1fs cpu" % cpu_seconds)
+            lane, LIVE_UNKNOWN,
+            "cannot tell: %s" % (
+                "no cpu signal" if cpu_seconds is None
+                else "process age unknown (/proc/uptime unreadable)"))
     if elapsed_seconds < YOUNG_ELAPSED_S:
         return LiveLane(lane, LIVE_NOT_YET,
                         "alive %.0fs, %.1fs cpu, no marker"
@@ -677,7 +758,17 @@ def inspect_lanes(
     pid_by_lane.update(cwd_occupied)
     wt_by_name = {wt.name: wt for wt in worktrees}
     cpu_reader = read_cpu or read_proc_cpu
-    wedge = wedge_probe or no_wedge_probe
+    if wedge_probe is not None:
+        wedge = wedge_probe
+    else:
+        # The production default (#1155 round 2): a probe that combines the
+        # cpu_reader's signals (old enough? computing?) with a worktree git
+        # check (any commits or dirty files?) to find wedge evidence the tick
+        # can actually reach — not an always-None stub. The closure captures
+        # cpu_reader so the probe and the classifier share one measurement.
+        def wedge(wt, p, *, cpu_s=None, elapsed_seconds=None):
+            return _default_wedge_probe(
+                wt, p, cpu_seconds=cpu_s, elapsed_seconds=elapsed_seconds)
     live_liveness = tuple(
         _classify_lane_pid(lane, pid_by_lane.get(lane), wt_by_name,
                            cpu_reader, wedge)
@@ -703,6 +794,13 @@ def _classify_lane_pid(lane, pid, wt_by_name, cpu_reader, wedge):
     rather than raising, because liveness already named the lane live and the
     progress verdict must not un-name it (#136: a missing signal reads
     unknown, never as a confident state).
+
+    The DEFAULT probe (when the caller passes none) is a closure over the
+    cpu_reader: it needs CPU+elapsed to gate on age and computation before
+    checking the worktree, and the cpu_reader is already the injectable seam
+    the tick and tests share. An INJECTED probe keeps the ``f(worktree, pid)``
+    signature — the closure is used only when no probe is supplied, so the
+    production path (tick_line.py, no probe argument) gets the real one.
     """
     worktree = wt_by_name.get(lane)
     if pid is None or not isinstance(pid, int):
@@ -712,12 +810,16 @@ def _classify_lane_pid(lane, pid, wt_by_name, cpu_reader, wedge):
         cpu = cpu_reader(pid)
     except Exception:  # noqa: BLE001 — a probe error degrades to unknown
         cpu = None
+    cpu_s = cpu[0] if cpu else None
+    elapsed = cpu[1] if cpu else None
     marker = None
     if worktree is not None:
         try:
+            marker = wedge(worktree, pid, cpu_s=cpu_s,
+                           elapsed_seconds=elapsed)
+        except TypeError:
+            # Backward-compatible injected probe: f(worktree, pid) only.
             marker = wedge(worktree, pid)
         except Exception:  # noqa: BLE001 — a probe error degrades to unknown
             marker = None
-    cpu_s = cpu[0] if cpu else None
-    elapsed = cpu[1] if cpu else None
     return classify_live_lane(lane, cpu_s, elapsed, marker)

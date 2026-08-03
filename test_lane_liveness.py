@@ -20,6 +20,44 @@ def _subject(tmp_path, *, lane="cx-finished"):
     return target, worktree, identity
 
 
+_GIT_ENV = {
+    "GIT_AUTHOR_NAME": "Dreamwork Test",
+    "GIT_AUTHOR_EMAIL": "dreamwork@example.invalid",
+    "GIT_COMMITTER_NAME": "Dreamwork Test",
+    "GIT_COMMITTER_EMAIL": "dreamwork@example.invalid",
+}
+
+
+def _git_subject(tmp_path, *, lane="cx-finished"):
+    """A REAL git repo + linked worktree at base, matching fleet layout (#1155 P1 #3).
+
+    Unlike ``_subject`` (which mkdirs plain directories), this creates a git
+    repository with an initial commit and a linked worktree at HEAD — the
+    shape a dispatched lane actually has. The worktree's branch is at base
+    (zero commits ahead of master), so the default wedge probe's git check
+    sees no progress, which is the on-disk evidence a real wedged lane leaves.
+    """
+    env = os.environ | _GIT_ENV
+    target = tmp_path / "project"
+    target.mkdir()
+
+    def git(*args):
+        subprocess.run(
+            ["git", "-C", str(target), *args], check=True,
+            capture_output=True, text=True, env=env)
+
+    git("init", "-q")
+    (target / "tracked").write_text("fixture\n")
+    git("add", "tracked")
+    git("commit", "-q", "-m", "fixture")
+    worktree = tmp_path / ".worktrees" / lane
+    git("worktree", "add", "-q", "--detach", str(worktree), "HEAD")
+    identity = worktree / f".{lane}-identity"
+    identity.touch()
+    (worktree / ".dreamwork").mkdir(parents=True, exist_ok=True)
+    return target, worktree, identity
+
+
 def _inspect(target, worktree):
     return lane_liveness.inspect_lanes(
         target, process_entries=["101"],
@@ -590,14 +628,29 @@ class TestLiveLaneStates:
     """#1155: classify_live_lane is the pure state machine. Inputs are measured
     signals; tests inject numbers, never a real process."""
 
-    def test_wedge_marker_is_wedged_even_with_cpu(self):
-        """A retry loop burns CPU but the runner is still wedged: marker wins."""
+    def test_wedge_marker_with_high_cpu_is_working_not_wedged(self):
+        """#1155 P1 #1: a rejected call proves a rejection happened, not that
+        the runner never recovered — and 120 CPU-seconds is positive evidence
+        it did. CPU at/above floor wins over the marker, so this lane reads
+        WORKING, not WEDGED. The old test asserted WEDGED here and encoded the
+        dangerous false verdict as a requirement."""
         verdict = lane_liveness.classify_live_lane(
-            "glm-wedged-loop", cpu_seconds=120.0, elapsed_seconds=300.0,
+            "glm-recovered", cpu_seconds=120.0, elapsed_seconds=300.0,
+            wedge_marker="auto-rejecting external_directory")
+        assert verdict.state == lane_liveness.LIVE_WORKING, \
+            "a lane with 120s CPU and a marker was not classified working " \
+            "(CPU must win over marker, #1155 P1 #1): %r" % (verdict,)
+
+    def test_wedge_marker_with_low_cpu_is_wedged(self):
+        """The complement: a marker paired with LOW CPU (below floor) and
+        sufficient age → WEDGED. The marker is positive wedge evidence; the
+        low CPU confirms the runner is blocked, not computing."""
+        verdict = lane_liveness.classify_live_lane(
+            "glm-wedged", cpu_seconds=0.1, elapsed_seconds=600.0,
             wedge_marker="auto-rejecting external_directory")
         assert verdict.state == lane_liveness.LIVE_WEDGED, \
-            "a lane with a positive wedge marker was not classified wedged: " \
-            "%r" % (verdict,)
+            "a lane with low CPU and a positive marker was not classified " \
+            "wedged: %r" % (verdict,)
 
     def test_cpu_above_floor_is_working(self):
         """Case C shape: 31s CPU, no marker → working."""
@@ -644,101 +697,147 @@ class TestLiveLaneStates:
             wedge_marker=None)
         assert verdict.state == lane_liveness.LIVE_UNKNOWN
 
+    def test_unknown_age_is_unknown_not_not_yet_observed(self):
+        """#1155 P1 #2 / #136: when /proc/uptime is unreadable, the age is
+        ABSENT (None), not zero. A low-CPU lane with absent age must read
+        UNKNOWN ('cannot tell'), not not-yet-observed (which requires a real
+        young elapsed < floor). The old code returned elapsed=0, folding
+        'cannot tell' into 'not yet observed' — the exact #136 collapse."""
+        verdict = lane_liveness.classify_live_lane(
+            "glm-no-uptime", cpu_seconds=0.1, elapsed_seconds=None,
+            wedge_marker=None)
+        assert verdict.state == lane_liveness.LIVE_UNKNOWN, \
+            "a lane with absent age (elapsed=None) was not classified " \
+            "unknown — age must not collapse into not-yet-observed (#136): " \
+            "%r" % (verdict,)
+
 
 class TestLiveLaneCasesABC:
-    """The three measured Cases as fixtures, each with its verdict.
+    """The three measured Cases as REAL fixtures (#1155 P1 #3), each exercising
+    the PRODUCTION path — no injected wedge_probe, just like tick_line.py.
 
-    Case A — five wedged lanes: 0 CPU, marker present → wedged.
-    Case B — glm-1153ident: 0 commits at 11 min, accumulating CPU → working.
-    Case C — glm-1066label: 0-byte transcript, 31s CPU → working.
+    Case A — five wedged lanes: real git worktree at base, 0 CPU, old → WEDGED.
+    Case B — glm-1153ident: 0 commits at 11 min, accumulating CPU → WORKING.
+    Case C — glm-1066label: 0-byte transcript, 31s CPU → WORKING.
 
     B and C are the false positives: a classifier that called either wedged
     would make the signal untrustworthy. All three, or it proves nothing.
+    The default probe (the one the tick uses) must return WEDGED for A and
+    NOT-wedged for B and C in the same run, unmodified.
     """
 
-    def test_case_a_wedged_lane_is_wedged(self, tmp_path, monkeypatch):
-        """Case A: live pid, lane.lock present, but the runner logged
-        'permission requested … auto-rejecting' on its first git op and never
-        recovered. 0 CPU (blocked, not computing) + marker → wedged."""
-        target, worktree, identity = _subject(tmp_path, lane="glm-wedged")
+    def test_case_a_wedged_via_production_path(self, tmp_path, monkeypatch):
+        """Case A: a REAL git worktree at base (zero commits, clean tree).
+        Live pid, 0.1s CPU, 600s elapsed. The DEFAULT probe (no injection)
+        checks the worktree, finds no git progress, and returns a wedge
+        marker. classify_live_lane: CPU below floor, marker present → WEDGED.
+
+        THIS IS THE PRODUCTION-PATH TEST. It calls inspect_lanes the way
+        tick_line.py does — no wedge_probe argument. If the default probe
+        wiring is deleted (restored to always-None), this test fails with
+        UNKNOWN instead of WEDGED."""
+        target, worktree, identity = _git_subject(tmp_path, lane="glm-wedged")
         _write_lock(worktree, identity, pid=1101)
         monkeypatch.setattr(lane_liveness, "pid_matches_lane", lambda *_a: True)
-        inspection = lane_liveness.inspect_lanes(
+        inspection = lane_liveness.inspect_lanes(  # NO wedge_probe
             target, process_entries=["1101"],
             registered_worktrees=(worktree,),
             read_cmdline=lambda _pid: b"",
-            read_cpu=lambda _pid: (0.1, 600.0),
-            wedge_probe=lambda _wt, _pid: "auto-rejecting external_directory")
+            read_cpu=lambda _pid: (0.1, 600.0))
         verdict = inspection.live_liveness
         assert len(verdict) == 1, "expected one live-liveness verdict: %r" % (
             verdict,)
         assert verdict[0].lane == "glm-wedged"
         assert verdict[0].state == lane_liveness.LIVE_WEDGED, \
-            "Case A (0 cpu + marker) was not classified wedged: %r" % (
-                verdict[0],)
+            "Case A (real git worktree at base, 0 cpu) was not classified " \
+            "wedged via the production path: %r" % (verdict[0],)
 
-    def test_case_b_zero_commits_reading_is_working(self, tmp_path,
-                                                    monkeypatch):
-        """Case B: glm-1153ident — at 11 minutes, 0 commits, 0 dirty, newest
-        file still lane.lock. Indistinguishable from Case A by commits/mtime.
-        But it was READING the codebase, accumulating CPU. → working.
+    def test_case_b_zero_commits_via_production_path(self, tmp_path,
+                                                     monkeypatch):
+        """Case B: REAL git worktree at base (zero commits, clean tree).
+        Indistinguishable from Case A by git state alone. BUT 25s CPU at 11min
+        → the default probe sees CPU ≥ floor → returns None → classify_live_lane
+        reads WORKING (step 1: CPU wins). Same probe, same run, not wedged.
 
-        THIS IS THE DIRECTION-2 ANCHOR. The injected defect this task arms
-        against (classify on 'no commits') would call THIS lane wedged and
-        flag a working lane for destruction."""
-        target, worktree, identity = _subject(tmp_path, lane="glm-1153ident")
+        THIS IS THE DIRECTION-2 ANCHOR. The injected defect (classify on 'no
+        commits' without checking CPU) would call THIS lane wedged and flag a
+        working lane for destruction."""
+        target, worktree, identity = _git_subject(
+            tmp_path, lane="glm-1153ident")
         _write_lock(worktree, identity, pid=1102)
         monkeypatch.setattr(lane_liveness, "pid_matches_lane", lambda *_a: True)
-        # 11 minutes in, ~25s of CPU accumulated reading the tree. No marker.
-        inspection = lane_liveness.inspect_lanes(
+        inspection = lane_liveness.inspect_lanes(  # NO wedge_probe
             target, process_entries=["1102"],
             registered_worktrees=(worktree,),
             read_cmdline=lambda _pid: b"",
-            read_cpu=lambda _pid: (25.0, 660.0),
-            wedge_probe=lambda _wt, _pid: None)
+            read_cpu=lambda _pid: (25.0, 660.0))
         verdict = inspection.live_liveness
         assert verdict[0].state == lane_liveness.LIVE_WORKING, \
-            "Case B (0 commits, accumulating CPU) was NOT classified working " \
-            "— this is the false positive that would kill a real lane: %r" % (
+            "Case B (0 commits, 25s CPU) was NOT classified working — this " \
+            "is the false positive that would kill a real lane: %r" % (
                 verdict[0],)
 
-    def test_case_c_zero_byte_transcript_is_working(self, tmp_path,
-                                                    monkeypatch):
-        """Case C: glm-1066label — 9 minutes in, runner transcript is 0 bytes
-        (written at completion, not streamed). Indistinguishable by log
-        presence. But ps showed 31s of CPU — it was working the whole time.
-        → working."""
-        target, worktree, identity = _subject(tmp_path, lane="glm-1066label")
+    def test_case_c_zero_byte_transcript_via_production_path(self, tmp_path,
+                                                             monkeypatch):
+        """Case C: REAL git worktree at base, zero commits, with a zero-byte
+        transcript file (like a real opencode runner that writes at completion).
+        31s CPU → the default probe sees CPU ≥ floor → None → WORKING.
+        Same probe, same run, not wedged."""
+        target, worktree, identity = _git_subject(
+            tmp_path, lane="glm-1066label")
         _write_lock(worktree, identity, pid=1103)
+        (worktree / ".dreamwork" / "transcript.jsonl").touch()  # zero-byte
         monkeypatch.setattr(lane_liveness, "pid_matches_lane", lambda *_a: True)
-        inspection = lane_liveness.inspect_lanes(
+        inspection = lane_liveness.inspect_lanes(  # NO wedge_probe
             target, process_entries=["1103"],
             registered_worktrees=(worktree,),
             read_cmdline=lambda _pid: b"",
-            read_cpu=lambda _pid: (31.0, 540.0),
-            wedge_probe=lambda _wt, _pid: None)
+            read_cpu=lambda _pid: (31.0, 540.0))
         verdict = inspection.live_liveness
         assert verdict[0].state == lane_liveness.LIVE_WORKING, \
-            "Case C (0-byte transcript, 31s CPU) was NOT classified working: " \
-            "%r" % (verdict[0],)
+            "Case C (0-byte transcript, 31s CPU) was NOT classified " \
+            "working: %r" % (verdict[0],)
 
-    def test_case_a_without_marker_is_unknown_not_wedged(self, tmp_path,
-                                                         monkeypatch):
-        """Case A but the runner's log is NOT findable (default wedge probe):
-        0 CPU, old, no marker. → unknown — the honest stall signature, NOT a
-        false 'wedged'. The default probe finds nothing by design (#651)."""
-        target, worktree, identity = _subject(tmp_path, lane="glm-no-log")
+    def test_case_a_non_git_worktree_is_unknown_not_wedged(self, tmp_path,
+                                                           monkeypatch):
+        """A lane whose worktree is NOT a git repo (or where git fails): the
+        default probe CANNOT check progress → returns None → classify_live_lane
+        reads UNKNOWN ('cannot tell'). The probe degrades to no-marker on
+        error, never asserts a wedge it cannot verify (#651)."""
+        target, worktree, identity = _subject(tmp_path, lane="glm-no-git")
         _write_lock(worktree, identity, pid=1104)
         monkeypatch.setattr(lane_liveness, "pid_matches_lane", lambda *_a: True)
-        inspection = lane_liveness.inspect_lanes(  # no wedge_probe → default
+        inspection = lane_liveness.inspect_lanes(  # NO wedge_probe
             target, process_entries=["1104"],
             registered_worktrees=(worktree,),
             read_cmdline=lambda _pid: b"",
             read_cpu=lambda _pid: (0.1, 600.0))
         verdict = inspection.live_liveness
         assert verdict[0].state == lane_liveness.LIVE_UNKNOWN, \
-            "Case A without a findable log read as wedged — the default probe " \
-            "must not assert a marker it cannot read (#651): %r" % (verdict[0],)
+            "a non-git worktree read as wedged — the probe must degrade to " \
+            "cannot-tell when it cannot check progress (#651): %r" % (
+                verdict[0],)
+
+    def test_case_a_with_progress_is_unknown_not_wedged(self, tmp_path,
+                                                        monkeypatch):
+        """A lane whose worktree HAS git progress (dirty tracked files) with
+        low CPU: the default probe finds progress → returns None → UNKNOWN.
+        The probe does not assert a wedge when the lane made progress, even
+        if CPU is low (it might be a slow worker between operations)."""
+        target, worktree, identity = _git_subject(
+            tmp_path, lane="glm-progress")
+        _write_lock(worktree, identity, pid=1105)
+        # Dirty a tracked file — the runner modified code (progress).
+        (worktree / "tracked").write_text("modified\n")
+        monkeypatch.setattr(lane_liveness, "pid_matches_lane", lambda *_a: True)
+        inspection = lane_liveness.inspect_lanes(  # NO wedge_probe
+            target, process_entries=["1105"],
+            registered_worktrees=(worktree,),
+            read_cmdline=lambda _pid: b"",
+            read_cpu=lambda _pid: (0.1, 600.0))
+        verdict = inspection.live_liveness
+        assert verdict[0].state == lane_liveness.LIVE_UNKNOWN, \
+            "a worktree with progress read as wedged: %r" % (verdict[0],)
 
     def test_default_cpu_probe_reads_proc(self, tmp_path, monkeypatch):
         """When read_cpu is not injected, inspect_lanes uses read_proc_cpu on
