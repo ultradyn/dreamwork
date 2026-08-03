@@ -1901,7 +1901,17 @@ def land(
     squash: bool = False,
     expect_warn_add: Sequence[str] = (),
     expect_warn_remove: Sequence[str] = (),
+    gate_lock=None,
 ) -> int:
+    """Gate and land one branch.
+
+    ``gate_lock`` may carry an already-held gate mutex so a caller that has
+    run the non-mutating preflight (#1157 round 3) can hold the mutex across
+    its own rebase and this call without releasing and re-acquiring (which
+    would reintroduce the mutation-before-refusal race in a subtler form).
+    When ``None`` (the single-branch path) the mutex is acquired here as
+    before.
+    """
     invoked = Path.cwd().resolve()
     retained = f"branch={branch}; worktree=not-yet-resolved"
     repo_claim = _git(invoked, "rev-parse", "--show-toplevel")
@@ -1935,7 +1945,12 @@ def land(
         )
     # Held by this frame until land() returns. This is the whole-run gate
     # mutex: moving the provisional workspace does not make master multiwriter.
-    gate_lock = _try_lock(common_git_dir, "dreamwork-gate.lock")
+    # #1157 round 3: when the batch passes an already-held lock, reuse it
+    # rather than re-acquiring (a fresh flock on a new fd in the same process
+    # is denied by the held one, which would read as a spurious mutex-busy
+    # refusal).
+    if gate_lock is None:
+        gate_lock = _try_lock(common_git_dir, "dreamwork-gate.lock")
     if gate_lock is None:
         return _refuse(
             "gate-mutex", "another landing gate owns the whole-run mutex",
@@ -2750,7 +2765,564 @@ def land(
     return 0
 
 
+# ---------------------------------------------------------------------------
+# Batch landing (#1157).
+#
+# When N branches are ready to land, landing the first advances master and
+# staleifies the remaining N-1 — their preflight "branch is not rebased onto
+# current master" refusal is CORRECT (#1055: it fires before any test work, so
+# N refusals cost seconds, not N full gate runs). What was missing was a
+# supported coordinator path that, per entry, rebases onto the CURRENT master
+# and then gates, absorbing each landing before starting the next. The
+# coordinator hand-built that as throwaway shell scripts three times in one
+# afternoon; this is the version that lives in the repo.
+#
+# The rebase happens immediately before each gate, inside the loop — NOT all
+# up front. Rebase-all-then-gate-all reproduces the original bug: the first
+# landing staleifies the rest again (#1157 trap: "you rebase all branches up
+# front, then gate them all").
+#
+# Five outcomes stay distinguishable (#136): landed, refused, rebase-conflict,
+# abort-failed, skipped. A batch reports BOTH denominators (#868): how many
+# it attempted and how many landed.
+
+# ``abort-failed`` (round 2, #1157 P1) MUST NOT collapse into
+# ``rebase-conflict`` (#136): a conflict is routine and leaves the worktree
+# reattached and clean (the abort succeeded); an abort-failed rebase is a
+# worktree the abort could NOT return to a clean state — stranded mid-rebase,
+# precisely the state #1159 shows perturbing OTHER gates. They are two states,
+# and the batch must say so loudly for the second.
+BATCH_STATES = (
+    "landed", "refused", "rebase-conflict", "abort-failed", "skipped",
+)
+
+
+@dataclass
+class BatchEntry:
+    """One (branch, tests) pair in a batch.
+
+    ``tests`` is the coordinator's explicit named-test list, passed verbatim
+    to :func:`land`. An empty tuple is legal ONLY for a doc-only branch whose
+    diff has no binding paths (#1018); ``land`` itself enforces that.
+    """
+    branch: str
+    tests: tuple[str, ...]
+
+
+@dataclass
+class BatchOutcome:
+    """The verdict for one entry, carried to the summary table unchanged.
+
+    States must not collapse (#136): landed / refused / rebase-conflict /
+    abort-failed / skipped are five outcomes. ``rebase-conflict`` means the
+    rebase conflicted AND the abort restored the worktree's attachment and
+    clean state; ``abort-failed``
+    means a partial rebase was left that the abort could NOT clean up — a
+    stranded worktree (#1159/#1157 P1). ``base_before`` / ``base_after`` let
+    the summary show that master advanced once per landing (#1157 red-proof).
+    """
+    branch: str
+    state: str
+    detail: str
+    base_before: str
+    base_after: str
+
+
+def _parse_batch_entries(
+    raw: Sequence[Sequence[str]] | None,
+) -> list[BatchEntry]:
+    """Turn ``--entry`` token-lists into BatchEntry objects.
+
+    Each raw list's first token is the branch name; the rest are named test
+    paths. This pairing is the thing a flat ``just land-lanes b1 b2 ...``
+    recipe CANNOT express (IGC goal G2 refuted the justfile-only option),
+    because there is no delimiter in a flat arg list to say where one
+    branch's tests end and the next branch begins.
+    """
+    if not raw:
+        return []
+    entries: list[BatchEntry] = []
+    for tokens in raw:
+        if not tokens:
+            continue
+        entries.append(BatchEntry(branch=tokens[0], tests=tuple(tokens[1:])))
+    return entries
+
+
+# A rebase paused on a conflict leaves a ``rebase-merge/`` (interactive) or
+# ``rebase-apply/`` (am/apply) directory inside the worktree's git dir. The
+# batch must abort that state before the entry can be left alone — a worktree
+# stranded mid-rebase is exactly what #1159 shows perturbing OTHER gates.
+_REBASE_STATE_DIRS = ("rebase-merge", "rebase-apply")
+
+
+def _rebase_in_progress(lane: Path) -> bool:
+    """True if ``lane``'s repository has a rebase paused mid-operation.
+
+    Reads only (``is_dir``), so it still answers correctly under a read-only
+    git dir — which is how the abort-failed fixture (#1157 P1) makes
+    ``git rebase --abort`` genuinely fail while this check still sees the
+    stranded state.
+    """
+    git_dir = _git_text(lane, "rev-parse", "--absolute-git-dir")
+    if not git_dir:
+        return False
+    gd = Path(git_dir)
+    return any((gd / name).is_dir() for name in _REBASE_STATE_DIRS)
+
+
+@dataclass(frozen=True)
+class _RebaseAttempt:
+    """Resolved outcome of rebasing one entry, cleanup included.
+
+    ``ok``        — the rebase applied; nothing to clean up, proceed to gate.
+    ``conflict``  — the rebase did not apply AND the abort restored the
+                    worktree's attachment and clean state; the entry did not
+                    land but is safe to leave (#1159: it is not stranded).
+    ``abort-failed`` — a partial rebase was left that ``--abort`` could NOT
+                    clean up; the worktree is stranded mid-rebase and the
+                    batch must report it loudly (#136: not collapsed with a
+                    routine conflict).
+    """
+
+    state: str  # "ok" | "conflict" | "abort-failed"
+    detail: str
+
+
+def _rebase_lane_checked(lane: Path, base: str) -> _RebaseAttempt:
+    """Rebase ``lane`` onto ``base`` with exception-safe, checked cleanup.
+
+    This is the #1157 round-2 P1 fix. Round 1 reached ``git rebase --abort``
+    only on the normal non-zero path, with no ``finally`` and with the abort's
+    own result ignored — so an interruption/exception could strand the worktree
+    mid-rebase, and a FAILED abort was reported as an ordinary conflict and the
+    batch continued (the false-GREEN #1159 exists to defend against).
+
+    Two halves, both required (direction-2: a ``finally`` whose abort result is
+    still ignored fixes only the interruption half):
+
+    1. Cleanup is a checked ``finally`` path. It runs whether the rebase
+       conflicted normally OR an interruption/exception left the worktree
+       mid-rebase. An ``except Exception`` records the interruption so the
+       entry is reported (not silently dropped) and the batch continues;
+       ``BaseException`` (real Ctrl-C / SystemExit) still propagates, because
+       the cleanup runs in ``finally`` regardless.
+
+    2. The abort's OWN result is checked. ``--abort`` succeeding is what makes
+       a conflict routine (worktree reattached and clean); ``--abort`` failing
+       is a stranded worktree — a distinct ``abort-failed`` outcome (#136),
+       reported loudly, not collapsed with ``conflict``. Abort is attempted
+       only when a rebase is genuinely in progress, so a clean rebase (or a
+       dirty-tree refusal that never started one) is left untouched.
+    """
+    conflict_detail: str | None = None
+    abort_failed_detail: str | None = None
+    try:
+        rebase = _git(lane, "rebase", base)
+        if rebase.returncode:
+            _relay(rebase)
+            conflict_detail = (
+                rebase.stderr.strip()
+                or rebase.stdout.strip()
+                or f"git rebase exited {rebase.returncode}"
+            )
+    except Exception as exc:
+        # An interruption mid-rebase: the finally below still aborts any
+        # partial state, so the worktree is not stranded. Record the cause in
+        # the conflict detail (the rebase did not complete) and let the batch
+        # report this entry and continue — cleanup correctness does not depend
+        # on reaching the explicit abort below.
+        conflict_detail = f"rebase interrupted before cleanup: {exc}"
+    finally:
+        # Runs on the normal conflict path AND on any interruption/exception.
+        # Only abort when a rebase is genuinely in progress, so a rebase that
+        # applied cleanly is not rolled back. The abort result is CHECKED: a
+        # failure here is a stranded worktree, its own outcome (#136). Cleanup
+        # must not itself depend on printing, so the abort's output is captured
+        # into the detail only when it FAILS (a successful abort is silent —
+        # the rebase's own message, already relayed above, is the conflict's).
+        if _rebase_in_progress(lane):
+            abort = _git(lane, "rebase", "--abort")
+            if abort.returncode:
+                abort_failed_detail = (
+                    abort.stderr.strip()
+                    or abort.stdout.strip()
+                    or f"git rebase --abort exited {abort.returncode}"
+                )
+    # A failed abort outranks a routine conflict: the worktree could NOT be
+    # returned to a clean state, so it must be visible as a distinct, loud
+    # outcome — never folded into the quiet "conflict, moving on" (#136).
+    if abort_failed_detail is not None:
+        return _RebaseAttempt("abort-failed", abort_failed_detail)
+    if conflict_detail is not None:
+        return _RebaseAttempt("conflict", conflict_detail)
+    return _RebaseAttempt("ok", "")
+
+
+def _batch_gate_preflight(
+    repo: Path,
+    common_git_dir: Path,
+    base: str,
+    retained: str,
+) -> str | None:
+    """Lock-held, NON-MUTATING gate refusal checks for the batch (#1157 r3 P1).
+
+    Runs BEFORE the rebase, so any refusal raised here leaves the lane ref
+    byte-identical to its pre-batch value: the rebase is the first operation
+    that can move the ref, and it has not run yet (#136). This holds for
+    every refusal this function could raise — today a gate-in-flight
+    breadcrumb (live or dead) and a dirty main checkout — and for any added
+    later, because the guarantee is the call's position relative to the
+    rebase, not a list of checked outcomes.
+
+    The staleness (ancestor) check is deliberately NOT here: the branch is
+    expected to be stale before the rebase, and the rebase is what fixes it —
+    that check stays inside :func:`land` and runs after the rebase. Lane
+    dirtiness is checked earlier in the batch loop (a dirty lane is skipped
+    before the mutex is taken).
+
+    Returns ``None`` if the entry may proceed (rebase then gate), or a short
+    refusal-detail string if it must refuse. On refusal the helper has already
+    printed the REFUSE line (reusing the SAME helpers ``land`` uses, so the
+    message is byte-identical).
+    """
+    # A live or dead gate-in-flight breadcrumb means another gate is running
+    # or died mid-flight. Refusing here (before the rebase) leaves the lane ref
+    # untouched — the whole point of this round (#136).
+    existing_crumb = _read_gate_in_flight(repo)
+    if existing_crumb.present:
+        _refuse_dead_gate(repo, existing_crumb, base)
+        pid_state = "LIVE" if existing_crumb.pid_live else "DEAD"
+        return f"gate-in-flight breadcrumb ({pid_state}) present before rebase"
+
+    # A dirty main checkout means the coordinator's tree is mid-work; landing
+    # would merge into uncommitted state. land() re-checks this after the
+    # rebase too, but this copy runs first so a refusal never follows a rebase.
+    main_dirty = _git(repo, "status", "--porcelain=v1", "--untracked-files=no")
+    if main_dirty.returncode or main_dirty.stdout.strip():
+        count = len(main_dirty.stdout.splitlines()) if main_dirty.stdout else 0
+        _refuse(
+            "preflight",
+            "tracked worktree state is not clean\n"
+            + _dirty_tree_line("main", repo, main_dirty),
+            f"base={base}; main-status={count}",
+            retained,
+            base_state=_base_state(repo, base, None),
+        )
+        return f"main worktree not clean ({count} path(s))"
+
+    return None
+
+
+def land_batch(
+    entries: Sequence[BatchEntry],
+    *,
+    base: str = "master",
+) -> int:
+    """Land multiple branches serially: rebase-then-gate, per entry.
+
+    For each entry: resolve the branch's registered linked worktree, rebase
+    it onto the CURRENT ``base`` tip, and then call :func:`land` (which gates
+    and, on PASS, fast-forwards base and reaps the worktree). A rebase
+    conflict aborts the rebase (``--abort``, leaving the branch untouched)
+    and continues to the next entry; a gate refusal likewise continues.
+    Every entry's verdict is reported individually in the summary.
+
+    Returns 0 iff every entry landed; 1 otherwise. A batch with zero entries
+    returns 1 — "the batch exited 0" must not be vacuous (#1157 trap).
+
+    Does NOT address #997 (the serial, exclusive gate means the fleet idles
+    while one branch gates): batching removes the coordinator's re-derivation
+    cost, not the gate's serial bottleneck.
+    """
+    if not entries:
+        print(
+            "REFUSE batch: no entries provided; a batch that gates zero "
+            "branches is not a batch run",
+            file=sys.stderr,
+        )
+        return 1
+
+    invoked = Path.cwd().resolve()
+    repo_claim = _git(invoked, "rev-parse", "--show-toplevel")
+    repo_text = repo_claim.stdout.strip()
+    repo = Path(repo_text).resolve() if not repo_claim.returncode and repo_text else None
+    if repo is None or (invoked != repo and repo not in invoked.parents):
+        print(
+            "REFUSE batch: invocation is not inside a git worktree",
+            file=sys.stderr,
+        )
+        return 1
+
+    current = _git_text(repo, "branch", "--show-current")
+    if current != base:
+        print(
+            f"REFUSE batch: main checkout is on {current or 'DETACHED'}, "
+            f"not {base}; the batch rebase target must be the checked-out base",
+            file=sys.stderr,
+        )
+        return 1
+
+    # #1157 round 3: the gate mutex is taken per-entry BEFORE the rebase and
+    # held across the gate, so the non-mutating refusal checks run before any
+    # mutation. Resolve the common git dir once (it is stable for the repo).
+    common_git_dir = _common_git_dir(repo)
+    if common_git_dir is None:
+        print(
+            "REFUSE batch: could not resolve the repository common git directory",
+            file=sys.stderr,
+        )
+        return 1
+
+    outcomes: list[BatchOutcome] = []
+    for i, entry in enumerate(entries, 1):
+        separator = "=" * 60
+        print(
+            f"\n{separator}\nbatch entry {i}/{len(entries)}: "
+            f"branch={entry.branch} named-tests={list(entry.tests)!r}\n{separator}"
+        )
+
+        base_before = (
+            _git_text(repo, "rev-parse", "--verify", f"refs/heads/{base}")
+            or "UNKNOWN"
+        )
+
+        # Refresh the worktree roster each iteration: a prior entry's
+        # successful landing retired its worktree via reap.py, and a new
+        # gate worktree may have been registered and removed in between.
+        roster = _worktrees(repo)
+        if roster is None:
+            outcome = BatchOutcome(
+                entry.branch, "skipped",
+                "could not enumerate worktrees", base_before, base_before,
+            )
+            outcomes.append(outcome)
+            print(f"batch: {entry.branch}: SKIPPED — could not enumerate worktrees")
+            continue
+
+        lane = roster.get(entry.branch)
+        if lane is None:
+            outcome = BatchOutcome(
+                entry.branch, "skipped",
+                "no registered linked worktree for this branch",
+                base_before, base_before,
+            )
+            outcomes.append(outcome)
+            print(f"batch: {entry.branch}: SKIPPED — no registered linked worktree")
+            continue
+
+        # A dirty worktree means the lane is mid-work; rebasing it would
+        # either fail or silently incorporate uncommitted state. Skip it
+        # rather than touching a worktree the lane still owns.
+        dirty = _git(lane, "status", "--porcelain=v1", "--untracked-files=no")
+        if dirty.returncode or dirty.stdout.strip():
+            count = len(dirty.stdout.splitlines()) if dirty.stdout else 0
+            outcome = BatchOutcome(
+                entry.branch, "skipped",
+                f"lane worktree has {count} uncommitted tracked change(s)",
+                base_before, base_before,
+            )
+            outcomes.append(outcome)
+            print(
+                f"batch: {entry.branch}: SKIPPED — lane worktree not clean "
+                f"({count} path(s))"
+            )
+            continue
+
+        # #1157 round 3 P1: a refusal raised before the rebase leaves the
+        # lane ref byte-identical — nothing has written it yet. A refusal
+        # raised after the rebase (inside land()) may find the ref already
+        # moved, because the rebase ran by design. Preflight runs before the
+        # rebase; land() runs after it; the split is structural, so the
+        # guarantee does not depend on enumerating which refusal fires where.
+        # The gate mutex is held across the rebase AND the gate so nothing
+        # can land in between; acquiring, releasing and re-acquiring would
+        # reintroduce the race in a subtler form, so it is held throughout.
+        # A preflight REFUSE leaves the lane ref byte-identical to its
+        # pre-batch value — reported as lane-ref-mutated=False (#136).
+        gate_lock = _try_lock(common_git_dir, "dreamwork-gate.lock")
+        if gate_lock is None:
+            outcome = BatchOutcome(
+                entry.branch, "refused",
+                "another landing gate owns the whole-run mutex",
+                base_before, base_before,
+            )
+            outcomes.append(outcome)
+            print(
+                f"batch: {entry.branch}: REFUSED — another gate holds the mutex",
+                file=sys.stderr,
+            )
+            continue
+
+        retained = f"branch={entry.branch}; worktree={lane}"
+        lane_before = _git_text(lane, "rev-parse", "HEAD")
+        try:
+            # Non-mutating preflight BEFORE the rebase (see
+            # _batch_gate_preflight). Staleness is NOT checked here — the
+            # branch is expected to be stale before the rebase, and land()
+            # confirms it is satisfied afterwards.
+            refusal = _batch_gate_preflight(
+                repo, common_git_dir, base, retained,
+            )
+            if refusal is not None:
+                outcome = BatchOutcome(
+                    entry.branch, "refused", refusal, base_before, base_before,
+                )
+                outcomes.append(outcome)
+                lane_after = _git_text(lane, "rev-parse", "HEAD")
+                print(
+                    f"batch: {entry.branch}: REFUSED — {refusal} "
+                    f"(lane-ref-mutated={lane_after != lane_before})",
+                    file=sys.stderr,
+                )
+                continue
+
+            # Rebase onto the CURRENT base tip, immediately before gating. This
+            # is the whole behaviour: it absorbs each prior landing before this
+            # entry's gate checks staleness. Rebase-all-up-front would reproduce
+            # the original bug (#1157). The mutex is held, so nothing lands
+            # between this rebase and land()'s staleness check.
+            #
+            # Cleanup is exception-safe and the abort result is checked (#1157 P1):
+            # see _rebase_lane_checked. A conflict abort restores the worktree's
+            # attachment and clean state; a FAILED abort is a stranded worktree
+            # reported as its own outcome.
+            print(f"batch: rebasing {entry.branch} onto {base}@{base_before[:12]}")
+            attempt = _rebase_lane_checked(lane, base)
+            if attempt.state == "abort-failed":
+                # The worktree could NOT be returned to a clean state — a
+                # stranded mid-rebase worktree perturbs OTHER gates (#1159), so
+                # this is its own outcome reported loudly, not collapsed with
+                # rebase-conflict (#136). The branch did not land; the
+                # coordinator must clean up.
+                outcome = BatchOutcome(
+                    entry.branch, "abort-failed",
+                    f"rebase aborted but cleanup FAILED: {attempt.detail}",
+                    base_before, base_before,
+                )
+                outcomes.append(outcome)
+                print(
+                    f"batch: {entry.branch}: ABORT-FAILED — rebase left stranded "
+                    f"mid-rebase; cleanup did not complete: {attempt.detail}",
+                    file=sys.stderr,
+                )
+                continue
+            if attempt.state == "conflict":
+                # Routine conflict: the abort restored the worktree's attachment
+                # and clean state, so the entry is safe to leave (#1159).
+                outcome = BatchOutcome(
+                    entry.branch, "rebase-conflict", attempt.detail,
+                    base_before, base_before,
+                )
+                outcomes.append(outcome)
+                print(
+                    f"batch: {entry.branch}: REBASE-CONFLICT — {attempt.detail}",
+                    file=sys.stderr,
+                )
+                continue
+
+            # Gate: land() re-checks staleness (now satisfied by the rebase),
+            # runs all gates, and on PASS fast-forwards base and reaps the
+            # worktree. The already-held mutex is passed in so land() reuses it
+            # rather than re-acquiring (#1157 round 3).
+            result = land(
+                entry.branch, entry.tests, base=base, gate_lock=gate_lock,
+            )
+        finally:
+            gate_lock.close()
+
+        base_after = (
+            _git_text(repo, "rev-parse", "--verify", f"refs/heads/{base}")
+            or "UNKNOWN"
+        )
+
+        if result == 0:
+            outcome = BatchOutcome(
+                entry.branch, "landed",
+                f"{base} {base_before[:12]} -> {base_after[:12]}",
+                base_before, base_after,
+            )
+            print(
+                f"batch: {entry.branch}: LANDED — "
+                f"{base} {base_before[:12]} -> {base_after[:12]}"
+            )
+        else:
+            outcome = BatchOutcome(
+                entry.branch, "refused",
+                f"gate exited {result}", base_before, base_after,
+            )
+            print(
+                f"batch: {entry.branch}: REFUSED — gate exited {result}",
+                file=sys.stderr,
+            )
+        outcomes.append(outcome)
+
+    # Summary: every entry's verdict is individually visible (#1157 req 4,
+    # #136 states must not collapse, #868 both denominators).
+    landed = sum(1 for o in outcomes if o.state == "landed")
+    refused = sum(1 for o in outcomes if o.state == "refused")
+    conflicts = sum(1 for o in outcomes if o.state == "rebase-conflict")
+    abort_failed = sum(1 for o in outcomes if o.state == "abort-failed")
+    skipped = sum(1 for o in outcomes if o.state == "skipped")
+
+    print(f"\n{'=' * 60}")
+    print(
+        f"batch summary: attempted={len(outcomes)} landed={landed} "
+        f"refused={refused} rebase-conflict={conflicts} "
+        f"abort-failed={abort_failed} skipped={skipped}"
+    )
+    print(f"{'=' * 60}")
+    markers = {
+        "landed": "LANDED  ",
+        "refused": "REFUSED ",
+        "rebase-conflict": "CONFLICT",
+        "abort-failed": "ABORTBAD",
+        "skipped": "SKIPPED ",
+    }
+    for o in outcomes:
+        print(f"  {o.branch}: {markers[o.state]}  {o.detail}")
+
+    return 0 if landed == len(outcomes) else 1
+
+
+def _main_batch(argv: Sequence[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="dev/land_lane.py batch",
+        description=(
+            "Land multiple branches serially: per entry, rebase onto current "
+            "base then gate, absorbing each landing before the next (#1157)."
+        ),
+    )
+    parser.add_argument(
+        "--entry",
+        action="append",
+        dest="raw_entries",
+        metavar="BRANCH [TESTS...]",
+        nargs="+",
+        help=(
+            "one entry per repeat: the first token is the lane branch, the "
+            "rest are its named pytest paths/node ids. Repeat --entry for "
+            "each branch in the batch. A doc-only branch (#1018) may omit "
+            "tests; any other branch must name at least one test."
+        ),
+    )
+    parser.add_argument(
+        "--base",
+        default="master",
+        help="checked-out base branch (default: master)",
+    )
+    args = parser.parse_args(argv)
+    entries = _parse_batch_entries(args.raw_entries)
+    return land_batch(entries, base=args.base)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
+    raw_argv = list(argv) if argv is not None else list(sys.argv[1:])
+    # The batch subcommand (#1157) has its own arg shape (--entry, repeated),
+    # so it is routed before the single-branch parser. Anything else is the
+    # original single-branch path, unchanged.
+    if raw_argv and raw_argv[0] == "batch":
+        return _main_batch(raw_argv[1:])
     parser = argparse.ArgumentParser(
         description="Merge a rebased lane, run named and repo-wide gates, then reap its worktree."
     )

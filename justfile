@@ -538,6 +538,11 @@ reap-lane *ARGS:
 land-lane BRANCH *TESTS:
     python3 dev/land_lane.py {{BRANCH}} {{TESTS}}
 
+# Land multiple lanes in sequence: per entry, rebase onto current master then gate (#1157).
+# Usage: just land-lanes --entry b1 t1a t1b --entry b2 t2a --entry b3
+land-lanes *ARGS:
+    python3 dev/land_lane.py batch {{ARGS}}
+
 # Enable with exactly: git config --local core.hooksPath .githooks
 enable-lane-guard:
     git config --local core.hooksPath .githooks
