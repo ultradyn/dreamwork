@@ -6970,9 +6970,16 @@ class TestTasksRoute(unittest.TestCase):
             const pre = node('PG-1 in a fence', 'pre');
             linkTaskRefText(pre);
             if (links(pre).length !== 0) { console.error('PG-1 inside <pre> linked'); process.exit(28); }
-            // #1042 r3 — PG-1abc must NOT link (the same \b guard). The real
+            // #1042 r3/r4 — PG-1abc must NOT link (the same \b guard). The real
             // PG-1 beside it still links; only the token whose digits are the
             // whole token does, so a count of one (not two) is the signal.
+            // r4: count + textContent alone cannot tell WHICH PG-1 linked — the
+            // real token and the PG-1 prefix of PG-1abc both render as 'PG-1'.
+            // Pin the goalref's POSITION: it must land at the offset of the
+            // FIRST PG- token in the node (derived from the node's own text, not
+            // a hardcoded number), so a counter-regex that suppresses the real
+            // token and links the invalid one — landing at the SECOND token's
+            // offset — goes red here. exit(31).
             const gbound = node('PG-1 and PG-1abc', 'prose');
             linkTaskRefText(gbound);
             const gboundLinks = links(gbound);
@@ -6980,6 +6987,17 @@ class TestTasksRoute(unittest.TestCase):
               { console.error('PG-1abc boundary: expected 1 goalref, got ' + gboundLinks.length); process.exit(29); }
             if (!gboundLinks[0] || gboundLinks[0].textContent !== 'PG-1')
               { console.error('the one goalref was not the real PG-1'); process.exit(30); }
+            // Position: walk the result fragment in document order, summing
+            // text lengths, to find the goalref's character offset in the
+            // reconstructed text; it must equal the first PG- token's offset.
+            const firstPgAt = gbound.nodeValue.indexOf('PG-');
+            let recon = 0, goalAt = -1;
+            for (const kid of gbound.result) {
+              if (kid.kind === 'a' && kid.className === 'goalref') { goalAt = recon; break; }
+              recon += (kid.kind === 'text' ? kid.text : (kid.textContent || '')).length;
+            }
+            if (goalAt !== firstPgAt)
+              { console.error('the goalref linked at offset ' + goalAt + ', not the first PG- token at ' + firstPgAt + ' — the wrong token linked'); process.exit(31); }
         """) % (_extract_js_const(src, "TASK_REF_SKIP"),
                 _extract_js_const(src, "TASK_REF_SKIP_NO_CODE"),
                 _extract_js_const(src, "TASK_REF_RE"),
