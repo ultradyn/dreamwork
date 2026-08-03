@@ -18,7 +18,7 @@
     "client/shader.js": "e293165e637d135da651d35fa7834208a07e6dc1142d670d2cd6018a1017a462",
     "client/style.css": "fe684b55d98501419b63469c0d09bbe12c14cbff2210bf154f949c42f9cc3a1a",
     "client/views.js": "3d55e5e217711c8adf605d3f283e2bcb200b3ef229c54af4c1c68a9de5962e58",
-    "dev/build/ds-src/Answers.d.ts": "37601233c4e04a27862b6924b2054cf0d7d6d553e73b7ab849032a2e949bef97",
+    "dev/build/ds-src/Answers.d.ts": "41037336f4c819cf1256592c701ce61a494331af620098218f38c92591494843",
     "dev/build/ds-src/Answers.fixture.json": "7c433932a0e15e089d73041e48abb53d13ec0ca6fe23cd1feb6cc285a0a6c81b",
     "dev/build/ds-src/Answers.prompt.md": "f12fb5c8dc1c09219cdd2a3c868a8d74344632079f712d9096181ada95cb5bf9",
     "dev/build/ds-src/ArtifactRow.d.ts": "12ace56abf0721bdd65bbb781e52937fdbd8dbe21897fd5eab3455a3b4da04cb",
