@@ -25,6 +25,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 
@@ -57,6 +58,7 @@ COORDINATOR_INBOX_PREFIX = (
 )
 ALLOW_PIPED_STDOUT_ENV = "DREAMWORK_ALLOW_PIPED_STDOUT"
 LANE_ID_ENV = "DREAMWORK_LANE_ID"
+LANE_ROLE_ENV = "DREAMWORK_LANE_ROLE"
 
 
 class DispatchFault(Exception):
@@ -450,7 +452,8 @@ def _write_exclusive(path: Path, content: str) -> None:
 
 def _launch_detached(
         worktree: Path, task: int, lane: str, prompt_path: Path,
-        runner: list[str], prompt: str) -> int:
+        runner: list[str], prompt: str, *, cwd: Path | None = None,
+        child_env: dict[str, str] | None = None) -> int:
     """Fork, setsid, acquire the lane lock, and exec the runner (#876).
 
     All validation has already run in the parent; this is the LAST step. The
@@ -478,6 +481,14 @@ def _launch_detached(
         except OSError as exc:
             _pipe_write(write_fd, f"setsid: {exc}\n")
             os._exit(126)
+        if cwd is not None:
+            try:
+                os.chdir(cwd)
+            except OSError as exc:
+                _pipe_write(write_fd, f"cwd {cwd}: {exc}\n")
+                os._exit(126)
+        if child_env:
+            os.environ.update(child_env)
         try:
             acquire_lane_lock(worktree, task, lane, prompt_path)
         except DispatchFault as exc:
@@ -499,6 +510,190 @@ def _launch_detached(
         print(f"dispatch refused: {failure}", file=sys.stderr)
         return 2
     return 0
+
+
+def _review_runner(runner: list[str]) -> list[str]:
+    """Accept only the read-only reviewer recipe, never a write-capable mode."""
+    if runner and runner[0] == "--":
+        runner = runner[1:]
+    executable = Path(runner[0]).name if runner else ""
+    if executable != "ccc" or runner[1:] != [
+            "--permission-mode", "plan", "@cx-reviewer"]:
+        raise DispatchFault(
+            "review launch requires ccc --permission-mode plan @cx-reviewer; "
+            "reviewers read and report, so extra controls and write-capable "
+            "permission modes are refused"
+        )
+    return runner
+
+
+def _review_lane_name(branch: str, round_num: int) -> str:
+    return f"{branch}-review-r{round_num}"
+
+
+def _git_result(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(
+            ["git", *args], cwd=root, capture_output=True, text=True, check=False
+        )
+    except OSError as exc:
+        raise DispatchFault(f"could not run git {' '.join(args)}: {exc}") from exc
+
+
+def _registered_branch_worktree(root: Path, branch: str) -> tuple[Path | None, bool]:
+    """Return branch's registered worktree and whether its block is detached."""
+    result = _git_result(root, "worktree", "list", "--porcelain")
+    if result.returncode:
+        raise DispatchFault(
+            "could not inspect registered worktrees: "
+            + (result.stderr.strip() or f"git exited {result.returncode}")
+        )
+    for block in result.stdout.strip().split("\n\n"):
+        lines = block.splitlines()
+        path_line = next((line for line in lines if line.startswith("worktree ")), None)
+        branch_line = f"branch refs/heads/{branch}"
+        if branch_line in lines:
+            return (Path(path_line.removeprefix("worktree ")).resolve()
+                    if path_line else None, "detached" in lines)
+    return None, False
+
+
+def _write_json_atomic(path: Path, record: dict[str, object], *, create: bool = False) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(record, indent=2, sort_keys=True) + "\n"
+    if create:
+        with path.open("x", encoding="utf-8") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        return
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    with temporary.open("x", encoding="utf-8") as handle:
+        handle.write(payload)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(temporary, path)
+
+
+def launch_review(prompt_path: Path, branch: str, round_num: int,
+                  runner: list[str]) -> int:
+    """Persist, attach, record, and launch one read-only review attempt."""
+    try:
+        runner = _review_runner(runner)
+        validate_stdout()
+        if not branch or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", branch):
+            raise DispatchFault(
+                "--review-branch <name> is required and must be one safe path component"
+            )
+        if round_num < 1:
+            raise DispatchFault("--review-round must be a positive integer")
+        prompt = _read(prompt_path, "review prompt")
+        review_frame = _read(REVIEW_FRAME_PATH, "review frame")
+        coordinator_root = _coordinator_root()
+        pinned_sha = _resolve_pinned_sha(branch, coordinator_root)
+        if pinned_sha is None:
+            raise DispatchFault(
+                f"could not resolve branch {branch!r} to a commit; a review worktree "
+                "cannot be created without the exact pinned sha"
+            )
+        prompt = _inject_pinned_sha(prompt, review_frame, pinned_sha)
+        persisted = persist_review_prompt(
+            prompt, branch, round_num, review_frame=review_frame, pinned_sha=pinned_sha
+        )
+        review_lane = _review_lane_name(branch, round_num)
+        worktree = worktree_roots(coordinator_root.resolve())[0] / review_lane
+        existing, detached = _registered_branch_worktree(coordinator_root, review_lane)
+        if existing is not None or detached:
+            raise DispatchFault(
+                f"review branch {review_lane} already has registered worktree "
+                f"{existing}; choose the next --review-round rather than reusing an attempt"
+            )
+        branch_ref = _git_result(
+            coordinator_root, "show-ref", "--verify", f"refs/heads/{review_lane}"
+        )
+        if branch_ref.returncode == 0:
+            raise DispatchFault(
+                f"review branch {review_lane} already exists; choose the next "
+                "--review-round rather than detaching or moving it"
+            )
+        digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+        attempt_id = f"{review_lane}-{digest[:16]}"
+        attempt_path = persisted.with_name(
+            persisted.name[:-len(".prompt.md")] + ".launch.json"
+        )
+        record: dict[str, object] = {
+            "attempt_id": attempt_id,
+            "branch": branch,
+            "round": round_num,
+            "review_lane": review_lane,
+            "pinned_sha": pinned_sha,
+            "prompt_sha256": digest,
+            "prompt_bytes": len(prompt.encode("utf-8")),
+            "prompt": str(persisted.resolve()),
+            "worktree": str(worktree.resolve()),
+            "permission_mode": "plan",
+            "state": "prepared; reviewer not attempted",
+            "runner_exit": None,
+            "runs": 0,
+        }
+        _write_json_atomic(attempt_path, record, create=True)
+        worktree.parent.mkdir(parents=True, exist_ok=True)
+        added = _git_result(
+            coordinator_root, "worktree", "add", "-q", "-b", review_lane,
+            str(worktree), pinned_sha,
+        )
+        registered, detached = _registered_branch_worktree(coordinator_root, review_lane)
+        if (added.returncode != 0 or registered != worktree.resolve() or detached):
+            record["state"] = "worktree creation refused: attached branch not verified"
+            _write_json_atomic(attempt_path, record)
+            detail = added.stderr.strip() or f"git exited {added.returncode}"
+            raise DispatchFault(
+                f"attached review worktree creation failed: {detail}; registered="
+                f"{registered}; detached={detached}"
+            )
+        record["state"] = "unverified attempt: reviewer result not yet observed"
+        record["runs"] = 1
+        _write_json_atomic(attempt_path, record)
+        result = _launch_detached(
+            worktree, 0, review_lane, persisted, runner, prompt,
+            cwd=worktree,
+            child_env={LANE_ROLE_ENV: "reviewer", LANE_ID_ENV: secrets.token_hex(16)},
+        )
+        if result == 0:
+            settle = float(os.environ.get("REVIEW_RUNNER_SETTLE", "0.3"))
+            if settle > 0:
+                time.sleep(settle)
+            present, examined, _ = _review_lane_live(review_lane, coordinator_root)
+            if not present:
+                record["state"] = (
+                    "spawn failed: dispatcher exit=0 but no reviewer runner "
+                    "holds the review worktree cwd"
+                )
+                _write_json_atomic(attempt_path, record)
+                print(
+                    "review launch refused: dispatcher exited 0 but no reviewer "
+                    f"runner holds {worktree.resolve()} as cwd; examined={examined}",
+                    file=sys.stderr,
+                )
+                return 3
+            record["state"] = (
+                "spawned: reviewer present in review worktree (cwd-containment); "
+                "runner exit not observed"
+            )
+            _write_json_atomic(attempt_path, record)
+            print(
+                f"review launched: branch={branch}; review_lane={review_lane}; "
+                f"worktree={worktree.resolve()}; attempt={attempt_id}; "
+                f"permission_mode=plan; cwd-containment examined={examined}; "
+                "runner exit not observed"
+            )
+        else:
+            record["state"] = f"launch refused: dispatcher exited {result}"
+            _write_json_atomic(attempt_path, record)
+        return result
+    except (DispatchFault, OSError) as exc:
+        print(f"review launch refused: {exc}", file=sys.stderr)
+        return 2
 
 
 def _pipe_write(fd: int, message: str) -> None:
@@ -881,15 +1076,19 @@ def _parser() -> argparse.ArgumentParser:
     mode.add_argument("--verify-pending", action="store_true")
     mode.add_argument("--review-prompt", type=Path,
                       help="validate and persist a review dispatch prompt (#1112)")
+    mode.add_argument(
+        "--launch-review", type=Path,
+        help="create an attached review branch/worktree, record the attempt, "
+             "and launch a plan-mode reviewer (#1163)")
     parser.add_argument(
         "--prepare",
         action="store_true",
         help="validate and persist --prompt without requiring its not-yet-created branch",
     )
     parser.add_argument("--review-branch",
-                        help="branch under review (review-prompt mode only)")
+                        help="branch under review (review modes only)")
     parser.add_argument("--review-round", type=int, default=1,
-                        help="review round number (review-prompt mode only, default 1)")
+                        help="review round number (review modes only, default 1)")
     parser.add_argument("runner", nargs=argparse.REMAINDER)
     return parser
 
@@ -907,6 +1106,11 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         print(f"brief integrity verified: {count} governed brief(s) matched receipts")
         return 0
+
+    if args.launch_review:
+        return launch_review(
+            args.launch_review, args.review_branch, args.review_round, args.runner
+        )
 
     if args.review_prompt:
         if args.runner:

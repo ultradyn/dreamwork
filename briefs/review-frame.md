@@ -4,41 +4,46 @@ Concatenate this into every review prompt, the way `frame.md` is emitted into ev
 It exists because the alternative — remembering to hand-write these rules per dispatch — measurably
 fails: two false findings in one night (`#1109`), and a third the following review.
 
-`#1109` established that review briefs have **no generation path** (`dev/brief.py` builds lane
-briefs only; there is no `--review` mode, no `review-frame` emitter, and review dispatches leave no
-receipt in `.dreamwork/launch-attempts/`). So this file is a coordinator convention, not a
-guarantee by construction. Its weakness is known and recorded on `#1112`.
+Review dispatch is governed by construction. `dev/brief.py --review BRANCH` appends this file
+verbatim and persists a receipt under `.dreamwork/review-dispatches/`; `dev/dispatch_lane.py
+--review-prompt` is the persist-only check and correctly refuses a runner. To launch, use the
+distinct supported path:
+
+    python3 dev/dispatch_lane.py --launch-review PROMPT --review-branch BRANCH --review-round ROUND -- ccc --permission-mode plan @cx-reviewer
+
+That path pins the reviewed commit, creates an **attached review branch** and its own worktree,
+records the launch attempt, launches with that worktree as cwd, and sets the reviewer role. Plan
+mode is load-bearing: a reviewer reads and reports; it does not receive write permission.
 
 ---
 
-## You are working in a clone. Three things are invisible or misleading here.
+## You are working in an attached review worktree. Three things are invisible or misleading here.
 
-Reviewers are dispatched into `git clone -s` copies under `/tmp`. **That is deliberate and
-correct**: a reviewer launched from the repo root holds the main checkout by cwd, and the merge gate
-refuses to run while any `ccc`/`grok`/`codex` process does. The clone is what lets a review and a
-gate overlap.
+The supported launcher creates a review branch at the pinned commit and checks it out under the
+sibling `.worktrees/` root. **The branch line is deliberate and load-bearing**: lane containment and
+safe reaping can classify the checkout, while the separate cwd lets a review and a gate overlap.
+Never replace it with `git worktree add --detach`.
 
-The cost is that a clone cannot see everything the repo contains. Each of the following has already
-produced a confidently-wrong finding:
+The review worktree still does not make every live coordinator fact visible. Each of the following
+has already produced a confidently-wrong finding:
 
-1. **Lane-scoped red-proof state does not exist here.** The registry lives at
+1. **Your reviewer red-proof state is not the author's state.** The registry lives at
    `~/.cache/ud-dreamwork/lane-scratch/ud-dreamwork/<lane>/lane-<lane>-<id>/redproof/registry.json`,
-   keyed by lane identity. A clone has no lane identity, so `redproof check` reports
-   *"FAULT — no redproof registry could be located"*. **Do not report red-proof findings at all** —
-   the merge gate verifies red-proof itself, in the real lane worktree, where the same command
-   exits 0. (`#1033`'s review filed this FAULT as a "material hand-off failure"; it was an artifact
-   of the reviewer's own environment.)
+   keyed by lane identity and role. The launcher sets `DREAMWORK_LANE_ROLE=reviewer`, so a bare
+   `redproof check` examines the reviewer's registry, not the author's. **Do not report that result
+   as the author's red-proof verdict** — use `dev/lane_scratch.py --author-evidence` when the review
+   needs the author's persisted evidence, and let the merge gate judge the author's registry.
 
-2. **Unlanded sibling branches are not in your clone.** A search returning nothing proves the symbol
-   is absent from **this tip**, and nothing more. A claim about another branch is
-   **unverifiable from here, not false**. (`#1094`'s review refuted a correct caveat with an empty
-   `rg`; the symbol was on the unlanded `glm-1034clean`. The caveat was right and nearly got
-   deleted.)
+2. **A sibling branch is not in your checked-out tree.** A search returning nothing proves the
+   symbol is absent from **this tip**, and nothing more. Inspect a named sibling with `git show
+   BRANCH:PATH`; do not treat the working-tree search as evidence about another branch.
 
-3. **`python3 lint.py` is not clean in a clone, and its ERRORs are clone-state artifacts** — the
+3. **`python3 lint.py` is not necessarily clean in a review worktree, and some ERRORs are
+   checkout-state artifacts** — the
    tracked `tasks.md` is a migration notice, the gitignored ledger store does not travel, and
-   worktree-drain state is stale. Compare **WARN row SETS** against `origin/master`. Never report
-   absolute warning counts, and label any clone-state ERROR as such rather than as a branch defect.
+   worktree-drain state is stale. Compare **WARN row SETS** against local `master`. Never report
+   absolute warning counts, and label any review-worktree-state ERROR as such rather than as a
+   branch defect.
 
 **Report, do not suppress.** The instruction is to mark these **unverifiable-from-here with the
 reason** — not to stay silent. A reviewer that reports nothing is worse than one that reports a
