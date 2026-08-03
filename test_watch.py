@@ -11703,6 +11703,47 @@ class TestRunMode(unittest.TestCase):
             self.assertIn("/run-mode", paths)
 
 
+def test_posture_agreement_file_errors_name_the_condition(tmp_path):
+    make_target(str(tmp_path))
+    posture_path = tmp_path / ".dreamwork" / "posture"
+
+    posture_path.write_bytes(b"\xff")
+    message = watch.read_posture_agreement(str(tmp_path))["message"]
+    assert "posture file undecodable" in message, (
+        "present but undecodable posture bytes were mislabeled unavailable; "
+        f"agreement message was {message!r}"
+    )
+    assert "posture file unavailable" not in message
+
+    posture_path.unlink()
+    posture_path.mkdir()
+    message = watch.read_posture_agreement(str(tmp_path))["message"]
+    assert "posture file unavailable" in message
+    assert "posture file undecodable" not in message, (
+        "a directory at the posture path is unavailable, not undecodable; "
+        f"agreement message was {message!r}"
+    )
+
+    posture_path.rmdir()
+    posture_path.write_text("pace: hot\n", encoding="utf-8")
+    posture_path.chmod(0)
+    try:
+        try:
+            posture_path.read_text(encoding="utf-8")
+        except PermissionError:
+            pass
+        else:
+            raise AssertionError("fixture did not produce a real permissions error")
+        message = watch.read_posture_agreement(str(tmp_path))["message"]
+    finally:
+        posture_path.chmod(0o600)
+    assert "posture file unavailable" in message
+    assert "posture file undecodable" not in message, (
+        "a permissions error makes the posture file unavailable, not "
+        f"undecodable; agreement message was {message!r}"
+    )
+
+
 class TestPosture(unittest.TestCase):
     """#445 increment 2 — three-axis posture controls on the dashboard.
 
