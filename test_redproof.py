@@ -17,6 +17,7 @@ import importlib.util
 import hashlib
 import inspect
 import json
+import os
 import re
 import shlex
 import subprocess
@@ -3323,3 +3324,147 @@ class TestRelaunchedLaneIsTheRemainingHole:
         out, err = capsys.readouterr()
         assert exit == 1, out + err
         assert poisoned[:12] in err, err
+
+
+# ── #1086: handoff derives the requirement, then checks ──────────────────────
+
+
+def _handoff(repo: Path, **kw) -> int:
+    return rp.handoff(repo, **kw)
+
+
+def _binding_branch(repo: Path) -> tuple[str, str]:
+    """A lane branch with a BINDING diff so _classify_diff derives require=1.
+
+    Models the #1086 case: a branch that changed a .py file owes an injection.
+    Returns (base_sha, branch_sha) so a test can assert the precondition
+    (require is 1 because the diff is binding, not because the test hardcoded it).
+    """
+    base = _git(repo, "rev-parse", "master")
+    _git(repo, "switch", "-q", "-c", "handoff-fixture")
+    (repo / "router.js").write_text(
+        "export function route() { return Boolean(guard); }\n")
+    head = _commit(repo, "router.js", msg="feat(#1086): binding change")
+    _git(repo, "switch", "-q", "master")  # leave branch checked out cleanly
+    _git(repo, "switch", "-q", "handoff-fixture")
+    return base, head
+
+
+class TestHandoffDerivesRequirement:
+    """#1086: the requirement is DERIVED from the diff, never from the count.
+
+    Each test asserts the precondition it depends on (the derived requirement)
+    before asserting the verdict, because a literal exit code over today's
+    fixture is a check with an expiry date."""
+
+    def test_a_binding_diff_with_no_injection_is_refused_not_calm(
+            self, repo, capsys):
+        """glm-1038states: lane wrote 'no injection owed' over a require=1 diff.
+
+        handoff derives the requirement from _classify_diff, so it contradicts
+        the lane's recollection. With no registry locatable and a required
+        injection, check FAULTs (exit 2) — the proof cannot be verified, not
+        calm (#1038 Finding 3). The header still names the derived number."""
+        base, head = _binding_branch(repo)
+        # PRECONDITION: the diff really is binding (require=1). The verdict
+        # below means nothing if this fixture stopped owing an injection.
+        derived = rp._derived_requirement(repo, base, head)
+        assert derived["require"] == 1, (
+            f"fixture lost its binding diff; require={derived['require']} "
+            f"binding={derived['binding']}")
+        capsys.readouterr()
+        exit = _handoff(repo)
+        out, err = capsys.readouterr()
+        assert exit == 2, out + err
+        # The derived number is STATED in the header — the lane quotes THIS,
+        # not its own "no injection owed" recollection.
+        assert "1 injection(s) owed" in out, out
+
+    def test_a_retired_only_registry_is_refused_not_reported_clean(
+            self, repo, capsys):
+        """The largest #1086 sub-type: every registration RETIRED, lane wrote
+        'no injection owed'. A retired registration is history-scope evidence,
+        not live evidence (#942); handoff must REFUSE over require=1."""
+        _binding_branch(repo)
+        _begin(repo, "router.js")
+        (repo / "router.js").write_text("export function route() { return 0; }\n")
+        assert _restore(repo, "router.js") == 0
+        # forget RETIRES the restored registration; it is no longer live.
+        assert rp.forget(repo, "router.js") == 0
+        entries, _ = rp._read_registry(repo)
+        # PRECONDITION: the only registration is RETIRED — this is the exact
+        # state the test exists for, and a fixture that left a live entry would
+        # refuse for a different reason.
+        states = [e.get("state") for e in entries]
+        assert rp.RETIRED in states, states
+        assert not any(s in rp.RESTORED_STATES for s in states), states
+        capsys.readouterr()
+        exit = _handoff(repo)
+        out, err = capsys.readouterr()
+        assert exit == 1, out + err
+        # The discriminating message names retired-vs-live, not a generic count.
+        assert "retired" in (out + err).lower(), out + err
+
+    def test_a_restored_injection_with_no_observation_is_refused_not_caught(
+            self, repo, capsys):
+        """glm-1037read variant: lane restored an injection and wrote 'CAUGHT'
+        from its recollection of running checks, but never called `observe` —
+        so the tool has no causal reach receipt. handoff REFUSES on NOT CHECKED,
+        not a calm 'caught N of N' over evidence that was never recorded."""
+        _binding_branch(repo)
+        _begin(repo, "router.js")
+        (repo / "router.js").write_text("export function route() { return 0; }\n")
+        assert _restore(repo, "router.js") == 0
+        entries, _ = rp._read_registry(repo)
+        live = [e for e in entries if e.get("state") in rp.RESTORED_STATES]
+        assert len(live) == 1, "fixture precondition: exactly one live entry"
+        # PRECONDITION: the restored entry has NO reach receipt — this is the
+        # state where a lane's 'I red-proofed' is unverified by the tool.
+        assert live[0].get("reach") is None, live[0]
+        capsys.readouterr()
+        exit = _handoff(repo)
+        out, err = capsys.readouterr()
+        assert exit == 1, out + err
+        # Discriminating: NOT CHECKED names the missing causal evidence, not a
+        # count mismatch.
+        assert "NOT CHECKED" in (out + err), out + err
+
+    def test_an_all_inert_diff_passes_with_require_zero(
+            self, repo, capsys):
+        """The vacuous-pass guard: a doc-only diff derives require=0 and passes,
+        but the block must STATE zero was owed, not read as an unexamined sweep."""
+        _git(repo, "switch", "-q", "-c", "inert-fixture")
+        os.makedirs(repo / ".dreamwork", exist_ok=True)
+        (repo / ".dreamwork" / "notes.md").write_text("a doc-only change\n")
+        base = _git(repo, "rev-parse", "master")
+        head = _commit(repo, ".dreamwork/notes.md", msg="docs(#1086): inert")
+        derived = rp._derived_requirement(repo, base, head)
+        # PRECONDITION: the diff is genuinely all-inert (require=0). A fixture
+        # that gained a binding path would flip this and the test would refuse.
+        assert derived["require"] == 0, (
+            f"fixture gained a binding path; require={derived['require']}")
+        capsys.readouterr()
+        exit = _handoff(repo)
+        out, err = capsys.readouterr()
+        assert exit == 0, out + err
+        assert "0 injection(s) owed" in out, out
+
+    def test_handoff_faults_when_a_registered_path_is_absent(
+            self, repo, capsys):
+        """glm-1034clean / glm-1029dash: a restored registration names a path
+        that left the working tree (a scratch file the lane cleaned up). handoff
+        inherits check's fail-closed FAULT (exit 2), not a calm report."""
+        _binding_branch(repo)
+        _begin(repo, "router.js")
+        (repo / "router.js").write_text("export function route() { return 0; }\n")
+        # Restore FIRST, creating a restored entry. Then the registered path
+        # leaves the working tree — the exact glm-1034clean / glm-1029dash shape.
+        assert _restore(repo, "router.js") == 0
+        (repo / "router.js").unlink()
+        # PRECONDITION: the restored entry's path is genuinely absent now.
+        assert not (repo / "router.js").exists()
+        capsys.readouterr()
+        exit = _handoff(repo)
+        out, err = capsys.readouterr()
+        assert exit == 2, out + err
+        assert "absent from the working tree" in err, err
