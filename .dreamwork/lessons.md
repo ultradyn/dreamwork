@@ -5643,3 +5643,34 @@ dispatches were REFUSED: `dev/brief.py` walks the authored core looking for a
 direction-2 construction and finds it BY THAT NAME. Keep the token and add the
 polarity after it. Before renaming anything that appears in a template, grep for
 what parses it.
+
+**A VERB WHOSE NAME READS LIKE A NOTE CAN BE A STATE TRANSITION.** Wanting to
+record that `#1066` had landed and `#1067` was therefore dispatchable, I ran
+`ledger.py fold 1067`. `fold` CLOSES an entry — it moved `#1067` to `landed`
+when nothing implemented it. The note verb is `note`; `fold` is the verb for
+work that shipped. The tell was in the output I did not read: a fold with no
+citable sha is a fold of something that never landed. **The repair is an
+append, never a rewrite**: `task_event` is a hash chain, so the correction is a
+new `reconciled` event (`from_state=landed`, `to_state=open`) via
+`ledger_store.append_chained_event`, leaving the mistaken ordinal in place —
+the chain then still recomputes from genesis, which is how you know the repair
+was honest rather than a cover-up. Rewriting the bad row would have produced a
+ledger that verifies and lies.
+
+**A REFUSAL'S TAIL IS DIAGNOSTICS; ITS HEAD IS THE REASON.** Four review
+dispatches failed and `tail -5` showed only "retained: worktree=none",
+"background-check", "agent-worktree reach" — post-refusal bookkeeping that
+names no cause. The actual line was first: `REFUSE phase=brief-generation:
+human-authored input must contain one first-level task heading for #1159`.
+Twice in one afternoon I diagnosed from the tail and learned nothing. **These
+tools put the verdict at the TOP and the examined-population at the bottom;
+read the head of a refusal, and reserve `tail` for success output.**
+
+**THE FRAME APPENDED TO EVERY REVIEW PROMPT SAID THE REVIEW TOOLING DOES NOT
+EXIST.** `briefs/review-frame.md:8` claims there is no `--review` mode, no
+emitter, and no receipt; `#1115` and `#1112` landed all three. Because that file
+is concatenated onto every review dispatch, the false claim is delivered
+verbatim to every reviewer. **A doc that is itself shipped as part of a prompt
+decays differently from one a human reads occasionally — nobody re-reads the
+boilerplate, so its staleness is invisible until it contradicts a tool in front
+of an agent.** Filed as `#1163`.
