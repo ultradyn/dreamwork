@@ -269,6 +269,19 @@ class TestSyncConflictFiles:
         lint.check_sync_conflict_files(dw, rep)
         return rep
 
+    @staticmethod
+    def _real_check(dw: Path) -> lint.Report:
+        """Run production Git discovery against a real temporary repository."""
+        rep = lint.Report()
+        lint.check_sync_conflict_files(dw, rep)
+        return rep
+
+    @staticmethod
+    def _git(*args, cwd: Path, env=None):
+        return subprocess.run(
+            ["git", "-C", str(cwd), *args], capture_output=True, text=True,
+            check=True, env=env)
+
     def test_finds_real_shaped_conflict_under_repo_dreamwork(self, tmp_path, monkeypatch):
         """Production line: the SYNC_CONFLICT_RE match + the ERROR branch.
 
@@ -405,6 +418,126 @@ class TestSyncConflictFiles:
         assert len(errors) == 0, rep.render()
         assert "scratch.sync-conflict" in warns[0]
 
+    def test_invoking_linked_worktree_is_owned_but_sibling_warns(self, tmp_path):
+        """The invoking linked worktree is owned; only its siblings are external."""
+        main = tmp_path / "main"
+        main.mkdir()
+        self._git("init", "-q", cwd=main)
+        self._git("config", "user.email", "test@example.invalid", cwd=main)
+        self._git("config", "user.name", "Test", cwd=main)
+        (main / "seed").write_text("seed\n")
+        self._git("add", "seed", cwd=main)
+        self._git("commit", "-qm", "seed", cwd=main)
+
+        lane = tmp_path / ".worktrees" / "lane"
+        self._git("worktree", "add", "-q", "-b", "lane", str(lane), cwd=main)
+        (lane / ".dreamwork").mkdir()
+        owned = lane / ".dreamwork" / self._REAL_NAME
+        owned.write_bytes(b"owned ledger copy")
+        sibling = tmp_path / ".worktrees" / "other"
+        sibling.mkdir()
+        sibling_name = "notes.sync-conflict-20260803-180706-ABCDEF2.md"
+        (sibling / sibling_name).write_text("")
+
+        rep = self._real_check(lane / ".dreamwork")
+        errors = [d for level, what, d in rep.rows
+                  if level == lint.ERROR and what == "sync-conflict"]
+        warns = [d for level, what, d in rep.rows
+                 if level == lint.WARN and what == "sync-conflict"]
+        assert len(errors) == 1 and str(owned) in errors[0], rep.render()
+        assert len(warns) == 1 and sibling_name in warns[0], rep.render()
+
+    def test_separate_git_dir_is_scanned_as_owned_state(self, tmp_path):
+        """A common dir is Git state regardless of whether it is named .git."""
+        repo = tmp_path / "repo"
+        metadata = tmp_path / "metadata"
+        repo.mkdir()
+        subprocess.run(
+            ["git", "init", "-q", "--separate-git-dir", str(metadata), str(repo)],
+            check=True, capture_output=True)
+        (repo / ".dreamwork").mkdir()
+        conflict = (metadata / "refs" / "heads"
+                    / "main.sync-conflict-20260803-180706-QJRKU52")
+        conflict.parent.mkdir(parents=True, exist_ok=True)
+        conflict.write_bytes(b"")
+
+        rep = self._real_check(repo / ".dreamwork")
+        errors = [d for level, what, d in rep.rows
+                  if level == lint.ERROR and what == "sync-conflict"]
+        assert len(errors) == 1 and str(conflict) in errors[0], rep.render()
+
+    def test_alternate_object_store_is_traced_scanned_and_deduplicated(self, tmp_path):
+        """Borrowed packs Git reads are owned critical state and reported once."""
+        source = tmp_path / "source"
+        source.mkdir()
+        self._git("init", "-q", cwd=source)
+        self._git("config", "user.email", "test@example.invalid", cwd=source)
+        self._git("config", "user.name", "Test", cwd=source)
+        (source / "payload").write_text("borrowed packed content\n")
+        self._git("add", "payload", cwd=source)
+        self._git("commit", "-qm", "packed source", cwd=source)
+        self._git("repack", "-ad", cwd=source)
+
+        borrower = tmp_path / "borrower"
+        subprocess.run(
+            ["git", "clone", "-q", "--shared", str(source), str(borrower)],
+            check=True, capture_output=True)
+        (borrower / ".dreamwork").mkdir()
+        pack_dir = source / ".git" / "objects" / "pack"
+        originals = list(pack_dir.glob("pack-*.pack")) + list(pack_dir.glob("pack-*.idx"))
+        assert len(originals) == 2, originals
+        conflicts = []
+        for original in originals:
+            conflict = original.with_name(
+                f"{original.stem}.sync-conflict-20260803-180706-QJRKU52"
+                f"{original.suffix}")
+            conflict.write_bytes(original.read_bytes())
+            original.unlink()
+            conflicts.append(conflict)
+
+        trace = self._git(
+            "log", "-1", "--format=%H", cwd=borrower,
+            env={**os.environ, "GIT_TRACE_PACK_ACCESS": "1"})
+        assert any(str(path) in trace.stderr for path in conflicts), trace.stderr
+
+        alternates = borrower / ".git" / "objects" / "info" / "alternates"
+        source_objects = source / ".git" / "objects"
+        alternates.write_text(f"{source_objects}\n{source_objects}\n")
+        source_alternates = source_objects / "info" / "alternates"
+        source_alternates.parent.mkdir(exist_ok=True)
+        source_alternates.write_text(f"{borrower / '.git' / 'objects'}\n")
+
+        rep = self._real_check(borrower / ".dreamwork")
+        errors = [d for level, what, d in rep.rows
+                  if level == lint.ERROR and what == "sync-conflict"]
+        assert len(errors) == 2, rep.render()
+        assert all(sum(str(path) in detail for detail in errors) == 1
+                   for path in conflicts), rep.render()
+
+    def test_unreadable_alternates_fails_closed(self, tmp_path, monkeypatch):
+        """An unreadable alternates file cannot mean that no stores exist."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        self._git("init", "-q", cwd=repo)
+        (repo / ".dreamwork").mkdir()
+        alternates = repo / ".git" / "objects" / "info" / "alternates"
+        alternates.parent.mkdir(parents=True, exist_ok=True)
+        alternates.write_text("/unexamined/object/store\n")
+        read_text = Path.read_text
+
+        def deny(path, *args, **kwargs):
+            if path == alternates:
+                raise PermissionError("fixture denies alternates")
+            return read_text(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", deny)
+        rep = self._real_check(repo / ".dreamwork")
+        errors = [d for level, what, d in rep.rows
+                  if level == lint.ERROR and what == "sync-conflict"]
+        assert len(errors) == 1, rep.render()
+        assert str(alternates) in errors[0], rep.render()
+        assert "borrowed object-store coverage is incomplete" in errors[0], rep.render()
+
     def test_short_id_uses_syncthing_base32_contract(self, tmp_path, monkeypatch):
         """Seven uppercase Base32 chars match, across the whole alphabet.
 
@@ -428,13 +561,12 @@ class TestSyncConflictFiles:
         assert len(errors) == len(names), rep.render()
         assert all(any(name in detail for detail in errors) for name in names)
 
-    def test_malformed_conflict_like_names_warn_without_blocking(
+    def test_high_confidence_malformed_owned_names_fail_closed(
             self, tmp_path, monkeypatch):
-        """Malformed lookalikes are distinct from clean and real conflicts."""
+        """Marker/date/time near-misses in owned state demand inspection."""
         t = target(tmp_path)
         names = [
-            "no-id.sync-conflict-20260803-180706.json",
-            "short.sync-conflict-20260803-180706-A.json",
+            "short.sync-conflict-20260803-180706-QJRKU5.sqlite3",
             "lower.sync-conflict-20260803-180706-qjrku52.json",
             "forbidden.sync-conflict-20260803-180706-QJRKU50.json",
             "long.sync-conflict-20260803-180706-QJRKU522.json",
@@ -446,11 +578,27 @@ class TestSyncConflictFiles:
         sync_rows = [(lvl, d) for lvl, w, d in rep.rows
                      if w == "sync-conflict"]
         assert len(sync_rows) == len(names), rep.render()
-        assert {lvl for lvl, _ in sync_rows} == {lint.WARN}, rep.render()
+        assert {lvl for lvl, _ in sync_rows} == {lint.ERROR}, rep.render()
         assert all(any(name in detail for _, detail in sync_rows)
                    for name in names)
-        assert all("malformed conflict-like filename" in detail
+        assert all("manual inspection required" in detail
                    for _, detail in sync_rows)
+
+    def test_low_confidence_lookalike_warns_and_ordinary_text_is_ignored(
+            self, tmp_path, monkeypatch):
+        """Noise stays distinct and ordinary sync-conflict text never blocks."""
+        t = target(tmp_path)
+        low = t / ".dreamwork" / "brief.sync-conflict-round-four.md"
+        ordinary = t / ".dreamwork" / "notes-about-sync-conflict-cases.md"
+        low.write_text("")
+        ordinary.write_text("")
+        rep = self._check(t / ".dreamwork", monkeypatch)
+        rows = [(level, detail) for level, what, detail in rep.rows
+                if what == "sync-conflict"]
+        assert len(rows) == 1, rep.render()
+        assert rows[0][0] == lint.WARN and str(low) in rows[0][1], rep.render()
+        assert "low-confidence lookalike" in rows[0][1], rep.render()
+        assert str(ordinary) not in rep.render()
 
     def test_git_metadata_conflict_is_found_and_blocks(self, tmp_path, monkeypatch):
         """#1166 P1a: a conflict copy under .git/ metadata is found and ERRORs.
@@ -475,46 +623,38 @@ class TestSyncConflictFiles:
         assert name in errors[0]
         assert str(git_dir) in errors[0]
 
-    def test_critical_git_state_blocks_but_non_critical_does_not(
+    def test_known_cache_copy_is_acknowledged_but_unknown_neighbor_blocks(
             self, tmp_path, monkeypatch):
-        """#1166 P1b: a conflict in the repo's own critical state ERRORs; a
-        conflict in a non-critical git path or a sibling worktree WARNs.
+        """An acknowledgement binds one relative path and exact content hash."""
+        t = tmp_path / "repo"
+        t.mkdir()
+        self._git("init", "-q", cwd=t)
+        (t / ".dreamwork").mkdir()
+        cache = t / ".git" / "wt" / "cache" / "ci-status"
+        cache.mkdir(parents=True)
+        known_name = "known.sync-conflict-20260729-032627-QJRKU52.json"
+        unknown_name = "next.sync-conflict-20260803-180706-QJRKU52.json"
+        known = cache / known_name
+        unknown = cache / unknown_name
+        known.write_bytes(b"triaged stale cache")
+        unknown.write_bytes(b"unknown cache")
+        digest = hashlib.sha256(known.read_bytes()).hexdigest()
+        monkeypatch.setattr(lint, "_SYNC_CONFLICT_ACKNOWLEDGEMENTS", {
+            ("wt/cache/ci-status/" + known_name, digest): (
+                "2026-08-03", "fixture stale cache copy")
+        })
 
-        The gate-wedge from #1166 round 1 was an ERROR in an externally owned
-        root. This test would fail if severity collapsed back to ERROR-for-all
-        or WARN-for-all.
-        """
-        t = fresh(tmp_path)
-        dw = t / ".dreamwork"
-        dw.mkdir()
-        git_dir = t / ".git"
-        git_dir.mkdir()
-        (git_dir / "refs" / "heads").mkdir(parents=True)
-        # Critical: .git/refs/heads/master conflict → ERROR
-        (git_dir / "refs" / "heads"
-         / "master.sync-conflict-20260803-180706-QJRKU52").write_bytes(b"")
-        # Non-critical: .git/wt/cache/ (CI status cache) → WARN
-        (git_dir / "wt" / "cache").mkdir(parents=True)
-        (git_dir / "wt" / "cache"
-         / "master.sync-conflict-20260729-032627-QJRKU52.json").write_bytes(b"")
-        # Sibling worktree: externally owned → WARN
-        sibling_wt = t.parent / ".worktrees" / "cx-other"
-        sibling_wt.mkdir(parents=True)
-        (sibling_wt / "scratch.sync-conflict-20260803-180706-XYZ2345.py").write_text("")
-
-        rep = self._check(dw, monkeypatch)
+        rep = self._real_check(t / ".dreamwork")
         errors = [d for lvl, w, d in rep.rows
                   if lvl == lint.ERROR and w == "sync-conflict"]
-        warns = [d for lvl, w, d in rep.rows
-                 if lvl == lint.WARN and w == "sync-conflict"]
-        assert len(errors) == 1, rep.render()
-        assert "refs" in errors[0]
-        assert len(warns) == 2, rep.render()
-        assert any("wt" in d for d in warns), rep.render()
-        assert any("cx-other" in d for d in warns), rep.render()
+        oks = [d for lvl, w, d in rep.rows
+               if lvl == lint.OK and w == "sync-conflict"]
+        assert len(errors) == 1 and str(unknown) in errors[0], rep.render()
+        assert len(oks) == 1 and str(known) in oks[0], rep.render()
+        assert "acknowledged 2026-08-03" in oks[0], rep.render()
 
     def test_unknown_own_git_state_fails_closed(self, tmp_path, monkeypatch):
-        """Only the explicit wt/cache allowlist WARNs inside the repo's .git."""
+        """Unknown own Git state fails closed, including wt/cache neighbors."""
         t = target(tmp_path)
         git_dir = t / ".git"
         cache = git_dir / "wt" / "cache"
@@ -527,12 +667,11 @@ class TestSyncConflictFiles:
         (unknown / unknown_name).write_bytes(b"")
 
         rep = self._check(t / ".dreamwork", monkeypatch)
-        warns = [d for lvl, w, d in rep.rows
-                 if lvl == lint.WARN and w == "sync-conflict"]
         errors = [d for lvl, w, d in rep.rows
                   if lvl == lint.ERROR and w == "sync-conflict"]
-        assert len(warns) == 1 and cache_name in warns[0], rep.render()
-        assert len(errors) == 1 and unknown_name in errors[0], rep.render()
+        assert len(errors) == 2, rep.render()
+        assert all(any(name in detail for detail in errors)
+                   for name in (cache_name, unknown_name)), rep.render()
 
     def test_pack_pair_conflict_copies_are_scanned(self, tmp_path, monkeypatch):
         """Git discovers conflict-infixed .pack/.idx files by extension."""
