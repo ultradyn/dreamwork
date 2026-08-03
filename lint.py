@@ -5330,21 +5330,21 @@ def check_inbox_rotation(dw: Path, rep: Report) -> None:
 # INFIXED before the extension, so a *.sync-conflict suffix glob finds
 # nothing. The date/time digits are matched structurally (not as literals):
 # they vary per machine and per conflict, but Syncthing always emits 8+6.
-# The device-id segment (>=1 alphanumeric, after a hyphen) is REQUIRED
-# (#1166 P2): a name without it — e.g. data.sync-conflict-20260803-180706.json
-# — is malformed, not a real Syncthing conflict copy, so reporting it would
-# be a false positive. The alphabet is intentionally loose ([A-Za-z0-9],
-# wider than the observed uppercase-only sample) so a device id of any case
-# or length matches; the reviewer could not construct a conforming filename
-# this misses, and neither could round 2.
-SYNC_CONFLICT_RE = re.compile(r'\.sync-conflict-\d{8}-\d{6}-[A-Za-z0-9]+')
+# The modifiedBy segment is protocol.ShortID.String(): Syncthing's source sets
+# ShortIDStringLength=7 and slices base32.StdEncoding output to that length.
+# Match that [A-Z2-7]{7} contract exactly and anchor the remainder of the
+# filename, because a loose prefix becomes a gate-blocking false positive.
+# Names containing the marker but missing this exact shape are WARNed below,
+# preserving malformed-lookalike as a state distinct from clean or conflict.
+SYNC_CONFLICT_RE = re.compile(
+    r'\.sync-conflict-\d{8}-\d{6}-[A-Z2-7]{7}(?:\..*)?\Z')
+SYNC_CONFLICT_LIKE_RE = re.compile(r'\.sync-conflict-')
 
 
 # Check-specific traversal (#1166 P1a). We do NOT inherit _WALK_SKIP_DIRS: it
 # exists for lint's other filesystem walks and skips `.git`, which is
 # state-bearing, not a dependency cache. A conflict copy of `.git/index`,
-# `.git/HEAD`, or `.git/packed-refs` corrupts the repository itself — worse
-# than the stale ledger copy that motivated this task (#1167).
+# `.git/HEAD`, or `.git/packed-refs` corrupts the repository itself.
 #
 # What is skipped, and why it cannot hold a conflict copy that matters:
 #   .worktrees     walked as a separate root (old_wt); skipping it from the
@@ -5352,38 +5352,29 @@ SYNC_CONFLICT_RE = re.compile(r'\.sync-conflict-\d{8}-\d{6}-[A-Za-z0-9]+')
 #   node_modules   dependency cache — large, regenerated, never state-bearing.
 #   __pycache__    bytecode cache — same.
 #   .*_cache dirs  tool caches — same.
-#   .git/objects/  packfiles + loose objects. Content-addressed by SHA; git
-#                  reads them only by hash, so a differently-named conflict
-#                  copy is inert. Measured at 55 MB / 52 files; skipping avoids
-#                  I/O on large binary packfiles.
+#   loose objects  only objects/[0-9a-f]{2}/ shards are pruned. Their paths
+#                  derive from the object hash, so renamed copies are
+#                  unreachable. objects/pack/ stays scanned because Git
+#                  discovers packfiles by directory scan and extension.
 _SYNC_CONFLICT_SKIP_DIRS = frozenset({
     ".worktrees", "node_modules", "__pycache__",
     ".pytest_cache", ".ruff_cache", ".mypy_cache",
 })
-_SYNC_CONFLICT_SKIP_UNDER_GIT = frozenset({"objects"})
+_LOOSE_OBJECT_SHARD_RE = re.compile(r'[0-9a-f]{2}\Z')
 
-# .git paths whose conflict copy corrupts the repository (#1166 P1b). A
-# conflict copy anywhere else under .git/ — hooks/, info/, wt/ (this repo's CI
-# status cache), branches/, lost-found/, opencode/ — is regenerable or a cache
-# and does not block the gate, though it is still reported (evidence that
-# Syncthing is replicating .git/ internals, #1167).
-_GIT_CRITICAL_TOP_FILES = frozenset({
-    "HEAD", "ORIG_HEAD", "MERGE_HEAD", "FETCH_HEAD",
-    "CHERRY_PICK_HEAD", "REVERT_HEAD",
-    "config", "index", "packed-refs", "COMMIT_EDITMSG",
-})
-_GIT_CRITICAL_SUBDIRS = frozenset({"refs", "logs", "worktrees"})
+# Explicit own-.git non-critical allowlist (#1166 P1b). wt/cache/ holds
+# reconstructible CI status and is not a Git input. Every unknown own-.git
+# path defaults to ERROR so newly added repository state fails closed.
+_GIT_NON_CRITICAL_PREFIXES = (("wt", "cache"),)
 
 
 def _sync_conflict_level(path: Path, base: Path, own_root: bool) -> str:
     """Severity for a conflict copy at *path* (#1166 P1b).
 
-    ERROR when the copy is in the repo's own critical state — the working
-    tree (including .dreamwork/) or critical git metadata (HEAD, index,
-    packed-refs, refs/, logs/, worktrees/). WARN otherwise: a sibling
-    worktree (externally owned) or a non-critical .git/ path. WARN is a
-    prominent manual-action report that does not block the gate, because the
-    lane cannot safely resolve it (#702: the copy may be newer).
+    Sibling worktrees WARN because this lane does not own them. Inside the
+    repo's own .git, unknown paths fail closed: only the explicit, auditable
+    wt/cache/ prefix WARNs because it contains reconstructible CI status, not
+    repository inputs. Everything else in the repo's own state ERRORs.
     """
     if not own_root:
         return WARN
@@ -5393,13 +5384,10 @@ def _sync_conflict_level(path: Path, base: Path, own_root: bool) -> str:
     except ValueError:
         return ERROR  # repo's own working tree (.dreamwork/, tracked files)
     parts = rel.parts
-    if parts and parts[0] in _GIT_CRITICAL_SUBDIRS:
-        return ERROR
-    if len(parts) == 1:
-        stem = parts[0].split(".sync-conflict-")[0]
-        if stem in _GIT_CRITICAL_TOP_FILES:
-            return ERROR
-    return WARN
+    if any(parts[:len(prefix)] == prefix
+           for prefix in _GIT_NON_CRITICAL_PREFIXES):
+        return WARN
+    return ERROR
 
 
 def check_sync_conflict_files(dw: Path, rep: Report) -> None:
@@ -5413,17 +5401,14 @@ def check_sync_conflict_files(dw: Path, rep: Report) -> None:
     file is gitignored. This walks the FILESYSTEM — not git's tracked-file
     index — because the whole point is reaching gitignored paths (#1166).
 
-    Report only, never resolve (#702): the copy may be the newer one.
+    Report only, never resolve: #1162 establishes that the copy may be newer.
 
-    Severity is scoped (#1166 P1b): ERROR for the repo's own critical state
-    (working tree, HEAD, index, packed-refs, refs/); WARN for externally owned
-    roots (sibling worktrees) and non-critical .git/ paths (caches). This
-    avoids the gate-wedge of an ERROR with no non-destructive remedy while
-    still blocking on the catastrophic case.
+    Severity is scoped (#1166 P1b): unknown own-repo state fails closed;
+    sibling worktrees and the explicit .git/wt/cache/ allowlist WARN.
 
-    Three states stay distinct (#136): conflict found (ERROR/WARN with path),
-    none found (OK with counts and disclosed skips), and a root absent (named
-    in the OK row, never silently green — #671/#685).
+    Clean, conflict found, malformed conflict-like, and incomplete traversal
+    are distinct outcomes (#136). An absent root is also named rather than
+    silently subtracted from coverage (#671/#685).
     """
     root = dw.parent
     # Resolve the main checkout so worktree roots are canonical even when lint
@@ -5441,24 +5426,37 @@ def check_sync_conflict_files(dw: Path, rep: Report) -> None:
     scanned = 0
     absent: list[str] = []
     found: list[tuple[str, str]] = []  # (path, level)
+    malformed: list[str] = []
+    unreadable: list[tuple[str, str, str]] = []  # (path, level, error)
 
     for scan_root, label, own_root in scan_roots:
         if not scan_root.is_dir():
             absent.append(f"{label} ({scan_root})")
             continue
         examined += 1
-        for dirpath, dirnames, filenames in os.walk(scan_root):
+
+        def record_walk_error(exc: OSError) -> None:
+            error_path = Path(exc.filename) if exc.filename else scan_root
+            level = _sync_conflict_level(error_path, base, own_root)
+            unreadable.append((str(error_path), level, str(exc)))
+
+        for dirpath, dirnames, filenames in os.walk(
+                scan_root, onerror=record_walk_error):
             # Check-specific pruning (#1166 P1a): NOT _WALK_SKIP_DIRS, which
             # skips .git. We descend into .git because its metadata is
-            # state-bearing. Inside .git, skip objects/ (content-addressed,
-            # inert). Outside, skip dependency caches + .worktrees.
+            # state-bearing. Packfiles are discovered by directory scan, so
+            # objects/pack/ must be walked. Only loose-object hash shards are
+            # pruned: renaming those makes them unreachable by hash-derived
+            # path. Outside .git, skip dependency caches + .worktrees.
             try:
                 rel_parts = Path(dirpath).relative_to(scan_root).parts
             except ValueError:
                 rel_parts = ()
             if ".git" in rel_parts:
-                dirnames[:] = [d for d in dirnames
-                               if d not in _SYNC_CONFLICT_SKIP_UNDER_GIT]
+                git_rel = rel_parts[rel_parts.index(".git") + 1:]
+                if git_rel == ("objects",):
+                    dirnames[:] = [d for d in dirnames
+                                   if not _LOOSE_OBJECT_SHARD_RE.fullmatch(d)]
             else:
                 dirnames[:] = [d for d in dirnames
                                if d not in _SYNC_CONFLICT_SKIP_DIRS]
@@ -5468,8 +5466,10 @@ def check_sync_conflict_files(dw: Path, rep: Report) -> None:
                     full = Path(dirpath) / name
                     level = _sync_conflict_level(full, base, own_root)
                     found.append((str(full), level))
+                elif SYNC_CONFLICT_LIKE_RE.search(name):
+                    malformed.append(str(Path(dirpath) / name))
 
-    if found:
+    if found or malformed or unreadable:
         for path, level in sorted(found):
             if level == ERROR:
                 rep.add(
@@ -5483,13 +5483,28 @@ def check_sync_conflict_files(dw: Path, rep: Report) -> None:
                 rep.add(
                     WARN, "sync-conflict",
                     f"Syncthing conflict copy at {path} — non-blocking "
-                    f"(externally owned or non-critical git path); resolve "
-                    f"manually, the copy may be newer: #702/#1166")
+                    f"(externally owned or allowlisted git cache); resolve "
+                    f"manually, the copy may be newer: #1162/#1166")
+        for path in sorted(malformed):
+            rep.add(
+                WARN, "sync-conflict",
+                f"Non-blocking malformed conflict-like filename at {path} — "
+                f"it contains '.sync-conflict-' but not Syncthing's exact "
+                f"date/time/seven-character Base32 ShortID shape: #1166")
+        for path, level, error in sorted(unreadable):
+            scope = ("repo's own state" if level == ERROR
+                     else "externally owned or allowlisted cache state")
+            rep.add(
+                level, "sync-conflict",
+                f"Could not scan directory {path}: {error} — coverage "
+                f"incomplete after {scanned} file(s); conflict-copy absence "
+                f"is not established for {scope}: #1166")
         return
 
     detail = (f"{examined} root(s) examined; {scanned} file(s) scanned; "
               f"0 conflict copies; "
-              f"pruned: .git/objects/ (content-addressed, inert), "
+              f"pruned: .git/objects/[0-9a-f]{{2}}/ loose-object shards "
+              f"(hash-path addressed; .git/objects/pack/ scanned), "
               f"dependency caches")
     if absent:
         detail += f"; absent: {', '.join(absent)}"
