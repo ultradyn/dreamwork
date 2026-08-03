@@ -44,14 +44,23 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+# The glossed-citation token shape is defined once, shared with the
+# generation-time reporter (dev/brief.py), so the two extractors cannot drift
+# apart again — this audit once matched ZERO of the house-style bold
+# **#N** — gloss citations because its private copy had dropped the bold
+# markers (#1156).  dev/ is not a package, so the repo root goes on the path.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from dev.citation_token import GLOSSED_CITATION_TOKEN  # noqa: E402
+
 # -- parsing helpers ----------------------------------------------------------
 
 # A citation in a brief looks like "#NNN — <wording>" or "#NNN: <wording>";
-# the task id may carry the house Markdown bold wrapper.
+# the task id may carry the house Markdown bold wrapper (**#N**).
 # The em-dash (—) and colon are the two forms the coordinator actually writes.
 # We capture the id and the wording that follows it on the same logical line.
+# The **#NNN** token shape is shared with dev/brief.py via the constant above.
 CITATION_RE = re.compile(
-    r"(?:\*\*)?#(\d+)(?:\*\*)?\s*[—:]\s*(.+?)(?:\.\s|\.$|$)",
+    rf"{GLOSSED_CITATION_TOKEN}\s*[—:]\s*(?P<gloss>.+?)(?:\.\s|\.$|$)",
     re.MULTILINE,
 )
 
@@ -208,14 +217,14 @@ def extract_citations(text: str, brief_name: str) -> list[Citation]:
     """
     found: list[Citation] = []
     for m in CITATION_RE.finditer(text):
-        wording = m.group(2).strip().strip(".*")
+        wording = m.group("gloss").strip().strip(".*")
         if len(wording) < 5:  # too short to carry a principle claim
             continue
         line = text.count("\n", 0, m.start()) + 1
         found.append(
             Citation(
                 brief=brief_name,
-                task_id=int(m.group(1)),
+                task_id=int(m.group("task")),
                 wording=wording,
                 line=line,
             )
