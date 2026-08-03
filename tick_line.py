@@ -79,6 +79,30 @@ from ledger_parse import store_path
 # ` · ` the ledger and hand-off rows already use for co-ordinate lists.
 SEP = " · "
 
+# The four live-liveness state clauses, derived from lane_liveness's state
+# constants so a fifth state surfaces as a missing entry rather than silently
+# dropping its count (#1155 P2a / #868: a count that disappears when zero is a
+# denominator the reader must reconstruct). Each entry is (state_constant,
+# template_for_nonzero, label_for_zero). The non-zero template uses %(n)d and
+# %(lanes)s; the zero label is compact (no names, no parenthetical) so the
+# line does not grow unboundedly (#612). WEDGED keeps its uppercase alarm only
+# in the non-zero form; the zero form is lowercase "wedged 0" — nothing is
+# alarming about zero wedged lanes.
+_LIVENESS_CLAUSE_SPECS = (
+    (lane_liveness.LIVE_WORKING,
+     "working %(n)d [%(lanes)s] (cpu above floor)",
+     "working 0"),
+    (lane_liveness.LIVE_WEDGED,
+     "WEDGED %(n)d [%(lanes)s] (live runner, positive wedge evidence)",
+     "wedged 0"),
+    (lane_liveness.LIVE_UNKNOWN,
+     "live-liveness-unknown %(n)d [%(lanes)s] (could not classify)",
+     "live-liveness-unknown 0"),
+    (lane_liveness.LIVE_NOT_YET,
+     "not-yet-observed %(n)d",
+     "not-yet-observed 0"),
+)
+
 # The current goal's title is elided to a HARD 48 characters (#862 design call
 # 2). He writes real acceptance criteria into the title, so it WILL be long,
 # and #612 is the failure being designed around: a long field pushing the fleet
@@ -290,6 +314,41 @@ def _fleet_fact(target: str) -> str:
     fact = "lanes %d live [%s] (probe examined %d processes)" % (
         len(all_live), ", ".join(all_live),
         inspection.examined_processes)
+    # #1155: "lanes N live" answers "is a runner alive", not "is it able to
+    # work". A permission-wedged lane holds a live pid and reads live,
+    # indistinguishable from a computing one. The live-liveness verdicts split
+    # the live set, so the headline carries its own qualification rather than
+    # asserting a working count it never measured. A lane the probe could not
+    # classify is named — it is the honest stall signature, and folding it into
+    # 'wedged' (no positive evidence) or 'working' (no CPU) would be the
+    # collapse #136 forbids. The denominator is the live set itself.
+    verdicts = {v.lane: v.state for v in inspection.live_liveness}
+    if verdicts:
+        # #868 / #1155 P2a: RENDER every count — including zeros — derived
+        # from the state enumeration (_LIVENESS_CLAUSE_SPECS), so a count
+        # that is zero is not a denominator the reader must reconstruct.
+        known_states = {spec[0] for spec in _LIVENESS_CLAUSE_SPECS}
+        for state, template, zero_label in _LIVENESS_CLAUSE_SPECS:
+            lanes = sorted(l for l, s in verdicts.items() if s == state)
+            if lanes:
+                fact += " · " + template % {
+                    "n": len(lanes), "lanes": ", ".join(lanes)}
+            else:
+                fact += " · " + zero_label
+        # #1155 round 4: a verdict state NOT in _LIVENESS_CLAUSE_SPECS is a
+        # denominator mismatch — the headline counts a live lane the clauses
+        # do not name. Visible-only-by-arithmetic (lanes 1 live · working 0 ·
+        # WEDGED 0 · unknown 0 · not-yet-observed 0) is weaker than named
+        # (#651). Render the unrendered states explicitly so the mismatch is
+        # NAMED. This fires when lane_liveness gains a state the tick has not
+        # been taught to render.
+        unrendered = sorted(
+            set(verdicts.values()) - known_states)
+        for state in unrendered:
+            lanes = sorted(
+                l for l, s in verdicts.items() if s == state)
+            fact += " · UNRENDERED-LIVENESS-STATE %d [%s] (%r)" % (
+                len(lanes), ", ".join(lanes), state)
     if inspection.cwd_live:
         fact += " · cwd-only %d [%s] (live runner, no live lane.lock)" % (
             len(inspection.cwd_live), ", ".join(inspection.cwd_live))

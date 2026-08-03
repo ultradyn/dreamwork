@@ -971,3 +971,145 @@ class TestGoalHandleOnTheTickLine:
         out = tick_line.facts(target)
         assert "SECRET-ACCEPTANCE-CRITERIA" not in out
         assert 'goal #G' in out
+
+
+class TestLiveLivenessOnTheTickLine:
+    """#1155: the live count qualifies itself. A wedged lane is named so the
+    fleet count no longer asserts a working count it never measured. These
+    inject a LaneInspection with live_liveness verdicts — the same way the
+    other fleet tests inject lane counts — so no real process is touched."""
+
+    def _inspection(self, live=(), cwd_live=(), liveness=()):
+        return lane_liveness.LaneInspection(
+            live=tuple(live), worktree_only=(), process_only=(),
+            examined_processes=99, cwd_live=tuple(cwd_live),
+            live_liveness=tuple(liveness))
+
+    def test_wedged_lane_named_on_the_line(self, tmp_path, monkeypatch):
+        """The lane that prompted #1155: a live runner that cannot do work.
+        The tick names it WEDGED so the count is not read as a working count."""
+        target = make_target(tmp_path, posture=HOT)
+        verdicts = (lane_liveness.LiveLane(
+            "glm-wedged", lane_liveness.LIVE_WEDGED,
+            "auto-rejecting external_directory"),)
+        monkeypatch.setattr(lane_liveness, "inspect_lanes",
+                            lambda _t: self._inspection(live=("glm-wedged",),
+                                                        liveness=verdicts))
+        out = tick_line.facts(target)
+        assert "lanes 1 live [glm-wedged]" in out, \
+            "the wedged lane should still count in the live headline: %s" % out
+        assert "WEDGED 1 [glm-wedged]" in out, \
+            "the wedged lane was not named on the tick line: %s" % out
+        assert "positive wedge evidence" in out
+
+    def test_working_fleet_renders_zero_counts(self, tmp_path, monkeypatch):
+        """#868 / #1155 P2a: when every lane is working, the zero counts for
+        wedged / unknown / not-yet-observed are STILL rendered — a count that
+        disappears when it is zero is a denominator the reader must
+        reconstruct. The zero forms are compact (no names, no parenthetical)
+        so the line does not grow unboundedly (#612). The zero label for
+        WEDGED is lowercase ('wedged 0'): zero wedged lanes is not alarming."""
+        target = make_target(tmp_path, posture=HOT)
+        verdicts = (
+            lane_liveness.LiveLane("cx-a", lane_liveness.LIVE_WORKING, "5s cpu"),
+            lane_liveness.LiveLane("cx-b", lane_liveness.LIVE_WORKING, "8s cpu"))
+        monkeypatch.setattr(lane_liveness, "inspect_lanes",
+                            lambda _t: self._inspection(live=("cx-a", "cx-b"),
+                                                        liveness=verdicts))
+        out = tick_line.facts(target)
+        assert "lanes 2 live [cx-a, cx-b]" in out
+        assert "working 2 [cx-a, cx-b] (cpu above floor)" in out
+        # Zero counts are rendered compactly — the denominator is visible.
+        assert "wedged 0" in out
+        assert "live-liveness-unknown 0" in out
+        assert "not-yet-observed 0" in out
+        # No alarming non-zero WEDGED count.
+        assert "WEDGED 1" not in out
+
+    def test_unknown_lane_named_so_cannot_tell_is_sayable(self, tmp_path,
+                                                          monkeypatch):
+        """#136: 'cannot tell' must be sayable. A lane the probe could not
+        classify is named live-liveness-unknown, not folded into wedged or
+        silently dropped — the honest stall signature."""
+        target = make_target(tmp_path, posture=HOT)
+        verdicts = (lane_liveness.LiveLane(
+            "glm-maybe", lane_liveness.LIVE_UNKNOWN, "no signal"),)
+        monkeypatch.setattr(lane_liveness, "inspect_lanes",
+                            lambda _t: self._inspection(live=("glm-maybe",),
+                                                        liveness=verdicts))
+        out = tick_line.facts(target)
+        assert "lanes 1 live [glm-maybe]" in out
+        assert "live-liveness-unknown 1 [glm-maybe]" in out, \
+            "an unclassifiable lane was not named on the line: %s" % out
+        assert "could not classify" in out
+
+    def test_not_yet_observed_counted_not_named(self, tmp_path, monkeypatch):
+        """A young lane is too common to name individually — a fleet of freshly
+        dispatched lanes would all read not-yet-observed and bury the count.
+        The count is stated; the names are not (#612)."""
+        target = make_target(tmp_path, posture=HOT)
+        verdicts = (lane_liveness.LiveLane(
+            "cx-young", lane_liveness.LIVE_NOT_YET, "alive 30s"),)
+        monkeypatch.setattr(lane_liveness, "inspect_lanes",
+                            lambda _t: self._inspection(live=("cx-young",),
+                                                        liveness=verdicts))
+        out = tick_line.facts(target)
+        assert "lanes 1 live [cx-young]" in out
+        assert "not-yet-observed 1" in out
+        assert "cx-young" not in out.split("not-yet-observed")[1]
+
+    def test_mixed_fleet_names_wedged_and_unknown(self, tmp_path, monkeypatch):
+        """The #868 denominator: a fleet with one wedged, one unknown, one
+        working must name the first two and state the denominator implicitly
+        by counting all live lanes in the headline."""
+        target = make_target(tmp_path, posture=HOT)
+        verdicts = (
+            lane_liveness.LiveLane("glm-w", lane_liveness.LIVE_WEDGED, "m"),
+            lane_liveness.LiveLane("glm-u", lane_liveness.LIVE_UNKNOWN, "?"),
+            lane_liveness.LiveLane("cx-ok", lane_liveness.LIVE_WORKING, "c"))
+        monkeypatch.setattr(lane_liveness, "inspect_lanes",
+                            lambda _t: self._inspection(
+                                live=("glm-w", "glm-u", "cx-ok"),
+                                liveness=verdicts))
+        out = tick_line.facts(target)
+        assert "lanes 3 live [cx-ok, glm-u, glm-w]" in out
+        assert "WEDGED 1 [glm-w]" in out
+        assert "live-liveness-unknown 1 [glm-u]" in out
+
+    def test_no_liveness_verdicts_means_no_clause(self, tmp_path, monkeypatch):
+        """A LaneInspection with no live_liveness (e.g. an older caller, or no
+        live lanes) adds no clause — the qualifier is purely additive."""
+        target = make_target(tmp_path, posture=HOT)
+        monkeypatch.setattr(lane_liveness, "inspect_lanes",
+                            lambda _t: lane_liveness.LaneInspection(
+                                live=(), worktree_only=(), process_only=(),
+                                examined_processes=50))
+        out = tick_line.facts(target)
+        assert "lanes 0 live []" in out
+        assert "WEDGED" not in out
+        assert "live-liveness-unknown" not in out
+
+    def test_unrendered_liveness_state_is_named(self, tmp_path, monkeypatch):
+        """#1155 round 4 / #651: a verdict state NOT in _LIVENESS_CLAUSE_SPECS
+        is a denominator mismatch — the headline counts a live lane the
+        rendered clauses do not name. Without this guard the tick prints
+        'lanes 1 live [foo] · working 0 · wedged 0 · ... 0 · ... 0' and the
+        reader must do arithmetic to notice. The mismatch must be NAMED so a
+        reader meets it at the surface, not in the arithmetic (#868)."""
+        target = make_target(tmp_path, posture=HOT)
+        verdicts = (lane_liveness.LiveLane(
+            "glm-fifth", "fifth-state", "a state the tick does not render"),)
+        monkeypatch.setattr(lane_liveness, "inspect_lanes",
+                            lambda _t: self._inspection(live=("glm-fifth",),
+                                                        liveness=verdicts))
+        out = tick_line.facts(target)
+        assert "lanes 1 live [glm-fifth]" in out, \
+            "the fifth-state lane should still count in the headline: %s" % out
+        assert "UNRENDERED-LIVENESS-STATE" in out, \
+            "a verdict state not in _LIVENESS_CLAUSE_SPECS was not named " \
+            "on the tick line — the denominator mismatch is invisible " \
+            "without arithmetic: %s" % out
+        assert "fifth-state" in out, \
+            "the unrendered state name was not quoted: %s" % out
+        assert "glm-fifth" in out.split("UNRENDERED")[1], \
+            "the unrendered lane was not named: %s" % out
