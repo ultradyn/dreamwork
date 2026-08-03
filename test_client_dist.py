@@ -464,8 +464,8 @@ def _goals_source():
     return text
 
 
-def test_goals_tree_is_the_page_subject_before_the_editor():
-    """The tree precedes writes in source and CSS cannot reverse that order."""
+def test_goals_dom_order_and_common_exact_selector_css_declarations():
+    """Check DOM order plus three common declarations in four exact blocks."""
     source = _goals_source()
     page = source[source.index("function GoalPage"):
                   source.index("export function registerGoals")]
@@ -484,12 +484,13 @@ def test_goals_tree_is_the_page_subject_before_the_editor():
             r"(?:^|[;{]\s*)(?:(?:order|grid-row)\s*:|"
             r"(?:flex-direction|flex-flow)\s*:[^;}]*reverse)", rule)
         assert reordering is None, (
-            f"{selector} visually reorders the tree/editor despite their DOM "
-            "order")
+            f"{selector}'s first exact CSS block uses order/grid-row or "
+            "reverse flex; this static check does not cover other selectors, "
+            "declarations, inline styles, or rendered geometry")
 
 
-def test_goals_editor_names_required_fields_and_can_abandon_edits():
-    """Usability controls stay explicit rather than collapsing into styling."""
+def test_goals_editor_source_exposes_required_controls_and_messages():
+    """Usability controls stay explicit; browser behaviour is guarded separately."""
     source = _goals_source()
     required = {
         "Goal title": "Goal title is required",

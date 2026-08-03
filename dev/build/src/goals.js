@@ -37,7 +37,9 @@ const goalField = (label, id, control, error, hint) => React.createElement(
   'div', { className: 'goalfield' },
   React.createElement('label', { htmlFor: id }, label),
   control,
-  hint ? React.createElement('div', { className: 'goalfield-hint' }, hint) : null,
+  hint ? React.createElement('div', {
+    className: 'goalfield-hint', id: id + '-hint',
+  }, hint) : null,
   fieldError(id + '-error', error));
 
 function GoalWrites(props) {
