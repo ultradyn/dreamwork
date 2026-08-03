@@ -718,7 +718,9 @@ class TestSyncConflictFiles:
         rep = self._real_check(t / ".dreamwork")
         warns = [d for lvl, w, d in rep.rows
                  if lvl == lint.WARN and w == "sync-conflict"]
-        assert len(warns) == 1 and str(known) in warns[0], rep.render()
+        assert len(warns) == 1 and str(known) in warns[0], (
+            "expired acknowledgement was not escalated: expected "
+            f"acknowledgement is 10 day(s) old; {rep.render()}")
         assert "acknowledgement is 10 day(s) old" in warns[0], warns[0]
         assert "expired 3 day(s) ago" in warns[0], warns[0]
         assert "human disposition pending" in warns[0], warns[0]
