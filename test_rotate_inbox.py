@@ -269,8 +269,9 @@ class TestReconciliation:
         """
         mod = _load()
         assert mod._reconcile_balanced(observed=10, moved=7, retained=3) is True
-        # One entry lost: 7 + 2 = 9 != 10.
-        assert mod._reconcile_balanced(observed=10, moved=7, retained=2) is False
+        # One entry lost: 7 + 2 = 9 != 10 — the discriminating unbalanced count.
+        assert mod._reconcile_balanced(observed=10, moved=7, retained=2) is False, (
+            "unbalanced: moved=7 + retained=2 = 9 != observed=10 (a lost entry)")
         # An entry dropped from the archive side: 6 + 3 = 9 != 10.
         assert mod._reconcile_balanced(observed=10, moved=6, retained=3) is False
 
