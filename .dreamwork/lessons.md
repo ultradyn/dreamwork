@@ -6147,3 +6147,41 @@ stale and the rebase is owed regardless.
 The practice: hold coordinator-custodial commits in a batch, and spend them in a window that is already
 dirty — right after an unavoidable commit, or while reviews are in flight and nothing is gateable — not
 in the quiet minute when four branches are sitting ready to land.
+
+## I proposed a mechanism AND asserted its limitation, and the limitation was backwards (2026-08-03, #1155, mine, measured by the lane that refused it)
+
+Round 7 of `#1155` was briefed to add durable lane provenance. I named the candidate — process group /
+session id — and, trying to be honest about its limits, wrote that its hole was
+`just deploy`'s detached `nohup` server, which "deliberately *leaves* the group/session".
+
+The lane measured the actual recipe at `justfile:646` in a disposable worktree and got:
+
+    {"child_pgrp": 949817, "child_pid": 949818, "child_sid": 949817,
+     "shell_pgrp": 949817, "shell_pid": 949817, "shell_sid": 949817}
+    same_pgrp=True same_sid=True
+
+GNU `nohup` does not call `setsid`, and a non-interactive shell creates no new background job process
+group. **The server SHARES the runner's session.** So the consequence runs the opposite way to my
+claim: pgid/sid would *incorrectly include* the deployed dashboard as lane work, making `WEDGED`
+unreachable after any normal deploy. The lane stopped, reported, and did not build it.
+
+The failure is not "I was wrong about `nohup`" — that is a fact anyone can get wrong. It is **what a
+stated limitation does to the lane that reads it.** A candidate mechanism offered as a question gets
+measured. A candidate offered *with its hole already identified* gets built around that hole: the lane
+either trusts my boundary and constructs the wrong one, or spends its round proving me wrong. Only the
+second happened here, and only because the brief also carried a premise-stop.
+
+**So: state the mechanism, state what must be true for it to work, and say I have not measured it.**
+The confident-sounding caveat is more dangerous than no caveat, because it is the part a lane is least
+likely to re-derive — it reads as the author having already done the checking.
+
+This is the fourth premise error I shipped in a brief today (`#1166` caught one, `#1006` caught one,
+`#1155` caught this) and the third caught by the premise-stop instruction. That instruction is now the
+single highest-yield line in the brief template, and its yield is a measurement of how often I assert
+things I have not checked. The lanes are not slower for stopping; they are the reason the wrong thing
+did not get built.
+
+One more thing worth keeping, from the same report: the lane refused to arm a red-proof for a design it
+had shown would misclassify a reachable case, and reported `check --require 1` FAULTing at **exit 2**
+rather than dressing it up as inapplicable. A refusal that leaves the audit honestly red is a better
+artifact than a green one bought by proving something nobody wanted.
