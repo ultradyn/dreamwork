@@ -33,6 +33,57 @@
     as an open question that we'll revisit once dreamhub is stable and the
     primary way we access dreamworkers
 
+- **P1 · 2026-08-03 — the React port is a strictly serial 21-task chain: batch the five
+  wrapper exports into one lane, or keep walking it one at a time?**
+  **The React port is a strictly serial chain, and I want your call on whether to keep it that way
+  before I spend the next many hours walking it one lane at a time.**
+
+  MEASURED today from the `depends` edges, not from the planner's prose:
+
+      #1060 -> #1061 -> #1062 -> #1063 -> #1064 -> #1065 -> #1067 -> #1071 -> #1072
+           -> #1073 -> #1074 -> #1075 -> #1076 -> #1077 -> #1078 -> #1079 -> #1080 -> #1082
+
+  with `#1066` hanging off `#1060`, and `#1069`/`#1070` as scoping joins that each need three
+  predecessors. **21 of the 26 blocked open tasks are this one chain.** Nothing else in the backlog is
+  blocked at all.
+
+  **The serialization is real, not an artifact of cautious planning.** Every wrapper export
+  (`#1061`..`#1065`) touches the same five files: `dev/build/wrapper-exports.js`, `client_dist.py`,
+  `watch.py`'s `DATA_SIBLINGS`, `client/dist/*`, and `dev/capture/wrappereq.mjs`. Two lanes on those
+  concurrently would conflict at my merge gate, so I cannot fan them out even if the edges were
+  removed.
+
+  **The cost, measured rather than guessed.** `#1060` alone — the chain's root, one wrapper plus the
+  discovery machinery — has now taken **six rounds**. Rounds 3, 4 and 5 each ended without landing:
+  round 3 on a genuine regression the gate caught, rounds 4 and 5 on premises in MY briefs that the
+  lanes correctly refused. Even at one or two rounds each, 21 sequential tasks is a long walk, and the
+  chain cannot absorb more of the fleet — I currently run five lanes and only one of them can be on
+  React work.
+
+  **THE OPTIONS, and I have a recommendation:**
+
+  1. **Batch the wrapper exports.** `#1061`..`#1065` are five instances of one now-paved pattern:
+     drop three companion files in `dev/build/ds-src/`, add a delegate to `wrapper-exports.js`, extend
+     `DATA_SIBLINGS`, register a `wrappereq` case. Once `#1060` lands, one lane could do all five in a
+     single increment against one set of files — which is also *cheaper* than five lanes, because the
+     contended files are edited once. **This is my recommendation.** It collapses five chain links to
+     one and does not weaken the gate: the completeness check is bidirectional and would catch a
+     wrapper shipped without its triad.
+  2. **Keep them one-per-lane** as filed. Slower, but each increment stays inside the ~15-20 minute
+     cap and a bad wrapper is isolated to its own round.
+  3. **Re-order**: pull the scoping tasks (`#1069`, `#1070`) earlier so the dashboard cutover design
+     exists before the remaining exports, accepting that they are currently blocked on three
+     predecessors each.
+
+  **What I will do absent an answer:** keep walking the chain as filed (option 2), because batching
+  changes the increment size you set, and that is your call rather than mine. Nothing is blocked on
+  this reply — it changes the pace, not the direction.
+
+  Also worth knowing since it bears on the same goal: `ledger.py list --json` omits dependency edges
+  entirely, so any "unblocked work" filter reports every open task as free. I hit that today and
+  nearly briefed two blocked tasks as ready. Filed as `#1152` (P1); `ledger.py counts` reports blockers
+  correctly, so it is the listing verb specifically.
+
 ## Answered
 
 - **P2 · 2026-08-03 — which URL should be the canonical task view, `/tasks` or `/tasks2`? (#1110)**
