@@ -695,6 +695,43 @@ class TestInjectionReachEvidence:
         assert "INJECTED RUN" in text and "RESTORED CONTROL RUN" in text
         assert self.FAILURE in text
 
+    def test_foreign_root_success_qualifies_which_root_was_proved(
+            self, repo, tmp_path, monkeypatch, capsys):
+        _begin(repo, "router.js")
+        (repo / "router.js").write_text(
+            "export function route() { return false; /* BUG */ }\n")
+        assert _observe(repo, "router.js", self.FAILURE, self._route_check()) == 0
+        assert _restore(repo, "router.js") == 0
+        capsys.readouterr()
+
+        invoking = tmp_path / "invoking-repo"
+        invoking.mkdir()
+        _git(invoking, "init", "-q", "-b", "master", ".")
+        monkeypatch.chdir(invoking)
+
+        assert _check(repo, require=1) == 0
+        out, err = capsys.readouterr()
+        assert not err
+        assert "red-proof reach: OK" in out
+        assert f"audited root {repo.resolve()}" in out
+        assert "not proof for the invoking lane" in out
+
+    def test_same_root_success_stays_unqualified(
+            self, repo, monkeypatch, capsys):
+        _begin(repo, "router.js")
+        (repo / "router.js").write_text(
+            "export function route() { return false; /* BUG */ }\n")
+        assert _observe(repo, "router.js", self.FAILURE, self._route_check()) == 0
+        assert _restore(repo, "router.js") == 0
+        capsys.readouterr()
+        monkeypatch.chdir(repo)
+
+        assert _check(repo, require=1) == 0
+        out, err = capsys.readouterr()
+        assert not err
+        assert "red-proof reach: OK" in out
+        assert "not proof for the invoking lane" not in out
+
     def test_unrelated_failure_does_not_count_as_caught(self, repo, capsys):
         unrelated = "unrelated pre-existing fixture failure"
         command = [sys.executable, "-c", f"raise AssertionError({unrelated!r})"]
