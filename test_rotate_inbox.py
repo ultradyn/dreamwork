@@ -325,6 +325,11 @@ def _run_cli_at_observation(
                 check=False,
             )
             appender_status = appender.returncode
+            original_live = (target / ".dreamwork" / "inbox.md").read_text()
+            assert appended_entry in original_live, (
+                "appender precondition unmet: unique entry did not land before proceed"
+            )
+            assert sum(line.startswith("## ") for line in original_live.splitlines()) == 11
         os.write(proceed_w, b"1")
         stdout, stderr = cli.communicate(timeout=10)
     finally:
@@ -352,7 +357,10 @@ class TestConcurrentAppenderHarness:
         assert appender_status is None
         assert cli.returncode == 0, cli.stderr
         assert "observed-snapshot accounted: moved=7 + retained=3 = observed=10" in cli.stdout
-        assert "lines appended after observation are not covered (#1170)" in cli.stdout
+        assert (
+            "WARNING: snapshot-only accounting; post-observation appends are "
+            "uncovered (#1170)"
+        ) in cli.stdout
         combined = (dw / "inbox.md").read_text() + next(
             (dw / "inbox-archive").glob("*.md")
         ).read_text()
@@ -364,14 +372,23 @@ class TestConcurrentAppenderHarness:
         The pipes place the write after observation and before rename without a
         sleep. This is a committed false-green experiment: the CLI exits 0 and
         truthfully accounts for its ten-line snapshot, but cannot cover the
-        eleventh line written in the known unsynchronized window.
+        eleventh line written in the known unsynchronized window. Before the
+        rename proceeds, the harness requires that unique entry to be present
+        in the original inbox and requires all eleven headings.
         """
         target, dw = self._fixture(tmp_path)
         appended = "## Concurrent #1170 entry\n\nWritten with O_APPEND.\n"
         cli, appender_status = _run_cli_at_observation(target, appended)
         assert appender_status == 0
         assert cli.returncode == 0, cli.stderr
-        assert "observed-snapshot accounted: moved=7 + retained=3 = observed=10" in cli.stdout
+        warning = (
+            "WARNING: snapshot-only accounting; post-observation appends are "
+            "uncovered (#1170)"
+        )
+        accounted = "observed-snapshot accounted: moved=7 + retained=3 = observed=10"
+        assert warning in cli.stdout
+        assert accounted in cli.stdout
+        assert cli.stdout.index(warning) < cli.stdout.index(accounted)
         combined = (dw / "inbox.md").read_text() + next(
             (dw / "inbox-archive").glob("*.md")
         ).read_text()

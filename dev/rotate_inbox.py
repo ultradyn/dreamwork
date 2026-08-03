@@ -471,10 +471,11 @@ def main(argv: list[str] | None = None) -> int:
             f"rotated: {result['entries_moved']} entries -> "
             f"{result['archive_path']}; live file {result['entries_kept']} entries, "
             f"{result['bytes_before']} -> {result['bytes_after']} bytes; "
+            f"WARNING: snapshot-only accounting; post-observation appends are "
+            f"uncovered (#1170); "
             f"observed-snapshot accounted: moved={result['reconcile_moved']} + retained="
             f"{result['reconcile_retained']} = observed="
-            f"{result['reconcile_observed']}; lines appended after observation "
-            f"are not covered (#1170)"
+            f"{result['reconcile_observed']}"
         )
         return 0
 
