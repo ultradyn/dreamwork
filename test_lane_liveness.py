@@ -1346,7 +1346,13 @@ class TestLiveLivenessBoundaryDocumentation:
         ):
             assert gap in doc, "classification path no longer states gap %r" % gap
         assert "process groups or sessions" in doc
-        assert "complete inventory" in doc
+        for unused_seam in ("os.getpgid", "os.getsid"):
+            assert unused_seam not in source
+        completeness_sentence = next(
+            sentence for sentence in doc.split(".")
+            if "complete inventory" in sentence)
+        assert "not" in completeness_sentence.lower(), (
+            "known gaps drifted into a completeness claim")
 
     def test_reason_claim_tracks_the_consumers_that_are_actually_wired(self):
         reason_paragraph = next(
