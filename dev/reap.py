@@ -9,6 +9,13 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
+try:
+    from dev.land_lane import _read_gate_in_flight
+except ModuleNotFoundError as exc:
+    if exc.name != "dev":
+        raise
+    from land_lane import _read_gate_in_flight
+
 
 @dataclass(frozen=True)
 class StatusPath:
@@ -155,7 +162,7 @@ def _summary(
 def _note_unexpected(unexpected: list[StatusPath]) -> None:
     """Name untracked paths beyond the known scratch set (#760).
 
-    The gate does not refuse on untracked paths (#755), so a deliverable left
+    The gate does not refuse on untracked paths, so a deliverable left
     untracked reads as clean. Naming it — reporting only, never dropping (#702)
     — is what turns the count into a signal a coordinator can act on. Printed
     to stderr so it is visible alongside a passing summary on stdout.
@@ -182,6 +189,21 @@ def reap(target_arg: str, *, base: str = "master", force: bool = False,
     if worktrees is None or target not in worktrees or target == worktrees[0]:
         return _unknown(target, "not a registered linked worktree")
 
+    main = worktrees[0]
+    gate = _read_gate_in_flight(main)
+    try:
+        gate_worktree = Path(gate.gate_worktree).resolve()
+    except (OSError, RuntimeError):
+        gate_worktree = None
+    if gate.pid_live and gate_worktree == target:
+        print(
+            f"REFUSE: active landing gate breadcrumb {gate.path} names this "
+            f"worktree (pid {gate.pid}, phase {gate.phase}); refusing to reap "
+            "in-flight gate scratch",
+            file=sys.stderr,
+        )
+        return 1
+
     rows = _status_paths(target)
     if rows is None:
         return _unknown(target, "git status failed")
@@ -190,7 +212,7 @@ def reap(target_arg: str, *, base: str = "master", force: bool = False,
     ignored = [row for row in rows if row.kind == "ignored"]
     # The untracked paths beyond the per-lane scratch set are the signal: they
     # may be a deliverable the lane forgot to commit (#760). Naming them does
-    # not change the gate (#755) — the gate stays tracked-only — it only turns
+    # does not change the gate — the gate stays tracked-only — it only turns
     # a collapsed number into something a coordinator can act on (#702).
     unexpected = [
         row for row in untracked if row.path not in EXPECTED_UNTRACKED
@@ -246,7 +268,6 @@ def reap(target_arg: str, *, base: str = "master", force: bool = False,
         print("reap gate OK (check only)")
         return 0
 
-    main = worktrees[0]
     # git's --force and the tool's --force are two different flags (#762).
     # `git worktree remove` refuses on ANY untracked file, and BRIEF.md is
     # untracked in every lane by construction — so a lane whose gate just
@@ -254,7 +275,7 @@ def reap(target_arg: str, *, base: str = "master", force: bool = False,
     # made the tool's own --force the only spelling that worked, and a
     # coordinator who typed it habitually had silently disabled the tracked-work
     # gate — the exact "a gate people learn to --force past is worse than no
-    # gate" failure #686 was built to avoid (#755), reintroduced one layer down.
+    # gate" failure #686 was built to avoid, reintroduced one layer down.
     # The tool's gate is the finer check: by the time we reach the removal it
     # has established no tracked dirt and no unmerged commit (or --force
     # overrode that refusal on purpose). git's cruder untracked-file refusal is
