@@ -92,7 +92,7 @@ if (!target) {
       measured.actions.length === measured.treeActionCount;
     const outside = measured.actions.findIndex(action =>
       !(measured.tree.top < action.top && action.bottom <= measured.tree.bottom));
-    const rendered = coverage && attribution && outside === -1 &&
+    const containment = outside === -1 &&
       measured.tree.bottom < measured.editor.top;
     notes.push(`DOM actionDom=${measured.dom.actionDom} ` +
       `editorDom=${measured.dom.editorDom}`);
@@ -125,7 +125,7 @@ if (!target) {
       : `rendered action box #${outside + 1} ` +
         `[${measured.actions[outside].top},${measured.actions[outside].bottom}] ` +
         `left tree [${measured.tree.top},${measured.tree.bottom}]`;
-    ok(containmentMessage, rendered);
+    ok(containmentMessage, containment);
 
     await page.getByRole('link', { name: 'Edit details for Healthy goal' }).click();
     await page.locator('#goal-details-text').waitFor();
