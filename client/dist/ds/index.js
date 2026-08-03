@@ -3584,18 +3584,6 @@ var DreamworkDesign = (() => {
     const value = el.type === "number" ? Number(el.value) : el.value;
     saveSetting(el, value);
   });
-  function buildQuestion(title, d) {
-    if (!d) return '<div class="dim">loading…</div>';
-    if (title) {
-      const oi = (d.questions_open || []).findIndex((x) => x.title === title);
-      if (oi >= 0)
-        return `<div id="qfocus" class="qdual">` + qaCard(d.questions_open[oi], "o" + oi, "focus") + `</div>`;
-      const ai = d.answered_entries.findIndex((x) => x.title === title);
-      if (ai >= 0)
-        return `<div id="qfocus" class="qdual">` + qaCard(d.answered_entries[ai], "a" + ai, "focus") + `</div>`;
-    }
-    return `<div id="qfocus"><div class="qmissing"><div class="qmisshead">not found</div><div class="qmissbody">this link names a question the list no longer has — it was most likely re-titled or removed while you watched. No other question has been substituted for it.</div><div class="qmissback"><a href="/questions">&larr; back to questions</a></div></div></div>`;
-  }
   var RSPLIT_KEY = "dw.review.split";
   var RSPLIT_MIN = 30;
   var RSPLIT_MAX = 82;
@@ -4900,7 +4888,6 @@ var DreamworkDesign = (() => {
     const d = await ensureData();
     if (isNativeRoute(view.name)) return null;
     if (view.name === "review") return buildReview(view.param, view.q, d);
-    if (view.name === "question") return buildQuestion(view.param, d);
     if (view.name === "reviews") return buildReviews(d);
     if (view.name === "settings") return buildSettings(d);
     if (!d) return '<div class="dim">loading…</div>';

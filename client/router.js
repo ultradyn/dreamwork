@@ -1508,7 +1508,6 @@ async function buildCurrent() {
   const d = await ensureData();
   if (isNativeRoute(view.name)) return null;
   if (view.name === 'review') return buildReview(view.param, view.q, d);
-  if (view.name === 'question') return buildQuestion(view.param, d);
   if (view.name === 'reviews') return buildReviews(d);
   if (view.name === 'settings') return buildSettings(d);
   if (!d) return '<div class="dim">loading…</div>';
