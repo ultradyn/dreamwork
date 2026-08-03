@@ -188,3 +188,59 @@ one instead of the other.
   by design. It is not — that is a *linked* worktree at `/tmp/glm1038-master-review.ep08Nq/master`
   whose basename is coincidentally `master`, and the main checkout is excluded structurally. One
   command settled it.
+
+### Correction, same day: the trigger is the LANDING, not the verdict
+
+The rule above is wrong as I first wrote it, and the first attempt to follow it refused. A review
+worktree is an *attached* checkout of the branch under review, so it holds exactly that branch's
+unmerged commits. Reaping it at verdict time gives:
+
+    reap examined path=.../cx-1166r9parse-review-r9 ... unmerged-commits=17
+    REFUSE: unmerged commit would become easier to delete unseen: ... (x17)
+
+That refusal is correct and must not be forced — `dev/reap.py --force` is never the answer. After the
+reviewed branch landed, the identical command reported `unmerged-commits=0` and removed it cleanly.
+
+**So: reap a review worktree when its reviewed branch LANDS.** Reading the verdict is when the
+worktree becomes *finished*, not when it becomes *reapable*. The lane's own worktree needs no action —
+`land_lane`'s retirement phase reaps it as part of the gate.
+
+## Reading a review verdict (2026-08-04, #1166 r9)
+
+A review gives you three separable things, and they can point in different directions:
+
+- its **verdict word** (`MERGE` / `MERGE WITH FIXES` / `ANOTHER ROUND`) — a recommendation;
+- its **constructions** — evidence, and the most valuable thing it produces;
+- its **stated consequences** — claims, which you can and sometimes must check independently.
+
+`#1166` round 9 returned `ANOTHER ROUND` on a branch with no defect of its own: the reviewer labelled
+its single finding "inherited — already present at `f860a1cb`, not introduced by round 9". The
+construction was real and reproduced. The consequence — "it wedges the next landing; the row-set gate
+refuses" — was false, because `land_lane` reads BOTH the baseline (`:2169`) and the merged tree
+(`compare_lint`) with `_lint(gate_worktree)`, the same worktree on both sides, so the WARN appears in
+both readings and cancels. The reviewer had compared main-checkout lint against its own
+review-worktree lint, a pairing the gate never forms.
+
+I gated it, and the gate settled the dispute in the branch's favour:
+`lint-comparison WARN row-set comparison: added=0 removed=0`, `baseline=11 rows; post-gates=11 rows`.
+
+- **Check a consequence before spending a round on it.** A round 10 here would have asked the lane to
+  fix `#1191` — a separately filed task that was itself blocked on this branch landing.
+- **An inherited finding is a task to file or note, not a reason to refuse the branch that found it.**
+- **Corroborate with history when you can.** `2b682505` (the commit that created the divergence) was
+  already an ancestor of three successful merges. That was decisive before any argument about
+  mechanism.
+
+## Brief-generation refusals I hit this session, and the shape of each
+
+- **`Lane-owns:` needs at least one existing FILE.** A directory alone gives
+  `scope derivation FAULT: resolved 0 existing files from 1 Lane-owns entrie(s)` —
+  *"Lanes creating only new files must also name an existing owned file."* For a lane whose
+  deliverable is a new document, name the existing sibling it will legitimately update.
+- **Do not prohibit a whole file class.** *"This task produces one markdown file"* was refused:
+  it *"prohibits the whole Markdown-file class while the standing contract requires
+  `.dreamwork/inbox.md` and may require a `.dreamwork/dreams/<date>-<time>-<slug>.md`"*. **Protect by
+  identity** — name the documents not to edit, and name `inbox.md` and `dreams/` as explicitly outside
+  the prohibition.
+- **Cite lessons as `.dreamwork/lessons.md:N`, never bare `lessons.md:N`.** A lane reported the bare
+  form cost it a failed lookup; there is no `lessons.md` at the repo root.

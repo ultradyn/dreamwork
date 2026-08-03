@@ -3,7 +3,7 @@
 ## Open
 
 - **P1 · 2026-08-03 — there is a real Syncthing conflict copy inside `.git/` and something reads it.
-  May I delete it, or do you want to look first? (#1166/#1162)**
+  May I delete it, or do you want to look first? (#1167; #1166 and #1162 have since landed)**
   **UPDATE 2026-08-04 — this no longer blocks a landing, and the cost of NOT deleting it is now
   measured.** The file is `.git/wt/cache/ci-status/master.sync-conflict-20260729-032627-QJRKU52.json`.
   - `#1166` round 5 built the per-file triaged acknowledgement I described below, and it works: the
@@ -147,7 +147,7 @@
     as an open question that we'll revisit once dreamhub is stable and the
     primary way we access dreamworkers
 - **P2 · 2026-08-04 — the `native.js` page-weight budget now fires on the React migration you
-  prioritised. Split it, or only report it? (#1190, blocking #1071)**
+  prioritised. Split it, or only report it? (#1203; #1190 and #1071 have since landed)**
   **Not blocking the loop** — I have a recommendation and will proceed on it if you would rather not
   weigh in. I am asking because the guard's own docstring says a human should be asked when it fires,
   and because what falsified its premise was your own React-migration ruling.
@@ -176,6 +176,14 @@
     nobody bounds at least stays true. (2) Is there a page-weight ceiling you actually care about for
     the dashboard, as opposed to one chosen to make a guard meaningful? The 604 KB page figure is in
     the docstring but nothing bounds it.
+  - **Update 2026-08-04 — you are now confirming or flipping a default, not choosing from scratch.**
+    `#1190` landed the split without waiting on you, as its brief said it would: the runtime is bound
+    at `RUNTIME_WEIGHT_BUDGET = 147_000` and components are **reported, not bounded**
+    (`COMPONENT_WEIGHT_BUDGET = None`). Flipping that is a one-line change, deliberately. It has
+    already paid for itself once: the `Reviews` export added **187 component bytes and zero runtime
+    bytes**, which the old single 165000 budget would have red-flagged at 165185 — the exact false
+    red the split was built to prevent. So nothing is blocked on your answer; `#1203` carries it,
+    and if you say "only report" the work is to record the ruling, not to build anything.
   - If you say nothing, I will take the split above and keep the runtime bound strict.
 
 ## Answered

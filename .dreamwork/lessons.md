@@ -6825,3 +6825,52 @@ behind a flag) — which is what it actually says — and the auditability
 requirement is stated plainly as mine, with no citation behind it, because I am
 not aware of a task that states it. **An uncited requirement a lane can weigh is
 worth more than a cited one it has to disprove.**
+
+## A review's verdict word, its constructions, and its stated consequences are three claims of different strength (2026-08-04, #1166/#1191)
+
+`#1166` round 9's reviewer returned **ANOTHER ROUND**. It also wrote, of its
+single finding, that the finding was *"inherited — already present at
+`f860a1cb`, not introduced by round 9"*. Both sentences are the same reviewer,
+in the same report, and they do not agree about what should happen next.
+
+The finding had three parts, and each deserved a different amount of trust:
+
+- **The construction** — `check_landed_guards` returns `OK, 1 defined` on the
+  main checkout and `WARN, 0 defined` from a checkout under `.worktrees/`,
+  because the corpus filter excludes by absolute-path substring. This
+  reproduced. Constructions are the most valuable thing a review produces and
+  this one was correct.
+- **The stated consequence** — *"baseline lint has no WARN while gate lint gains
+  one, so the row-set gate refuses; it wedges the next landing."* This was
+  FALSE. `land_lane` reads the baseline with `_lint(gate_worktree)` and the
+  merged tree with `_lint(gate_worktree)` — the same worktree on both sides — so
+  the spurious WARN appears in both readings and cancels. The reviewer had
+  compared main-checkout lint against its own review-worktree lint, which is not
+  a pairing the gate ever forms.
+- **The verdict word** — downstream of the consequence, and therefore inherited
+  its error.
+
+Two things settled it before I acted, and the cheaper one came first. History:
+`2b682505`, the commit that created the divergence, was already an ancestor of
+three successful merges — so three gates had run under exactly this condition
+and passed. Only then did I read the mechanism to find out *why*. The gate then
+confirmed it in its own output: `lint-comparison WARN row-set comparison:
+added=0 removed=0`, `baseline=11 rows; post-gates=11 rows`.
+
+**The rule: a construction is evidence, a consequence is a claim, and a verdict
+word is a recommendation. Check the consequence against the code path it names
+before spending a round on it.** Here a round 10 would have directed the lane at
+`#1191` — a separately filed task that was itself blocked on this branch
+landing, so the round would have deepened the very queue it was meant to clear.
+
+The corollary is about what an inherited finding is FOR. A defect the branch did
+not introduce is a task to file or a note to write, not a reason to refuse the
+branch that surfaced it. Refusing it holds hostage every task queued behind the
+branch's file ownership — six of them here, including two P1s — to fix something
+that was equally broken before the branch existed.
+
+This is the same shape as `.dreamwork/lessons.md`'s *"A quoted sentence can be
+genuinely present in the cited task and still misattribute its holding"*, one
+level out: there the words were real and the holding was not; here the
+measurement was real and the consequence was not. Both are a true statement read
+as a stronger claim than it supports.
