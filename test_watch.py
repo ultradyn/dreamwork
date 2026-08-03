@@ -6870,6 +6870,19 @@ class TestTasksRoute(unittest.TestCase):
             if (codeOff.result)
               { console.error('inline code linked with setting off'); process.exit(15); }
             if (!proseOff.result || proseOff.result[1].href !== '/tasks?t=229') process.exit(16);
+
+            // #1042 r3 — a digit run run straight into word chars must NOT
+            // link. Production TASK_REF_RE ends in \b; drop it and #229abc
+            // links as #229 (the reviewer reproduced this green over the bug).
+            // Prove the negative beside a live ref so the positive still
+            // holds: #1 links, #229abc does not.
+            const boundary = node('see #1 and #229abc end', 'prose');
+            linkTaskRefText(boundary);
+            const bAnchors = (boundary.result || []).filter(x => x.kind === 'a');
+            if (bAnchors.some(a => a.href === '/tasks?t=229'))
+              { console.error('#229abc leaked a #229 link'); process.exit(17); }
+            if (bAnchors.length !== 1 || bAnchors[0].href !== '/tasks?t=1')
+              { console.error('#1 did not link alone beside #229abc'); process.exit(18); }
         """) % (_extract_js_const(src, "TASK_REF_SKIP"),
                 _extract_js_const(src, "TASK_REF_SKIP_NO_CODE"),
                 _extract_js_const(src, "TASK_REF_RE"),
@@ -6957,6 +6970,16 @@ class TestTasksRoute(unittest.TestCase):
             const pre = node('PG-1 in a fence', 'pre');
             linkTaskRefText(pre);
             if (links(pre).length !== 0) { console.error('PG-1 inside <pre> linked'); process.exit(28); }
+            // #1042 r3 — PG-1abc must NOT link (the same \b guard). The real
+            // PG-1 beside it still links; only the token whose digits are the
+            // whole token does, so a count of one (not two) is the signal.
+            const gbound = node('PG-1 and PG-1abc', 'prose');
+            linkTaskRefText(gbound);
+            const gboundLinks = links(gbound);
+            if (gboundLinks.length !== 1)
+              { console.error('PG-1abc boundary: expected 1 goalref, got ' + gboundLinks.length); process.exit(29); }
+            if (!gboundLinks[0] || gboundLinks[0].textContent !== 'PG-1')
+              { console.error('the one goalref was not the real PG-1'); process.exit(30); }
         """) % (_extract_js_const(src, "TASK_REF_SKIP"),
                 _extract_js_const(src, "TASK_REF_SKIP_NO_CODE"),
                 _extract_js_const(src, "TASK_REF_RE"),
