@@ -1129,6 +1129,36 @@ class TestLiveLivenessCwdChannel:
     as a lock-confirmed lane — the dimension is dispatch-route-invariant,
     like the cwd channel itself (#1084)."""
 
+    def test_unrelated_busy_process_in_same_worktree_does_not_veto_wedged(
+            self, tmp_path):
+        """The ancestry bound excludes a busy same-cwd process from another tree."""
+        target, worktree, _identity = _subject(
+            tmp_path, lane="cx-unrelated-busy")
+        cmdlines = {
+            1301: b"ccc\x00-y\x00@cx\x00",
+            1302: b"python3\x00unrelated.py\x00",
+        }
+        parents = {1301: 1, 1302: 1}
+        inspection = lane_liveness.inspect_lanes(
+            target,
+            process_entries=["1301", "1302"],
+            registered_worktrees=(worktree,),
+            read_cmdline=cmdlines.__getitem__,
+            read_cwd=lambda _pid: str(worktree),
+            read_ppid=parents.get,
+            read_cpu=lambda pid: (0.1, 600.0) if pid == 1301
+            else (25.0, 600.0),
+            wedge_probe=lambda _wt, _pid: "permission-wedge",
+            skip_pids=set())
+
+        verdict = inspection.live_liveness[0]
+        assert verdict.state == lane_liveness.LIVE_WEDGED, \
+            "an unrelated busy same-worktree process made WEDGED unreachable: %r" \
+            % (verdict,)
+        assert "all 1/1 relevant processes" in verdict.reason
+        assert "worktree processes 2" in verdict.reason
+        assert "descendants added 0" in verdict.reason
+
     def test_busy_real_child_of_waiting_real_runner_vetoes_wedged(
             self, tmp_path):
         """A real ccc waiting on a CPU-burning python child is still working."""
@@ -1194,6 +1224,10 @@ class TestLiveLivenessCwdChannel:
                 "was waiting at forced 0.1s CPU" % (
                     child_pid, child_cpu, verdict.state, cpu_reader_calls,
                     parent.pid)
+            assert "busy pid(s) %d" % child_pid in verdict.reason
+            assert "worktree processes 2" in verdict.reason
+            assert "consulted 2/2 relevant processes" in verdict.reason
+            assert "descendants added 1" in verdict.reason
         finally:
             stop_file.touch()
             parent.wait(timeout=10)

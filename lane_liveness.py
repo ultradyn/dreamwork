@@ -292,6 +292,35 @@ def read_proc_cwd(pid: int) -> str | None:
         return None
 
 
+def read_proc_ppid(pid: int) -> int | None:
+    """Return a process's parent pid, or None when /proc cannot answer."""
+    try:
+        lines = Path("/proc/%d/status" % int(pid)).read_text().splitlines()
+    except (OSError, ValueError):
+        return None
+    for line in lines:
+        if line.startswith("PPid:"):
+            try:
+                return int(line.split(":", 1)[1].strip())
+            except ValueError:
+                return None
+    return None
+
+
+def _descends_from(pid: int, ancestors: set[int], read_ppid) -> bool:
+    """Whether ``pid`` reaches one of ``ancestors`` without an ancestry loop."""
+    seen = {pid}
+    current = pid
+    while True:
+        parent = read_ppid(current)
+        if parent is None or parent <= 0 or parent in seen:
+            return False
+        if parent in ancestors:
+            return True
+        seen.add(parent)
+        current = parent
+
+
 def read_proc_cpu(pid: int) -> tuple[float, float | None] | None:
     """Return ``(cpu_seconds, elapsed_seconds)`` for ``pid`` from ``/proc``.
 
@@ -704,6 +733,7 @@ def inspect_lanes(
         registered_worktrees: tuple[Path, ...] | None = None,
         read_cmdline: Callable[[int], bytes] | None = None,
         read_cwd: Callable[[int], str | None] | None = None,
+        read_ppid: Callable[[int], int | None] | None = None,
         skip_pids: set[int] | None = None,
         work_classifier: Callable[[Path], FinishedWork | None] | None = None,
         read_cpu: Callable[[int], tuple[float, float] | None] | None = None,
@@ -807,6 +837,7 @@ def inspect_lanes(
     skip = skip_pids if skip_pids is not None else _ancestor_pids()
     wt_by_path = {str(wt): wt.name for wt in worktrees}
     cwd_occupied: dict[str, list[int]] = {}
+    cwd_processes: dict[str, list[int]] = {}
     for pid in pids:
         if pid in skip:
             continue
@@ -819,11 +850,34 @@ def inspect_lanes(
             None)
         if lane_name is None:
             continue
+        cwd_processes.setdefault(lane_name, []).append(pid)
         if _is_lane_runner(reader(pid)):
             # Keep every runner in the worktree. A ccc lock holder commonly
             # waits on a nested runner and therefore accumulates little CPU;
             # any busy descendant must veto the destructive WEDGED verdict.
             cwd_occupied.setdefault(lane_name, []).append(pid)
+
+    # A runner commonly waits while python3/pytest/just/browser descendants
+    # perform the lane's real work. Descendants qualify by ancestry, not by
+    # argv[0], but only when their cwd is inside the same lane worktree. That
+    # bound prevents an unrelated busy process elsewhere on the host (or even
+    # an unrelated process sharing the worktree) from making WEDGED
+    # unreachable.
+    parent_reader = read_ppid or read_proc_ppid
+    descendants_added: dict[str, int] = {}
+    for lane_name, lane_processes in cwd_processes.items():
+        roots = set(cwd_occupied.get(lane_name, ()))
+        lock_pid = lock_live_pids.get(lane_name)
+        if isinstance(lock_pid, int):
+            roots.add(lock_pid)
+        descendants = [
+            pid for pid in lane_processes
+            if pid not in roots and _descends_from(pid, roots, parent_reader)
+        ] if roots else []
+        if descendants:
+            occupied = cwd_occupied.setdefault(lane_name, [])
+            occupied.extend(pid for pid in descendants if pid not in occupied)
+        descendants_added[lane_name] = len(descendants)
     cwd_live_names = tuple(sorted(
         name for name in cwd_occupied if name not in live_set))
     cwd_live_set = set(cwd_live_names)
@@ -865,7 +919,9 @@ def inspect_lanes(
                 wt, p, cpu_seconds=cpu_s, elapsed_seconds=elapsed_seconds)
     live_liveness = tuple(
         _classify_lane_pids(lane, pids_by_lane.get(lane, ()), wt_by_name,
-                            cpu_reader, wedge)
+                            cpu_reader, wedge,
+                            worktree_processes=len(cwd_processes.get(lane, ())),
+                            descendants_added=descendants_added.get(lane, 0))
         for lane in live_names)
 
     return LaneInspection(
@@ -924,7 +980,8 @@ def _classify_lane_pid(lane, pid, wt_by_name, cpu_reader, wedge):
     return classify_live_lane(lane, cpu_s, elapsed, marker)
 
 
-def _classify_lane_pids(lane, pids, wt_by_name, cpu_reader, wedge):
+def _classify_lane_pids(lane, pids, wt_by_name, cpu_reader, wedge, *,
+                        worktree_processes=0, descendants_added=0):
     """Classify every relevant process, then conservatively reduce to a lane.
 
     ``WEDGED`` is the only destructive verdict, so it requires every
@@ -932,9 +989,14 @@ def _classify_lane_pids(lane, pids, wt_by_name, cpu_reader, wedge):
     vetoes it. An unreadable process is UNKNOWN rather than zero CPU and also
     vetoes it; a process that vanished during /proc probing is not idle.
     """
+    population = ("worktree processes %d; consulted %%d/%%d relevant "
+                  "processes; descendants added %d"
+                  % (worktree_processes, descendants_added))
     if not pids:
-        return _classify_lane_pid(
+        verdict = _classify_lane_pid(
             lane, None, wt_by_name, cpu_reader, wedge)
+        return LiveLane(lane, verdict.state,
+                        "%s; %s" % (verdict.reason, population % (0, 0)))
 
     verdicts = [
         (pid, _classify_lane_pid(lane, pid, wt_by_name, cpu_reader, wedge))
@@ -945,9 +1007,9 @@ def _classify_lane_pids(lane, pids, wt_by_name, cpu_reader, wedge):
     if working:
         return LiveLane(
             lane, LIVE_WORKING,
-            "busy pid(s) %s; consulted %d/%d relevant processes"
+            "busy pid(s) %s; %s"
             % (", ".join(str(pid) for pid, _verdict in working),
-               len(verdicts), len(pids)))
+               population % (len(verdicts), len(pids))))
 
     for state in (LIVE_UNKNOWN, LIVE_NOT_YET):
         matching = [(pid, verdict) for pid, verdict in verdicts
@@ -956,12 +1018,15 @@ def _classify_lane_pids(lane, pids, wt_by_name, cpu_reader, wedge):
             pid, verdict = matching[0]
             return LiveLane(
                 lane, state,
-                "pid %s: %s; consulted %d/%d relevant processes"
-                % (pid, verdict.reason, len(verdicts), len(pids)))
+                "pid %s: %s; %s"
+                % (pid, verdict.reason,
+                   population % (len(verdicts), len(pids))))
 
     # No busy, unreadable, or young process remains: every relevant process
     # independently supplied the low-CPU wedge evidence required for WEDGED.
     return LiveLane(
         lane, LIVE_WEDGED,
-        "%s; all %d/%d relevant processes classified wedged"
-        % (verdicts[0][1].reason, len(verdicts), len(pids)))
+        "%s; all %d/%d relevant processes classified wedged; worktree "
+        "processes %d; descendants added %d"
+        % (verdicts[0][1].reason, len(verdicts), len(pids),
+           worktree_processes, descendants_added))
