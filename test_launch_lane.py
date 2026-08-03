@@ -704,6 +704,89 @@ def test_tool_has_only_the_checked_reap_removal_route():
     assert 'Path(__file__).with_name("reap.py")' in source
 
 
+def test_default_base_on_master_records_master_sha_equal_to_worktree_head(launch_repo: Path):
+    """#1151 case 1 — base on master (today's behaviour, unchanged).
+
+    The default (no --base) bases the lane on master and records master's sha,
+    which must equal the worktree's real HEAD. The new --base path must not
+    change this.
+    """
+    master_sha = _git(launch_repo, "rev-parse", "master")
+    result = _run(launch_repo, _head(launch_repo))
+    assert result.returncode == 0, result.stderr
+    _, record = _attempt(launch_repo)
+    assert record["base_ref"] == "master"
+    recorded_base = str(record["base_sha"])
+    assert recorded_base == master_sha
+    worktree = Path(str(record["worktree"]))
+    assert recorded_base == _git(worktree, "rev-parse", "HEAD")
+
+
+def test_base_on_existing_branch_records_that_branch_sha_not_master(launch_repo: Path):
+    """#1151 case 2 — base on an existing branch (the new continue path).
+
+    A round-2+ lane continues an existing branch, not master. The recorded
+    base_sha must be the commit the worktree is REALLY on (the branch's tip),
+    not master's sha. This is the load-bearing property: revert the record to
+    master while basing the worktree on the branch and this fails naming the
+    recorded sha against the worktree's actual HEAD.
+    """
+    base_branch = "prior-round"
+    _write(launch_repo / "seed2", "round2\n")
+    _git(launch_repo, "add", "seed2")
+    _git(launch_repo, "commit", "-m", "prior round")
+    _git(launch_repo, "branch", base_branch)
+    _write(launch_repo / "seed3", "master-advance\n")
+    _git(launch_repo, "add", "seed3")
+    _git(launch_repo, "commit", "-m", "master advance")
+    master_sha = _git(launch_repo, "rev-parse", "master")
+    branch_sha = _git(launch_repo, "rev-parse", base_branch)
+    assert master_sha != branch_sha, "precondition: master and the branch must differ"
+
+    result = _run(launch_repo, _head(launch_repo), "--base", base_branch)
+    assert result.returncode == 0, result.stderr
+    _, record = _attempt(launch_repo)
+    assert record["base_ref"] == base_branch
+    recorded_base = str(record["base_sha"])
+    worktree = Path(str(record["worktree"]))
+    real_head = _git(worktree, "rev-parse", "HEAD")
+    assert recorded_base == real_head, (
+        f"RECORDED base_sha={recorded_base} but the worktree's ACTUAL HEAD is "
+        f"{real_head}; the record must state the commit the worktree is really "
+        f"on (branch {base_branch}={branch_sha}, master={master_sha})"
+    )
+    assert recorded_base == branch_sha, (
+        f"recorded base_sha={recorded_base} but expected the branch "
+        f"{base_branch} tip {branch_sha}; master={master_sha}"
+    )
+    assert recorded_base != master_sha, (
+        f"recorded base_sha={recorded_base} equals master {master_sha}; a "
+        "continue lane recorded master's sha -- the false record this task exists "
+        "to remove"
+    )
+
+
+def test_base_on_nonexistent_ref_is_refused_not_based_on_master(launch_repo: Path):
+    """#1151 case 3 — a nonexistent ref must REFUSE.
+
+    A typo'd ref must refuse, not silently create a lane based on master and
+    look successful -- that is the prose workaround's failure mode reproduced
+    inside the tool, which is no gain (#136: today the third state, "ref did
+    not resolve", is indistinguishable from the first, "based on master").
+    """
+    before = _worktree_rows(launch_repo)
+    result = _run(launch_repo, _head(launch_repo), "--base", "no-such-branch")
+
+    assert result.returncode == 1, (
+        f"a nonexistent --base ref was accepted: {result.stderr!r}"
+    )
+    assert "REFUSE phase=selection" in result.stderr
+    assert "no-such-branch" in result.stderr
+    assert "refusing rather than creating a lane" in result.stderr
+    assert _worktree_rows(launch_repo) == before
+    assert not (launch_repo / ".dreamwork" / "launch-attempts").exists()
+
+
 def test_just_recipe_exposes_explicit_task_lane_agent_and_head():
     result = subprocess.run(
         ["just", "--dry-run", "launch-lane", "832", "lane", "@agent", "head.md", "-y"],

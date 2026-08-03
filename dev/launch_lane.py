@@ -404,7 +404,7 @@ def _abort_created(repo: Path, lane_path: Path, lane: str, phase: str, reason: s
 
 
 def launch(task: int, lane: str, agent: str, head_path: Path, runner_args: Sequence[str],
-           *, resume: str | None = None) -> int:
+           *, resume: str | None = None, base: str | None = None) -> int:
     repo_text = _git_text(Path.cwd(), "rev-parse", "--show-toplevel")
     if not repo_text:
         return _refuse("selection", ["current directory is not a git checkout"],
@@ -414,7 +414,17 @@ def launch(task: int, lane: str, agent: str, head_path: Path, runner_args: Seque
         main = _main_checkout(repo)
     except LaunchFault as exc:
         return _refuse("selection", [str(exc)], f"repo={repo}", "worktree=none; branch=none")
-    base_sha = _git_text(main, "rev-parse", "--verify", "master^{commit}")
+    # #1151: a round-2+ lane continues an existing ref, not master. ``base`` is
+    # the explicit ref to continue (a branch, tag, or sha); ``None`` keeps the
+    # historical "base on master" behaviour. The ref is resolved to a sha ONCE
+    # and that sha is what the worktree is created on AND what the record states,
+    # so the recorded ``base_sha`` is the commit the worktree is really on — not
+    # master's sha, which was true for one second and then false for the round.
+    # A ref that does not resolve is REFUSED, never silently based on master:
+    # that indistinguishable-from-success failure is the prose workaround's
+    # whole hazard, reproduced inside the tool would be no gain.
+    base_ref = base or "master"
+    base_sha = _git_text(main, "rev-parse", "--verify", f"{base_ref}^{{commit}}")
     current = _git_text(main, "branch", "--show-current")
     lane_path = lane_worktree_path(main, lane)
     inbox = main / ".dreamwork" / "inbox.md"
@@ -439,8 +449,17 @@ def launch(task: int, lane: str, agent: str, head_path: Path, runner_args: Seque
         selection.append("lane must be one safe branch/path component")
     if not agent.startswith("@") or len(agent) < 2:
         selection.append("agent must be supplied explicitly as an @alias")
-    if not base_sha or current != "master":
+    if current != "master":
         selection.append(f"main checkout must have local master checked out; current={current or 'UNKNOWN'}")
+    if not base_sha:
+        if base is None:
+            selection.append(f"main checkout has no resolvable {base_ref}^{{commit}}")
+        else:
+            selection.append(
+                f"--base {base!r} did not resolve to a commit in {main}; refusing "
+                "rather than creating a lane on a ref the launcher could not verify "
+                "(a typo must refuse, not silently base on master)"
+            )
     try:
         head = head_path.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as exc:
@@ -557,7 +576,7 @@ def launch(task: int, lane: str, agent: str, head_path: Path, runner_args: Seque
                 f"base={base_sha}; lock={main / '.git' / 'dreamwork-repo-state.lock'}",
                 retained,
             )
-        locked_base = _git_text(main, "rev-parse", "--verify", "master^{commit}")
+        locked_base = _git_text(main, "rev-parse", "--verify", f"{base_ref}^{{commit}}")
         locked_current = _git_text(main, "branch", "--show-current")
         gate_blocks, gate_detail = _gate_in_flight(main)
         if locked_base != base_sha or locked_current != "master" or gate_blocks:
@@ -565,7 +584,7 @@ def launch(task: int, lane: str, agent: str, head_path: Path, runner_args: Seque
             reasons = []
             if locked_base != base_sha:
                 reasons.append(
-                    f"master moved from selected {base_sha} to {locked_base or 'UNREADABLE'}"
+                    f"base ref {base_ref} moved from selected {base_sha} to {locked_base or 'UNREADABLE'}"
                 )
             if locked_current != "master":
                 reasons.append(f"main checkout moved to {locked_current or 'DETACHED'}")
@@ -578,7 +597,8 @@ def launch(task: int, lane: str, agent: str, head_path: Path, runner_args: Seque
             )
         record = {
             "attempt_id": attempt_id, "task_id": task, "lane": lane, "agent": agent,
-            "base_sha": base_sha, "prompt_sha256": digest, "prompt_bytes": len(prompt.encode("utf-8")),
+            "base_sha": base_sha, "base_ref": base_ref,
+            "prompt_sha256": digest, "prompt_bytes": len(prompt.encode("utf-8")),
             "head": str(head_path.resolve()), "worktree": str(lane_path.resolve()),
             "state": "prepared; runner not attempted", "runner_exit": None, "runs": 0,
         }
@@ -797,9 +817,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("lane")
     parser.add_argument("agent")
     parser.add_argument("head", type=Path)
+    parser.add_argument("--base", metavar="REF",
+                        help="base the lane on an existing ref instead of master "
+                             "(a branch to continue, a tag, or a sha); a ref that "
+                             "does not resolve is refused, never silently based on "
+                             "master, and the recorded base_sha is the commit the "
+                             "worktree is really on")
     parser.add_argument("--resume", metavar="ATTEMPT_ID")
     args, runner_args = parser.parse_known_args(argv)
-    return launch(args.task, args.lane, args.agent, args.head, runner_args, resume=args.resume)
+    return launch(args.task, args.lane, args.agent, args.head, runner_args,
+                  resume=args.resume, base=args.base)
 
 
 if __name__ == "__main__":
