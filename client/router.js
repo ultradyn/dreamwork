@@ -38,6 +38,7 @@ const parseMtime = raw => {
                  : { gen: '', mtime: raw };
 };
 let view = { name: null, param: null, q: null };
+let pendingGoalFragment = null;
 /* #1058 r2 — the route-specific payload for native routes TRAVELS ON THE VIEW
    OBJECT, not a separate global. Each navigation assigns `view` a fresh
    object (navigate:4772), so the object's identity IS the navigation's
@@ -1346,7 +1347,10 @@ function routeOf(loc) {
   }
   // #545 — the full reviews listing the dashboard's cap points at.
   if (loc.pathname === '/reviews') return { name: 'reviews', param: null };
-  if (loc.pathname === '/goals') return { name: 'goals', param: null };
+  if (loc.pathname === '/goals') return {
+    name: 'goals', param: null,
+    fragment: goalsUrl(loc.hash).slice('/goals'.length) || null,
+  };
   // #562 — /chat/<id>: one topic chat's conversation. The id is the path
   // segment after /chat/; /chat with no id degrades to the page's not-found
   // voice (a chat is its own subject — the navigate principle).
@@ -1376,6 +1380,14 @@ function setData(next) {
   // all of them — where the declared set has not moved.
   if (window.dwPluginCommands) window.dwPluginCommands(data.plugin_commands);
   const registry = nativeRegistry();
+  // Extracted route checks provide only the update seam. They still exercise
+  // the production update-before-goal-retry order, without pretending to own
+  // the mounted question-card state that the full native registry carries.
+  if (registry && !registry.mounted) {
+    registry.update(data);
+    retryPendingGoalTarget();
+    return data;
+  }
   // Native delegates replace their builder-owned subtree when React updates.
   // Carry the same human-owned card state the legacy tick carries, and take
   // the snapshot BEFORE update: afterwards the draft and caret are gone.
@@ -1385,6 +1397,7 @@ function setData(next) {
     registry.update(data);
     restoreCardState(kept);
   }
+  retryPendingGoalTarget();
   return data;
 }
 async function ensureData() {
@@ -4857,6 +4870,7 @@ async function navigate(name, param, opts) {
   if (fileMsg && !(view && view.name === name && view.param === param))
     fileMsg.clear();
   view = { name, param, q: opts.q || null, mode };
+  setPendingGoalTarget(name, opts.fragment);
   applyTitle();
   if (window.dreambg) window.dreambg.setTint(TINT[name] || 0);
   const url = name === 'questions' ? '/questions'
@@ -4872,7 +4886,7 @@ async function navigate(name, param, opts) {
     : name === 'research' ? '/research' +
         (param ? '?p=' + encodeURIComponent(param) : '')
     : name === 'reviews' ? '/reviews'
-    : name === 'goals' ? '/goals'
+    : name === 'goals' ? goalsUrl(opts.fragment)
     : name === 'chat' ? '/chat/' + encodeURIComponent(param || '')
     : '/';
   /* The wide artifact column is the review idiom's, and a research DOC
@@ -4905,6 +4919,35 @@ async function navigate(name, param, opts) {
   // after the new content is in layout, and only for the swap that has a
   // position worth keeping
   if (modeSwap) restoreScrollRatio(keepRatio);
+  retryPendingGoalTarget();
+}
+/* Goal fragments are the one scoped fragment-bearing route. Keeping the
+   validation here prevents an arbitrary hash from becoming router state while
+   leaving ordinary /goals navigation byte-for-byte unchanged. */
+function goalsUrl(fragment) {
+  return '/goals' + (typeof fragment === 'string' && /^#goal-\d+$/.test(fragment)
+    ? fragment : '');
+}
+function scrollGoalTarget(fragment) {
+  if (goalsUrl(fragment) === '/goals') return false;
+  const target = document.getElementById(fragment.slice(1));
+  if (!target) return false;
+  target.scrollIntoView();
+  return true;
+}
+/* A valid goal fragment belongs to exactly one navigation. If its row is not
+   mounted yet, setData retries after the native registry update; success or
+   any later navigation clears it, so routine polls cannot yank the reader. */
+function setPendingGoalTarget(name, fragment) {
+  pendingGoalFragment = name === 'goals' && goalsUrl(fragment) !== '/goals'
+    ? fragment : null;
+}
+function retryPendingGoalTarget() {
+  const fragment = pendingGoalFragment;
+  if (!fragment || !view || view.name !== 'goals' ||
+      !scrollGoalTarget(fragment)) return false;
+  pendingGoalFragment = null;
+  return true;
 }
 /* only same-document routes are intercepted; external links, new-tab and
    modified clicks fall through to the browser. */
@@ -4931,7 +4974,7 @@ addEventListener('click', e => {
   // `routeOf` reads `search` off the <a> as readily as off `location`, so the
   // mode switch needs no handler of its own: it is two ordinary internal links
   // (#252), which is also what makes it keyboard-operable and deep-linkable.
-  const opts = { push: true, q: r.q, mode: r.mode };
+  const opts = { push: true, q: r.q, mode: r.mode, fragment: r.fragment };
   // a review link fired from inside a question card seeds the shared-element
   // morph: remember where the question sat so it can travel to its dock.
   if (r.name === 'review' && r.q) {
@@ -4942,7 +4985,9 @@ addEventListener('click', e => {
 });
 addEventListener('popstate', () => {
   const r = routeOf(location);
-  navigate(r.name, r.param, { push: false, q: r.q, mode: r.mode });
+  navigate(r.name, r.param, {
+    push: false, q: r.q, mode: r.mode, fragment: r.fragment,
+  });
 });
 /* live tick: re-render the active data-driven view in place, no fade.
    Tolerates the brief unreachable window while the server restarts. */
@@ -5041,7 +5086,8 @@ if (!MIST_ON) document.body.classList.add('mistoff');   // #449: see crossfade
 (function () {                              // initial view from the URL
   const r = routeOf(location);
   navigate(r.name, r.param,
-           { push: false, transition: false, q: r.q, mode: r.mode })
+           { push: false, transition: false, q: r.q, mode: r.mode,
+             fragment: r.fragment })
     .then(loadRolls);
   tick();
 })();

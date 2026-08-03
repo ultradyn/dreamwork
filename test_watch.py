@@ -6900,7 +6900,7 @@ class TestTasksRoute(unittest.TestCase):
         src = watch.COMPONENTS_JS
         self.assertIn("PG-(\\d+)", src)  # the combined RE carries the goal branch
         self.assertIn("a.className = 'goalref'", src)
-        self.assertIn("a.href = '/goals'", src)
+        self.assertIn("a.href = '/goals#goal-' + part.id", src)
         # #1042 — same extraction as the task-ref test: skip sets AND the RE
         # come from production source so this node-eval reaches the SHIPPING
         # TASK_REF_RE, not a restated copy. Break the goal branch in the
@@ -6969,7 +6969,7 @@ class TestTasksRoute(unittest.TestCase):
                 { console.error(label + ': expected 2 <a> links, got ' + mixedLinks.length
                   + ' — linkTaskRefText may be creating non-anchor elements'); process.exit(20); }
               const expected = expectedClasses.map(className => className === 'goalref'
-                ? ['goalref', '/goals', 'PG-1']
+                ? ['goalref', '/goals#goal-1', 'PG-1']
                 : ['taskref', '/tasks?t=1', '#1']);
               for (let i = 0; i < expected.length; i++) {
                 const [className, href, text] = expected[i];
@@ -7000,14 +7000,14 @@ class TestTasksRoute(unittest.TestCase):
             linkTaskRefText(ls);
             if (!conserved(ls, lsText))
               { console.error('ls: reconstructed text diverged — text not conserved, first-link index is meaningless'); process.exit(33); }
-            if (hrefs(ls)[0] !== '/goals') { console.error('line-start PG-1 failed'); process.exit(24); }
+            if (hrefs(ls)[0] !== '/goals#goal-1') { console.error('line-start PG-1 failed'); process.exit(24); }
             // punctuation-adjacent
             const pa = node('see PG-1.', 'prose');
             const paText = pa.nodeValue;
             linkTaskRefText(pa);
             if (!conserved(pa, paText))
               { console.error('pa: reconstructed text diverged — text not conserved, first-link index is meaningless'); process.exit(34); }
-            if (hrefs(pa)[0] !== '/goals') { console.error('punctuation-adjacent PG-1 failed'); process.exit(25); }
+            if (hrefs(pa)[0] !== '/goals#goal-1') { console.error('punctuation-adjacent PG-1 failed'); process.exit(25); }
             // PG- with no digits — must NOT link
             const nodigit = node('see PG- now', 'prose');
             linkTaskRefText(nodigit);
@@ -7585,6 +7585,258 @@ class TestGoalsRoute(unittest.TestCase):
         self.assertIn("access=Access.WRITE", source)
         self.assertIn("with store.transaction():", source)
         self.assertNotIn("sqlite3", source)
+
+    def test_initial_goal_fragment_reaches_navigate_options(self):
+        """The boot location, not seeded pending state, carries goal-7."""
+        router_src = watch.ROUTER_JS
+        boot_src = router_src[router_src.rindex("(function ()"):]
+        script = textwrap.dedent("""\
+            const location = {pathname:'/goals', search:'', hash:'#goal-7'};
+            %s
+            %s
+            let received = null;
+            const navigate = (name, param, opts) => {
+              received = {name, param, opts};
+              return Promise.resolve();
+            };
+            const loadRolls = () => {};
+            const tick = () => {};
+            %s
+            if (!received || received.name !== 'goals'
+                || received.opts.fragment !== '#goal-7') {
+              const fragment = received && received.opts && received.opts.fragment;
+              console.error('boot /goals#goal-7 navigate options lost fragment; received='
+                + String(fragment));
+              process.exit(54);
+            }
+        """) % (_extract_js_fn(router_src, "function goalsUrl("),
+                _extract_js_fn(router_src, "function routeOf("),
+                boot_src)
+        _node_check(["node", "-e", script])
+
+    def test_pg_goal_links_reach_distinct_rows_after_native_update(self):
+        """PG-3 and PG-7 name real, distinct native-row targets, including
+        after setData drives the native registry's update path."""
+        root = os.path.dirname(watch.__file__)
+        goals_src = watch.read_text(os.path.join(
+            root, "dev", "build", "src", "goals.js"))
+        router_src = watch.ROUTER_JS
+        components_src = watch.COMPONENTS_JS
+        self.assertIn("id: 'goal-' + node.id", goals_src,
+                      "goal rows have no addressable goal-N identity")
+        script = textwrap.dedent("""\
+            const goalSource = %s
+              .replace("import React from 'react';", '')
+              .replace("import { fromBuilder } from './delegate.js';",
+                "const fromBuilder = (_n, fn) => fn;")
+              .replace('export function registerGoals', 'function registerGoals');
+            const React = {
+              createElement(type, props, ...children) {
+                props = Object.assign({}, props || {}, {children});
+                return typeof type === 'function' ? type(props) : {type, props};
+              },
+              useState(initial) {
+                return [typeof initial === 'function' ? initial() : initial, () => {}];
+              },
+              useEffect() {}, useRef() { return {current:null}; },
+            };
+            const mdB = text => ({type:'details', props:{text, children:[]}});
+            let goalComponent = null;
+            eval(goalSource);
+            registerGoals({register(name, spec) { goalComponent = spec.component; return spec; }});
+            const walk = (node, visit) => {
+              if (!node || typeof node !== 'object') return;
+              visit(node);
+              const kids = node.props && node.props.children || [];
+              for (const kid of kids.flat(Infinity)) walk(kid, visit);
+            };
+            const renderIds = next => {
+              const ids = [];
+              walk(goalComponent({data:next}), node => {
+                if (node.type === 'li' && node.props.className === 'goaltree-row')
+                  ids.push(node.props.id);
+              });
+              return ids;
+            };
+            let renderedIds = [];
+            let data = null, pendingGoalFragment = null;
+            const registry = {update(next) { renderedIds = renderIds(next); }};
+            const window = {dwNative:{registry}};
+            %s
+            %s
+            %s
+            const nodePayload = (id, title) => ({id, title, parent_id:null,
+              state:'open', state_error:null, completed_count:0, total_count:0,
+              blockers:[], details:'', criteria:[], member_tasks:[], verdicts:[]});
+            const payload = nodes => ({goals:{health:'ok', examined_count:nodes.length,
+              expected_count:nodes.length, current_goal_id:null, nodes}});
+            setData(payload([nodePayload(3, 'Three'), nodePayload(7, 'Seven')]));
+            if (renderedIds.join(',') !== 'goal-3,goal-7') {
+              console.error('initial native goal targets were ' + renderedIds.join(',')
+                + ', expected goal-3,goal-7'); process.exit(40);
+            }
+            setData(payload([nodePayload(7, 'Seven updated'), nodePayload(3, 'Three updated')]));
+            if (renderedIds.join(',') !== 'goal-7,goal-3') {
+              console.error('native setData update dropped goal targets: landed on '
+                + renderedIds.join(',') + ', expected goal-7,goal-3'); process.exit(41);
+            }
+
+            %s
+            %s
+            %s
+            %s
+            %s
+            %s
+            let created = [];
+            const doc = {
+              createDocumentFragment() { return {kids:[], appendChild(n){this.kids.push(n)}}; },
+              createTextNode(text) { return {kind:'text', text}; },
+              createElement(tag) { const el = {tag, kind:tag, dataset:{}, setAttribute(){}};
+                created.push(el); return el; },
+            };
+            const prose = {nodeValue:'PG-3 then PG-7', ownerDocument:doc,
+              parentElement:{closest(selector) { return selector === '.md' ? {} : null; }},
+              replaceWith(frag) { this.result = frag.kids; }};
+            linkTaskRefText(prose);
+            const refs = prose.result.filter(node => node.className === 'goalref');
+            if (refs.length !== 2 || refs[0].href !== '/goals#goal-3'
+                || refs[1].href !== '/goals#goal-7' || refs[0].href === refs[1].href) {
+              console.error('PG-3 and PG-7 did not resolve to distinct targets: '
+                + refs.map(ref => ref.href).join(',')); process.exit(42);
+            }
+            for (const ref of refs) {
+              const id = ref.href.split('#')[1];
+              if (!renderedIds.includes(id)) {
+                console.error(ref.textContent + ' promised ' + ref.href
+                  + ' but landed on /goals with no existing #' + id + ' target');
+                process.exit(43);
+              }
+            }
+
+            %s
+            %s
+            if (goalsUrl(null) !== '/goals') {
+              console.error('fragment-free goals navigation no longer lands on /goals');
+              process.exit(44);
+            }
+            if (goalsUrl('#goal-3') !== '/goals#goal-3') {
+              console.error('goals router discarded #goal-3 and landed on '
+                + goalsUrl('#goal-3')); process.exit(45);
+            }
+            let scrolled = '';
+            const document = {getElementById(id) {
+              return renderedIds.includes(id) ? {scrollIntoView(){scrolled=id}} : null;
+            }};
+            if (!scrollGoalTarget('#goal-3') || scrolled !== 'goal-3') {
+              console.error('clicking PG-3 did not reach #goal-3; landed on '
+                + goalsUrl(null)); process.exit(46);
+            }
+        """) % (json.dumps(goals_src),
+                _extract_js_fn(router_src, "function nativeRegistry("),
+                _extract_js_fn(router_src, "function setData("),
+                _extract_js_fn(router_src, "function retryPendingGoalTarget("),
+                _extract_js_const(components_src, "TASK_REF_SKIP"),
+                _extract_js_const(components_src, "TASK_REF_SKIP_NO_CODE"),
+                _extract_js_const(components_src, "TASK_REF_RE"),
+                _extract_js_fn(components_src, "function taskRefParts("),
+                _extract_js_fn(components_src, "function backtickTaskLinksOn("),
+                _extract_js_fn(components_src, "function linkTaskRefText("),
+                _extract_js_fn(router_src, "function goalsUrl("),
+                _extract_js_fn(router_src, "function scrollGoalTarget("))
+        _node_check(["node", "-e", script])
+
+    def test_late_goal_data_reaches_the_pending_fragment_once(self):
+        """A cold /goals#goal-7 waits for the native row, not for a timer."""
+        root = os.path.dirname(watch.__file__)
+        goals_src = watch.read_text(os.path.join(
+            root, "dev", "build", "src", "goals.js"))
+        router_src = watch.ROUTER_JS
+        script = textwrap.dedent("""\
+            const goalSource = %s
+              .replace("import React from 'react';", '')
+              .replace("import { fromBuilder } from './delegate.js';",
+                "const fromBuilder = (_n, fn) => fn;")
+              .replace('export function registerGoals', 'function registerGoals');
+            const React = {
+              createElement(type, props, ...children) {
+                props = Object.assign({}, props || {}, {children});
+                return typeof type === 'function' ? type(props) : {type, props};
+              },
+              useState(initial) {
+                return [typeof initial === 'function' ? initial() : initial, () => {}];
+              },
+              useEffect() {}, useRef() { return {current:null}; },
+            };
+            const mdB = text => ({type:'details', props:{text, children:[]}});
+            let goalComponent = null;
+            eval(goalSource);
+            registerGoals({register(name, spec) { goalComponent = spec.component; }});
+            const walk = (node, visit) => {
+              if (!node || typeof node !== 'object') return;
+              visit(node);
+              for (const kid of (node.props && node.props.children || []).flat(Infinity))
+                walk(kid, visit);
+            };
+            const renderIds = next => {
+              const ids = [];
+              walk(goalComponent({data:next}), node => {
+                if (node.type === 'li' && node.props.className === 'goaltree-row')
+                  ids.push(node.props.id);
+              });
+              return ids;
+            };
+            let renderedIds = [], data = null, events = [];
+            let view = {name:'goals'}, pendingGoalFragment = null;
+            const registry = {update(next) {
+              renderedIds = renderIds(next); events.push('render:' + renderedIds.join(','));
+            }};
+            const window = {dwNative:{registry}};
+            const document = {getElementById(id) {
+              return renderedIds.includes(id)
+                ? {scrollIntoView(){events.push('scroll:' + id)}} : null;
+            }};
+            %s
+            %s
+            %s
+            %s
+            %s
+            %s
+            const node = {id:7, title:'Seven', parent_id:null, state:'open',
+              state_error:null, completed_count:0, total_count:0, blockers:[],
+              details:'', criteria:[], member_tasks:[], verdicts:[]};
+            setPendingGoalTarget('goals', '#goal-7');
+            if (retryPendingGoalTarget()) {
+              console.error('cold goal-7 unexpectedly existed before data'); process.exit(50);
+            }
+            setData({goals:{health:'ok', examined_count:1, expected_count:1,
+              current_goal_id:null, nodes:[node]}});
+            if (events.join(',') !== 'render:goal-7,scroll:goal-7') {
+              console.error('delayed goal target goal-7 was never reached after late setData; events='
+                + events.join(',')); process.exit(51);
+            }
+            setData({goals:{health:'ok', examined_count:1, expected_count:1,
+              current_goal_id:null, nodes:[node]}});
+            if (events.filter(event => event === 'scroll:goal-7').length !== 1) {
+              console.error('routine setData re-scrolled goal-7 after it was reached; events='
+                + events.join(',')); process.exit(52);
+            }
+            setPendingGoalTarget('goals', '#goal-7');
+            view = {name:'dashboard'};
+            setPendingGoalTarget('dashboard', null);
+            setData({goals:{health:'ok', examined_count:1, expected_count:1,
+              current_goal_id:null, nodes:[node]}});
+            if (events.filter(event => event === 'scroll:goal-7').length !== 1) {
+              console.error('stale goal-7 target survived unrelated navigation; events='
+                + events.join(',')); process.exit(53);
+            }
+        """) % (json.dumps(goals_src),
+                _extract_js_fn(router_src, "function nativeRegistry("),
+                _extract_js_fn(router_src, "function setData("),
+                _extract_js_fn(router_src, "function goalsUrl("),
+                _extract_js_fn(router_src, "function scrollGoalTarget("),
+                _extract_js_fn(router_src, "function setPendingGoalTarget("),
+                _extract_js_fn(router_src, "function retryPendingGoalTarget("))
+        _node_check(["node", "-e", script])
 
     def test_page_wires_one_native_goals_authority(self):
         native = watch.NATIVE_JS.replace("\\\n", "")
@@ -11476,9 +11728,9 @@ class TestFileViewMode(unittest.TestCase):
                       watch.PAGE)
         # every entry point into navigate carries it, or one of them silently
         # loses the mode (the deep-link bug this was red-proved against)
-        for site in ("{ push: true, q: r.q, mode: r.mode }",
-                     "{ push: false, q: r.q, mode: r.mode }",
-                     "{ push: false, transition: false, q: r.q, mode: r.mode }"):
+        for site in ("{ push: true, q: r.q, mode: r.mode",
+                     "push: false, q: r.q, mode: r.mode",
+                     "{ push: false, transition: false, q: r.q, mode: r.mode"):
             self.assertIn(site, watch.PAGE, f"navigate call missing the mode: {site}")
 
     def test_the_switch_is_links_markdown_only_and_holds_its_own_state(self):

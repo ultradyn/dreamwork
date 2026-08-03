@@ -12,9 +12,9 @@
   "inputs": {
     "client/app_body.html": "b951127b0a4201969dc1f0c6a6d14d5660a4e8e6036bca77325cf31f57d4cac3",
     "client/command.js": "a7346f466f100f6fc9a764ca22245e5983bfe8c7abd6c802d6d06e894750f577",
-    "client/components.js": "49ed7014597fc06fbbe9af0db0f9aa95b2fd2b6cccb08f726a5f9bc816e6b66b",
+    "client/components.js": "97a9acbdaca87175ac74f728a6db0d263537501646d20c2342503367c94e534f",
     "client/favicon.js": "746a512fb2d23b6ac1294f4d5fdbb4bcc5809a93cae1fe6e78dbbe70882ba901",
-    "client/router.js": "9bbaca6dd72c462cad1d94c3dcc5cdfae202b2dbe7e5216b03a0a6e3d11eb490",
+    "client/router.js": "4d6236fcab72e698e7b0bbf649a8beb3748a17965d282a315579122d969af394",
     "client/shader.js": "e293165e637d135da651d35fa7834208a07e6dc1142d670d2cd6018a1017a462",
     "client/style.css": "fe684b55d98501419b63469c0d09bbe12c14cbff2210bf154f949c42f9cc3a1a",
     "client/views.js": "3d55e5e217711c8adf605d3f283e2bcb200b3ef229c54af4c1c68a9de5962e58",
@@ -40,7 +40,7 @@
     "dev/build/ds-src/QaCompose.fixture.json": "32f3defb89a7aa173bc587878f86b57590a4cafc53753b969505cabc46e71531",
     "dev/build/ds-src/QaCompose.prompt.md": "abbf16d73fddc2e512fe802b0c010676959178e1570c137ce2f3fc7180864e34",
     "dev/build/src/delegate.js": "8cbeb4bce8ccaee70c8dc6ae76160eeb8dd9f8f3a92ca51e28712747ee28b293",
-    "dev/build/src/goals.js": "b1e5b3c12ee7181816885d9389fbbf1471929732ccdcad4d1942bc3ce11ab3c0",
+    "dev/build/src/goals.js": "08d293a32051a7c48294beeea918d493682b0c334cc317caa9338f43ef8ba4e3",
     "dev/build/src/native-entry.js": "7e3058581b31bc34b810c99ee44d3902cd45d58d5487445568248789af887612",
     "dev/build/src/probe.js": "f6c51e602a98990ca28fe31206f0aa533c77016f5a9e04cc883769e52c3f67fc",
     "dev/build/src/question.js": "4c324cc693dd17c3458c7bf8f8aac19c64c173aa15985d4a3defa5b9865fd3ca",
@@ -49,9 +49,9 @@
     "dev/build/wrapper-exports.js": "ceac587fd5555910a0f65aa1b0bff6ea114e03991a50509ffc75365464e70080"
   },
   "outputs": {
-    "client/dist/ds/index.js": "856035e8726857e347cab2729accffe03b2dc5dddf3e11a64150a6831c3bb833",
+    "client/dist/ds/index.js": "d580bd79fbf5fa04399dc5e6fb2e5cb4c005ee7e9c289a1b417fe6439ecef6aa",
     "client/dist/ds/styles.css": "fe684b55d98501419b63469c0d09bbe12c14cbff2210bf154f949c42f9cc3a1a",
-    "client/dist/native.js": "0cfbc07f2f40841033fb051686705bcb2bf9e62a0e3f710ccc39d48846da40e2"
+    "client/dist/native.js": "af038013165a3145fc85de0b3c83c7aebf9d1e1eaa1d5232ff993f8e4f5a155a"
   },
   "schema": 1,
   "tool": {
