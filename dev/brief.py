@@ -96,7 +96,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-import dispatch_lane
 import land_lane
 
 
@@ -1621,6 +1620,13 @@ def _main_review(args) -> int:
             file=sys.stderr,
         )
         return 2
+    # Imported at function scope, not module scope, so the lane-brief path
+    # (`build`) never depends on `dispatch_lane` — that independence is the
+    # invariant this module's docstring states and the lane path's tests
+    # (test_launch_lane.py, test_dispatch_lane.py) depend on (#1115).  A
+    # module-level import made `brief` unimportable in every fixture repo
+    # whose `dispatch_lane` stub cannot be imported, breaking 21 tests.
+    import dispatch_lane  # noqa: PLC0415
     try:
         core = _read_core(args)
         frame = _read(dispatch_lane.REVIEW_FRAME_PATH, "review frame")

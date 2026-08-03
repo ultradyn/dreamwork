@@ -133,6 +133,56 @@ def test_lane_build_stays_independent_of_the_validator():
     assert brief.COORDINATOR_INBOX_PREFIX == dispatch_lane.COORDINATOR_INBOX_PREFIX
 
 
+def test_importing_brief_does_not_import_dispatch_lane(tmp_path):
+    """A bare `import brief` must not trigger importing `dispatch_lane` (#1115).
+
+    The module docstring states the lane path (`build`) stays independent of
+    `dispatch_lane`.  A module-level `import dispatch_lane` broke that: every
+    consumer that imports `brief` at module scope — `launch_lane.py`, the
+    dispatch/launch test fixtures — pulled in `dispatch_lane` too, and because
+    the fixture's `dispatch_lane` stub is runnable but not importable (#136),
+    21 tests in test_dispatch_lane.py and test_launch_lane.py died at import
+    time.
+
+    This is the honest shape, not a source-text grep: `dispatch_lane` is
+    POISONED so any import of it is fatal, then `brief` is imported in a
+    clean subprocess (never cached in sys.modules from an earlier test).  A
+    module-scope `import dispatch_lane` or `from dispatch_lane import x` in
+    brief.py reaches the poison and the subprocess fails; a function-scope
+    import inside `_main_review` (the review-only path) never runs during a
+    bare `import brief` and is never reached.  Source-text checks miss
+    `from dispatch_lane import ...` and stop meaning anything the day someone
+    spells the import differently.
+
+    Production line that must change for this to fail: a module-scope import
+    of dispatch_lane in dev/brief.py (the line removed in this round).
+    """
+    poisoned = tmp_path / "dispatch_lane.py"
+    poisoned.write_text(
+        "raise RuntimeError('dispatch_lane poisoned on import')\n",
+        encoding="utf-8",
+    )
+    env = dict(os.environ)
+    # temp dir first: the poisoned dispatch_lane shadows the real one.  ROOT/dev
+    # stays on the path so `brief` and `land_lane` resolve normally.
+    sep = os.pathsep
+    env["PYTHONPATH"] = (
+        str(tmp_path) + sep + str(ROOT / "dev") + sep + env.get("PYTHONPATH", "")
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", "import brief; print('brief imported clean')"],
+        cwd=str(ROOT), capture_output=True, text=True, env=env,
+        check=False, timeout=30,
+    )
+    assert result.returncode == 0, (
+        "importing brief must not import dispatch_lane at module scope — the "
+        f"poisoned dispatch_lane was reached during a bare import of brief, "
+        f"which means brief couples the lane path to dispatch_lane. "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert "brief imported clean" in result.stdout
+
+
 def test_generated_brief_passes_every_dispatch_lane_refusal(generated, lane, tmp_path):
     """The whole point: generated output cannot fail dispatch validation."""
     contract = dispatch_lane.CONTRACT_PATH.read_text(encoding="utf-8")
