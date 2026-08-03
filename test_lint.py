@@ -341,7 +341,7 @@ class TestSyncConflictFiles:
         assert "0 conflict copies" in detail
         # The pruned subtrees must be named, not silently skipped (#651).
         assert "pruned:" in detail
-        assert ".git/objects/" in detail
+        assert ".git/objects/[0-9a-f]{2}/" in detail
         # Precondition: the scan actually reached files (not zero).
         assert int(detail.split("file(s) scanned")[0].split()[-1]) > 0, detail
 
@@ -373,7 +373,7 @@ class TestSyncConflictFiles:
         assert lint.ERROR not in {lvl for lvl, w, _ in rep.rows}, rep.render()
 
     def test_does_not_delete_or_move_conflict_file(self, tmp_path, monkeypatch):
-        """#702: report only, never resolve. The file must survive the check."""
+        """#1162: report only, never resolve; the copy may be newer."""
         t = target(tmp_path)
         conflict = t / ".dreamwork" / self._REAL_NAME
         conflict.write_bytes(b"stale snapshot")
@@ -395,7 +395,7 @@ class TestSyncConflictFiles:
         # worktree_roots(t) returns (t.parent / '.worktrees', t / '.worktrees').
         sibling_wt = t.parent / ".worktrees" / "cx-test"
         sibling_wt.mkdir(parents=True)
-        (sibling_wt / "scratch.sync-conflict-20260803-180706-ABCDEFG.py").write_text("")
+        (sibling_wt / "scratch.sync-conflict-20260803-180706-ABCDEF2.py").write_text("")
         rep = self._check(dw, monkeypatch)
         warns = [d for lvl, w, d in rep.rows
                  if lvl == lint.WARN and w == "sync-conflict"]
@@ -405,40 +405,52 @@ class TestSyncConflictFiles:
         assert len(errors) == 0, rep.render()
         assert "scratch.sync-conflict" in warns[0]
 
-    def test_device_id_and_date_are_not_hardcoded(self, tmp_path, monkeypatch):
-        """The pattern matches ANY date and device id, not a literal (#1166 P2).
+    def test_short_id_uses_syncthing_base32_contract(self, tmp_path, monkeypatch):
+        """Seven uppercase Base32 chars match, across the whole alphabet.
 
-        The device-id segment is REQUIRED; these names all carry it. The
-        alphabet is loose ([A-Za-z0-9]+), wider than the observed uppercase
-        sample, so a lowercase or mixed-case id also matches.
+        Syncthing's protocol ShortID.String uses base32.StdEncoding and slices
+        exactly ShortIDStringLength (7); this expectation is independent of
+        the one QJRKU52 sample observed in this repo.
         """
         t = target(tmp_path)
         names = [
-            "ledger.sync-conflict-20260101-120000-DEVICE01.sqlite3",
-            "notes.sync-conflict-19991231-235959-XYZ9876.md",
+            "ledger.sync-conflict-20260101-120000-AAAAAAA.sqlite3",
+            "notes.sync-conflict-19991231-235959-ZZZZZZZ.md",
+            "digits.sync-conflict-20000229-000001-2222222",
+            "upper.sync-conflict-20301231-235959-7777777.tar.gz",
+            "observed.sync-conflict-20260803-180706-QJRKU52.json",
         ]
         for name in names:
             (t / ".dreamwork" / name).write_bytes(b"")
         rep = self._check(t / ".dreamwork", monkeypatch)
         errors = [d for lvl, w, d in rep.rows
                   if lvl == lint.ERROR and w == "sync-conflict"]
-        assert len(errors) == 2, rep.render()
+        assert len(errors) == len(names), rep.render()
+        assert all(any(name in detail for detail in errors) for name in names)
 
-    def test_malformed_no_device_id_not_reported(self, tmp_path, monkeypatch):
-        """A name without the device-id segment is NOT a conflict copy (#1166 P2).
-
-        `data.sync-conflict-20260803-180706.json` is malformed: Syncthing always
-        emits a device id after the time segment. Reporting it would be a false
-        positive — the opposite of what the check exists for. Round 1 blessed
-        this malformed shape (asserted 3 matches including this one); that test
-        encoded the defect. This test inverts it: the name is NOT reported.
-        """
+    def test_malformed_conflict_like_names_warn_without_blocking(
+            self, tmp_path, monkeypatch):
+        """Malformed lookalikes are distinct from clean and real conflicts."""
         t = target(tmp_path)
-        (t / ".dreamwork" / "data.sync-conflict-20260803-180706.json").write_bytes(b"")
+        names = [
+            "no-id.sync-conflict-20260803-180706.json",
+            "short.sync-conflict-20260803-180706-A.json",
+            "lower.sync-conflict-20260803-180706-qjrku52.json",
+            "forbidden.sync-conflict-20260803-180706-QJRKU50.json",
+            "long.sync-conflict-20260803-180706-QJRKU522.json",
+            "punct.sync-conflict-20260803-180706-QJRKU52!.json",
+        ]
+        for name in names:
+            (t / ".dreamwork" / name).write_bytes(b"")
         rep = self._check(t / ".dreamwork", monkeypatch)
-        sync_rows = [(lvl, d) for lvl, w, d in rep.rows if w == "sync-conflict"]
-        # The malformed name must not produce any sync-conflict row.
-        assert all(lvl == lint.OK for lvl, _ in sync_rows), rep.render()
+        sync_rows = [(lvl, d) for lvl, w, d in rep.rows
+                     if w == "sync-conflict"]
+        assert len(sync_rows) == len(names), rep.render()
+        assert {lvl for lvl, _ in sync_rows} == {lint.WARN}, rep.render()
+        assert all(any(name in detail for _, detail in sync_rows)
+                   for name in names)
+        assert all("malformed conflict-like filename" in detail
+                   for _, detail in sync_rows)
 
     def test_git_metadata_conflict_is_found_and_blocks(self, tmp_path, monkeypatch):
         """#1166 P1a: a conflict copy under .git/ metadata is found and ERRORs.
@@ -488,7 +500,7 @@ class TestSyncConflictFiles:
         # Sibling worktree: externally owned → WARN
         sibling_wt = t.parent / ".worktrees" / "cx-other"
         sibling_wt.mkdir(parents=True)
-        (sibling_wt / "scratch.sync-conflict-20260803-180706-XYZ123.py").write_text("")
+        (sibling_wt / "scratch.sync-conflict-20260803-180706-XYZ2345.py").write_text("")
 
         rep = self._check(dw, monkeypatch)
         errors = [d for lvl, w, d in rep.rows
@@ -500,6 +512,79 @@ class TestSyncConflictFiles:
         assert len(warns) == 2, rep.render()
         assert any("wt" in d for d in warns), rep.render()
         assert any("cx-other" in d for d in warns), rep.render()
+
+    def test_unknown_own_git_state_fails_closed(self, tmp_path, monkeypatch):
+        """Only the explicit wt/cache allowlist WARNs inside the repo's .git."""
+        t = target(tmp_path)
+        git_dir = t / ".git"
+        cache = git_dir / "wt" / "cache"
+        unknown = git_dir / "future-state"
+        cache.mkdir(parents=True)
+        unknown.mkdir(parents=True)
+        cache_name = "status.sync-conflict-20260803-180706-QJRKU52.json"
+        unknown_name = "state.sync-conflict-20260803-180706-QJRKU52"
+        (cache / cache_name).write_bytes(b"")
+        (unknown / unknown_name).write_bytes(b"")
+
+        rep = self._check(t / ".dreamwork", monkeypatch)
+        warns = [d for lvl, w, d in rep.rows
+                 if lvl == lint.WARN and w == "sync-conflict"]
+        errors = [d for lvl, w, d in rep.rows
+                  if lvl == lint.ERROR and w == "sync-conflict"]
+        assert len(warns) == 1 and cache_name in warns[0], rep.render()
+        assert len(errors) == 1 and unknown_name in errors[0], rep.render()
+
+    def test_pack_pair_conflict_copies_are_scanned(self, tmp_path, monkeypatch):
+        """Git discovers conflict-infixed .pack/.idx files by extension."""
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        subprocess.run(["git", "-C", str(t), "init", "-q"], check=True)
+        (t / "payload").write_text("packed content\n")
+        subprocess.run(["git", "-C", str(t), "add", "payload"], check=True)
+        subprocess.run([
+            "git", "-C", str(t), "-c", "user.name=Test",
+            "-c", "user.email=test@example.invalid", "commit", "-qm", "base",
+        ], check=True)
+        subprocess.run(["git", "-C", str(t), "repack", "-ad"], check=True)
+        pack_dir = t / ".git" / "objects" / "pack"
+        originals = list(pack_dir.glob("pack-*.pack")) + list(pack_dir.glob("pack-*.idx"))
+        assert len(originals) == 2, originals
+        conflict_names = []
+        for original in originals:
+            conflict = original.with_name(
+                f"{original.stem}.sync-conflict-20260803-180706-QJRKU52"
+                f"{original.suffix}")
+            conflict.write_bytes(original.read_bytes())
+            conflict_names.append(conflict.name)
+
+        rep = self._check(dw, monkeypatch)
+        errors = [d for lvl, w, d in rep.rows
+                  if lvl == lint.ERROR and w == "sync-conflict"]
+        assert len(errors) == 2, rep.render()
+        assert all(any(name in detail for detail in errors)
+                   for name in conflict_names), rep.render()
+
+    def test_unreadable_own_directory_is_non_clean_and_named(
+            self, tmp_path, monkeypatch):
+        """An unreadable own-state directory cannot collapse to a clean OK."""
+        t = target(tmp_path)
+        blocked = t / ".dreamwork" / "blocked-ledger-state"
+        blocked.mkdir()
+        hidden = blocked / self._REAL_NAME
+        hidden.write_bytes(b"")
+        blocked.chmod(0)
+        try:
+            rep = self._check(t / ".dreamwork", monkeypatch)
+        finally:
+            blocked.chmod(0o700)
+
+        rows = [(lvl, detail) for lvl, what, detail in rep.rows
+                if what == "sync-conflict"]
+        assert rows and all(lvl != lint.OK for lvl, _ in rows), rep.render()
+        assert any(lvl == lint.ERROR and str(blocked) in detail
+                   and "coverage incomplete" in detail
+                   for lvl, detail in rows), rep.render()
 
 
 class TestInRepoWorktreeDrain:
