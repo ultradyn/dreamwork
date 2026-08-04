@@ -574,6 +574,9 @@ def test_a_tab_led_closer_with_trailing_text_does_not_close(lane):
     )
     generated = brief.build(881, lane, ["dev/brief.py", "test_brief.py"], core)
     assert "missing.py:999" in generated
+
+
+def _lesson_citation_false_positive_count_at(sha: str) -> int:
     """Independent expectation for #1209; mirror the lint contract, not brief.py."""
     paths = subprocess.run(
         [
