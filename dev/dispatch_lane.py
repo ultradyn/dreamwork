@@ -16,6 +16,7 @@ task cutoff only grandfathers historical briefs that predate receipts.
 from __future__ import annotations
 
 import argparse
+import errno
 import hashlib
 import json
 import os
@@ -452,7 +453,7 @@ def _write_exclusive(path: Path, content: str) -> None:
 
 def _supervise_review_runner(
         runner: list[str], prompt: str, runner_log: Path,
-        runner_token: str) -> None:
+        runner_token: str, *, reserved_log_fd: int) -> None:
     """Fork the reviewer, tee its output to ``runner_log``, and record its exit.
 
     Runs in the detached child (session leader, lane lock held, cwd at the
@@ -474,10 +475,14 @@ def _supervise_review_runner(
     witness. The digest is a rolling sha256 over the bytes the supervisor
     actually wrote, so a sidecar or leftover writer that replaces the log
     content after close produces a mismatch and the capture falls through to
-    runner-absent — never reading as a delivered verdict. The log is created
-    with ``O_CREAT|O_EXCL|O_NOFOLLOW`` so the path is one the supervisor owns
-    (a collision or symlink does not silently capture a different writer's
-    file).
+    runner-absent — never reading as a delivered verdict.
+
+    #1214 round 5 / P1(b): the log is RESERVED (O_CREAT|O_EXCL|O_NOFOLLOW) by
+    ``_launch_detached`` BEFORE this function is called, so an EEXIST is
+    reported through the handshake pipe rather than silently swallowed after
+    the reviewer forked. The reserved file descriptor (``reserved_log_fd``) is
+    passed in and used directly — no reopen, no TOCTOU window between create and
+    write.
     """
     read_fd, write_fd = os.pipe()
     grandchild = os.fork()
@@ -496,21 +501,13 @@ def _supervise_review_runner(
     # Supervisor: tee the grandchild's output to runner_log AND this process's
     # own stdout/stderr (so a coordinator-redirected launcher streams it too).
     os.close(write_fd)
-    runner_log.parent.mkdir(parents=True, exist_ok=True)
     out_paths = [fd for fd in (1, 2) if _fd_ok(fd)]
-    # #1214 round 4: exclusive, no-symlink creation. O_EXCL refuses a
-    # pre-existing file (collision or stale leftover); O_NOFOLLOW refuses to
-    # create through a symlink. A failure is fail-closed: no capture is
-    # written, so _read_runner_exit sees no matching log and falls through to
-    # runner-absent.
-    log_handle = None
-    try:
-        log_fd = os.open(
-            str(runner_log),
-            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-        log_handle = os.fdopen(log_fd, "wb", buffering=0)
-    except OSError:
-        pass  # drain the pipe below; no capture → runner-absent
+    # #1214 round 5 / P1(b): the log was RESERVED before the reviewer fork by
+    # _launch_detached (O_CREAT|O_EXCL|O_NOFOLLOW), so an EEXIST is reported
+    # through the handshake pipe rather than silently swallowed after the
+    # reviewer ran. The reserved fd is used directly here — no reopen, so there
+    # is no TOCTOU window between create and write.
+    log_handle = os.fdopen(reserved_log_fd, "wb", buffering=0)
     # Rolling digest over the bytes the supervisor actually captured, so a
     # later replacement of the log file is detectable (#1214 round 4).
     digest = hashlib.sha256()
@@ -522,8 +519,7 @@ def _supervise_review_runner(
                 break
             if not chunk:
                 break
-            if log_handle is not None:
-                log_handle.write(chunk)
+            log_handle.write(chunk)
             digest.update(chunk)
             for fd in out_paths:
                 try:
@@ -532,11 +528,10 @@ def _supervise_review_runner(
                     pass
     except OSError:
         pass  # the log file itself is the fallback record; review_status names it
-    if log_handle is not None:
-        try:
-            log_handle.close()
-        except OSError:
-            pass
+    try:
+        log_handle.close()
+    except OSError:
+        pass
     os.close(read_fd)
     _, status = os.waitpid(grandchild, 0)
     runner_exit = os.waitstatus_to_exitcode(status)
@@ -577,12 +572,23 @@ def _write_runner_exit(exit_path: Path, runner_exit: int, runner_log: str,
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temp, exit_path)
-    except OSError:
+    except OSError as exc:
         # The review ran and its exit was observed; a failure to persist the
         # witness must not invert that. The log file itself is the fallback
-        # record, and review_status names both. Drop silently rather than
-        # masking the real exit with a different one.
-        pass
+        # record, and review_status names both. But dropping silently violates
+        # the supervisor obligation to record the runner's exit (#1214 round 5
+        # / Standards): a lost witness is indistinguishable from a supervisor
+        # that died before writing one. Emit a diagnostic to stderr so it is
+        # visible in the launcher's (captured) stream, then continue to the
+        # supervisor's own exit — never mask the real exit with a different one.
+        try:
+            sys.stderr.write(
+                f"runner exit witness persistence failed ({exc}); the review "
+                f"ran (exit {runner_exit}) but its outcome is recoverable only "
+                f"from {runner_log}, not from {exit_path}\n")
+            sys.stderr.flush()
+        except OSError:
+            pass  # stderr itself is gone; nothing more to do
 
 
 def _fd_ok(fd: int) -> bool:
@@ -662,9 +668,30 @@ def _launch_detached(
             # lock) has succeeded, so the parent's _pipe_drain may proceed and
             # confirm the launch. A grandchild exec failure is caught by the
             # spawn-time liveness probe, not by this pipe — same safety net.
+            #
+            # #1214 round 5 / P1(b): RESERVE the runner_log BEFORE forking the
+            # reviewer. Previously the supervisor created the log AFTER the
+            # reviewer fork, so an EEXIST (pre-existing file or symlink) was
+            # silently swallowed while the reviewer ran, its output was
+            # discarded, the stale log survived, and status read runner-absent
+            # — identical to a killed reviewer and impossible to diagnose.
+            # Creating here (O_CREAT|O_EXCL|O_NOFOLLOW) means an EEXIST is
+            # reported through this handshake pipe (write_fd is still open),
+            # the dispatcher returns 2, and NO reviewer forks. The fd is passed
+            # to the supervisor so it writes to the reserved file directly — no
+            # reopen, no TOCTOU window.
+            try:
+                runner_log.parent.mkdir(parents=True, exist_ok=True)
+                reserved_log_fd = os.open(
+                    str(runner_log),
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            except OSError as exc:
+                _pipe_write(write_fd, f"runner_log reserve refused: {exc}\n")
+                os._exit(2)
             os.close(write_fd)
             _supervise_review_runner(
-                runner, prompt, runner_log.resolve(), runner_token)
+                runner, prompt, runner_log.resolve(), runner_token,
+                reserved_log_fd=reserved_log_fd)
             os._exit(0)  # unreachable; _supervise… exits
         try:
             os.execvp(runner[0], [*runner, prompt])
@@ -877,7 +904,7 @@ def launch_review(prompt_path: Path, branch: str, round_num: int,
                 # READ, not assumed, so a review that died at startup does NOT
                 # read as delivered (round 1's defect stays closed).
                 observed = _read_runner_exit(record)
-                if observed is not None:
+                if observed is not None and "rejected" not in observed:
                     record["state"] = (
                         "spawned: reviewer completed during settle; verdict "
                         f"captured to {runner_log.resolve()} (exit "
@@ -891,16 +918,25 @@ def launch_review(prompt_path: Path, branch: str, round_num: int,
                         f"runner_log={runner_log.resolve()}; "
                         f"runner_exit={observed['runner_exit']}")
                     return 0
-                record["state"] = (
-                    "spawn failed: dispatcher exit=0 but no reviewer runner "
-                    "holds the review worktree cwd"
-                )
+                rejection = (observed["rejected"] if observed is not None
+                             and "rejected" in observed else None)
+                if rejection is not None:
+                    record["state"] = (
+                        f"spawn failed: capture rejected ({rejection})"
+                    )
+                else:
+                    record["state"] = (
+                        "spawn failed: dispatcher exit=0 but no reviewer runner "
+                        "holds the review worktree cwd"
+                    )
                 _write_json_atomic(attempt_path, record)
-                print(
-                    "review launch refused: dispatcher exited 0 but no reviewer "
-                    f"runner holds {worktree.resolve()} as cwd; examined={examined}",
-                    file=sys.stderr,
-                )
+                refused = (
+                    f"review launch refused: dispatcher exited 0 but no reviewer "
+                    f"runner holds {worktree.resolve()} as cwd; "
+                    f"examined={examined}")
+                if rejection is not None:
+                    refused += f"; capture rejected: {rejection}"
+                print(refused, file=sys.stderr)
                 return 3
             record["state"] = (
                 "spawned: reviewer present in review worktree (cwd-containment); "
@@ -1171,10 +1207,18 @@ _REVIEW_CATEGORY_TERMINAL = "terminal"
 def _read_runner_exit(record: dict) -> dict | None:
     """Read the supervisor's ``.runner.exit.json`` for a review dispatch (#1214).
 
-    Returns the parsed ``{"runner_exit", "runner_log"}`` object only when ALL of
-    the following hold; otherwise ``None`` (the honest "outcome unobserved"
-    case, which must NOT be promoted to a success — the caller falls through to
-    the liveness probe, keeping ``runner-absent`` as the alarm):
+    Returns:
+
+    * ``{"runner_exit": 0, "runner_log": path}`` — an ACCEPTED terminal
+      witness: all binding checks pass and the reviewer exited cleanly.
+    * ``{"rejected": "<reason>", "runner_log": path}`` — a witness file was
+      READ and REJECTED.  The caller falls through to the liveness probe (the
+      right terminal-safety trade) but MUST surface the reason so status says
+      "capture rejected: <reason>" rather than the misleading "runner exit
+      never observed" (#1214 round 5 / P2).
+    * ``None`` — no witness file exists (absent, not rejected).
+
+    The acceptance conditions (ALL must hold):
 
     * the exit record exists and parses as a dict carrying an integer
       ``runner_exit`` of EXACT type ``int`` (#1214 round 3 / P1(a) — a JSON
@@ -1184,19 +1228,19 @@ def _read_runner_exit(record: dict) -> dict | None:
       divergent path is a lying or stale witness);
     * the exit record carries a ``runner_token`` that MATCHES the launch
       record's ``runner_token`` (#1214 round 4 — a per-attempt identity in both
-      records binds the witness to this launch, so a stale exit record from a
-      different attempt or a collision resolving to the same path cannot read
-      as this attempt's outcome);
+      records binds the witness to this launch);
     * the log file is reopened with ``O_NOFOLLOW`` (a symlink at the path is
       refused, not followed — #1214 round 4), EXISTS on disk with non-blank
-      content (#1214 round 2 — an empty, missing, or whitespace-only capture is
-      NOT a delivered verdict), and its sha256 MATCHES the exit record's
+      content (#1214 round 2), and its sha256 MATCHES the exit record's
       ``runner_log_sha256`` (#1214 round 4 — a stable snapshot of the bytes the
-      supervisor captured, so a sidecar or leftover writer that replaced the
-      content after close produces a mismatch and falls through). "Non-blank"
-      is a TEXT judgment (#1214 round 3 / P2(a)): the log is decoded as UTF-8
-      (lenient) and ``str.strip`` — Unicode-aware, unlike ``bytes.strip`` —
-      decides, so a capture of only U+2003 is blank.
+      supervisor captured);
+    * ``runner_exit == 0`` — the reviewer exited cleanly (#1214 round 5 /
+      P1(a)).  The digest proves the bytes the SUPERVISOR captured, but a
+      prefix of a truncated capture digests correctly — only a clean exit
+      proves the REVIEWER finished writing.  A signalled (``< 0``, e.g.
+      ``-9`` for SIGKILL) or nonzero (``> 0``) exit is an INCOMPLETE delivery,
+      never terminal.  This is the explicit completion protocol: a clean exit
+      IS the reviewer saying "I am done"; a signal or error code is not.
     """
     runner_log = record.get("runner_log")
     if not isinstance(runner_log, str) or not runner_log:
@@ -1207,36 +1251,35 @@ def _read_runner_exit(record: dict) -> dict | None:
     except (OSError, UnicodeError, json.JSONDecodeError):
         return None
     if (not isinstance(parsed, dict)
-            # #1214 round 3 / P1(a): a JSON ``true`` is a Python ``bool``, and
-            # ``bool`` IS an ``int`` subclass — so ``isinstance(..., int)``
-            # accepted ``{"runner_exit": true}`` as a terminal witness. A bool
-            # is not an exit code; require the EXACT type so a lying or corrupt
-            # record falls through to runner-absent rather than reading as a
-            # delivered verdict.
             or type(parsed.get("runner_exit")) is not int):
-        return None
+        return {"rejected": "exit record malformed: runner_exit is not an "
+                "integer", "runner_log": runner_log}
     # The exit record must name the SAME log the launch recorded — a divergent
-    # path is a lying or stale witness, treated as unobserved (#1214 round 2).
+    # path is a lying or stale witness (#1214 round 2).
     exit_runner_log = parsed.get("runner_log")
     if not isinstance(exit_runner_log, str) or exit_runner_log != runner_log:
-        return None
+        return {"rejected": "exit record names a different runner_log path",
+                "runner_log": runner_log}
     # #1214 round 4: the exit record must carry this launch's per-attempt
     # token. A stale exit record from a different attempt, or one written by a
     # collision resolving to the same computed path, carries a different token
-    # (or none) and cannot establish terminal for this attempt. Both records
-    # must carry a non-empty token string and they must match.
+    # (or none) and cannot establish terminal for this attempt.
     launch_token = record.get("runner_token")
     exit_token = parsed.get("runner_token")
     if (not isinstance(launch_token, str) or not launch_token
             or not isinstance(exit_token, str) or exit_token != launch_token):
-        return None
+        return {"rejected": "exit record token does not match launch record",
+                "runner_log": runner_log}
     # #1214 round 4: reopen with O_NOFOLLOW so a symlink planted at the log
     # path cannot redirect the read at an unrelated file. Read the bytes ONCE
     # and reuse them for both the non-blank check and the digest comparison.
     try:
         log_fd = os.open(runner_log, os.O_RDONLY | os.O_NOFOLLOW)
-    except OSError:
-        return None
+    except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            return {"rejected": "runner_log is a symlink (O_NOFOLLOW refused)",
+                    "runner_log": runner_log}
+        return None  # missing or otherwise absent — no witness to reject
     log_bytes = bytearray()
     try:
         while True:
@@ -1253,32 +1296,39 @@ def _read_runner_exit(record: dict) -> dict | None:
         except OSError:
             pass
     # #1214 round 2: an empty, missing, or whitespace-only runner log is NOT a
-    # delivered verdict. A reviewer that died before producing output leaves an
-    # exit integer but no recoverable verdict; classifying that as terminal
-    # rebuilds the incident this branch exists to fix (a present-but-empty
-    # capture reads as success on a total loss). Require non-blank content and
-    # fall through to the liveness probe when it is absent.
-    #
-    # #1214 round 3 / P2(a): "non-blank" is a TEXT judgment, not an ASCII-byte
-    # one. ``bytes.strip()`` only strips ASCII whitespace, so a capture holding
-    # only U+2003 (em space) read as non-blank and classified terminal. The log
-    # is a verdict a human reads, decoded as UTF-8; decode leniently
-    # (``errors="replace"`` so non-UTF-8 bytes become U+FFFD, which is content,
-    # not silence) and let ``str.strip`` — which IS Unicode-aware — decide.
+    # delivered verdict. "Non-blank" is a TEXT judgment (#1214 round 3 /
+    # P2(a)): the log is decoded as UTF-8 (leniently, so non-UTF-8 bytes become
+    # U+FFFD — content, not silence) and ``str.strip`` — Unicode-aware, unlike
+    # ``bytes.strip`` — decides.
     log_text = bytes(log_bytes).decode("utf-8", errors="replace")
     if not log_text.strip():
-        return None
+        return {"rejected": "runner log is blank (no verdict captured)",
+                "runner_log": runner_log}
     # #1214 round 4: the bytes at the path NOW must match the sha256 the
     # supervisor recorded when it closed the log. A sidecar or stale writer
-    # that replaced the content after close — the realistic form of the
-    # "capture not from this reviewer" threat (staleness and collision, not an
-    # adversary) — produces a different digest and falls through to
-    # runner-absent, never reading as a delivered verdict.
+    # that replaced the content after close produces a different digest and
+    # falls through to runner-absent, never reading as a delivered verdict.
     exit_digest = parsed.get("runner_log_sha256")
     if not isinstance(exit_digest, str):
-        return None
+        return {"rejected": "exit record carries no runner_log_sha256",
+                "runner_log": runner_log}
     if hashlib.sha256(bytes(log_bytes)).hexdigest() != exit_digest:
-        return None
+        return {"rejected": "runner log sha256 does not match exit record",
+                "runner_log": runner_log}
+    # #1214 round 5 / P1(a): a signalled (exit < 0) or nonzero (exit > 0)
+    # reviewer is NOT a complete delivery. The digest is accumulated over the
+    # bytes the supervisor actually wrote, so a PREFIX of a truncated capture
+    # digests perfectly — a reviewer SIGKILL'd mid-report leaves a partial
+    # non-blank log with a matching token AND a matching digest. Only the exit
+    # code proves the reviewer finished: exit 0 is the explicit completion
+    # signal. This is necessary but not sufficient for the residual
+    # "exit-0-but-truncated-by-full-disk" case (the log write fails but the
+    # reviewer still exits 0); that is not closable without a reviewer-emitted
+    # completion marker, and is out of scope for the capture layer (#1214).
+    if parsed["runner_exit"] != 0:
+        return {"rejected": f"runner exited {parsed['runner_exit']} "
+                f"(signalled/nonzero); capture may be truncated",
+                "runner_log": runner_log}
     return {"runner_exit": parsed["runner_exit"], "runner_log": runner_log}
 
 
@@ -1332,11 +1382,20 @@ def classify_review_dispatch(
     # {runner_exit: 0} classified terminal and bypassed every condition. Let
     # it fall through to the liveness probe (runner-absent / in-progress).
     observed = _read_runner_exit(record)
-    if observed is not None:
+    if observed is not None and "rejected" not in observed:
         return (_REVIEW_CATEGORY_TERMINAL,
                 f"runner exit observed ({observed['runner_exit']}) via "
                 f".runner.exit.json; verdict recoverable from "
                 f"{observed['runner_log']}")
+    # #1214 round 5 / P2: a witness that was READ and REJECTED carries a
+    # reason (digest mismatch, token mismatch, blank log, signalled exit, …).
+    # Surfacing it sends the coordinator down the right diagnostic path:
+    # "never observed" and "observed and rejected for digest mismatch" are
+    # different failures with different remedies.  The classification still
+    # falls through to the liveness probe (the right terminal-safety trade) —
+    # the reason is appended to whatever the probe returns.
+    rejection = (observed["rejected"] if observed is not None
+                 and "rejected" in observed else None)
     review_lane = record.get("review_lane")
     if not review_lane:
         return (_REVIEW_CATEGORY_UNKNOWN,
@@ -1358,11 +1417,14 @@ def classify_review_dispatch(
         return (_REVIEW_CATEGORY_IN_PROGRESS,
                 f"reviewer runner present in {review_lane} worktree; review "
                 "still in progress")
-    return (_REVIEW_CATEGORY_RUNNER_ABSENT,
-            f"runner gone from {review_lane} worktree; runner_exit never "
-            "observed; the dispatch recorded no outcome — the review is no "
-            "longer progressing (a dead review, or one whose verdict landed "
-            "elsewhere; check inbox/ledger reviews)")
+    detail = (
+        f"runner gone from {review_lane} worktree; runner_exit never "
+        "observed; the dispatch recorded no outcome — the review is no "
+        "longer progressing (a dead review, or one whose verdict landed "
+        "elsewhere; check inbox/ledger reviews)")
+    if rejection is not None:
+        detail = f"capture rejected: {rejection}; {detail}"
+    return (_REVIEW_CATEGORY_RUNNER_ABSENT, detail)
 
 
 def review_status() -> int:
