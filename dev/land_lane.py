@@ -345,8 +345,15 @@ def _derived_test(path: str) -> str | None:
     """This repo's test convention: ``foo.py`` → ``test_foo.py`` at the root.
 
     A changed test file is its own required test. Non-Python paths derive
-    nothing — see ``_derived_tests_line`` for what that silence costs.
+    nothing — see ``_derived_tests_line`` for what that silence costs — except
+    a lint-gated executable doc, whose gate is ``test_lint.py``: membership of
+    ``LINT_GATED_EXECUTABLE_DOCS`` is the claim "lint checks this file", so the
+    honest derivation is the test that runs that checker (#1212 — without it,
+    a doc-only lane faulted at "selected 0 existing tests" even though the doc
+    is genuinely not inert).
     """
+    if path in LINT_GATED_EXECUTABLE_DOCS:
+        return "test_lint.py"
     name = PurePosixPath(path)
     if name.suffix != ".py":
         return None
