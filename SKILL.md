@@ -351,7 +351,17 @@ both needed, and the discipline is the half that closes that case.
    too — do not spend ticks reconsidering work that cannot start. Rotate
    through: goal alignment first — does DREAMWORK.md still reflect what
    the human wants and what the loop has learned? fold in any drift, and
-   check every task `parent` still resolves to a DREAMWORK.md heading;
+   check that open work still traces to a goal. **Tasks reach DREAMWORK.md
+   through GROUP MEMBERSHIP, never through a task `parent` field — there is
+   no such field, and this rotation asked for one for the whole life of the
+   SQLite cutover, so it examined nothing and reported nothing, which reads
+   exactly like alignment** (#1233). The chain is task → `task_group_member`
+   → group → `parent_id` → goal, and the top-level goal groups ARE the
+   DREAMWORK.md goals. Report the **ungrouped count** (`ledger.py groups`;
+   a task in no group cannot be traced to anything he wants) and attach what
+   you can — measured 2026-08-04 at 11% of open tasks grouped, with nine of
+   eleven groups empty. A check that examines nothing must never be read as
+   passing;
    then
    self-review recent commits for introduced errors; test-coverage gaps;
    docs freshness — the repo's own docs, `.dreamwork/docs/`, the
