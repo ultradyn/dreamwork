@@ -1436,6 +1436,117 @@ def test_launch_review_captures_runner_log_and_records_it(tmp_path):
         f"status line did not name the recoverable verdict path; line={line!r}")
 
 
+def test_launch_review_accepts_fast_completing_review_not_spawn_fail(tmp_path):
+    """#1214 round 3 / P1(b): a genuine one-line review that finishes INSIDE the
+    settle window leaves a non-blank matching log and {runner_exit: 0} but no
+    LIVE reviewer. The liveness probe sees no runner, yet this is a COMPLETED
+    review, not a spawn failure — launch_review must read the exit witness and
+    accept it (return 0), not refuse with spawn-failed (return 3). The mirror
+    of round 1's defect: round 1 fixed an unobserved outcome reading as
+    delivery; what remained was a completed outcome reading as a failure to
+    start."""
+    branch = "cx-fast"
+    cli, root = _sandbox_review_cli(tmp_path, branch)
+    prompt = _review_prompt(tmp_path, root, branch)
+    verdict_text = "MERGE"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_ccc = fake_bin / "ccc"
+    # The reviewer prints its one-line verdict and exits 0 immediately — fast
+    # enough to finish inside the settle window, so the spawn probe finds no
+    # live runner, but the supervisor has already written a complete witness.
+    fake_ccc.write_text(
+        "#!/usr/bin/env python3\n"
+        "import sys\n"
+        f"sys.stdout.write({verdict_text!r} + chr(10))\n"
+        "sys.stdout.flush()\n"
+        "sys.exit(0)\n",
+        encoding="utf-8",
+    )
+    fake_ccc.chmod(0o755)
+    env = {
+        **os.environ,
+        "DREAMWORK_ALLOW_PIPED_STDOUT": "1",
+        "PATH": f"{fake_bin}{os.pathsep}{os.environ.get('PATH', '')}",
+        "REVIEW_RUNNER_SETTLE": "0.1",
+    }
+    result = subprocess.run(
+        [
+            sys.executable, str(cli), "--launch-review", str(prompt),
+            "--review-branch", branch, "--review-round", "1", "--",
+            "ccc", "--permission-mode", "plan", "@cx-reviewer",
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert result.returncode == 0, (
+        f"a completed fast review was refused as a spawn failure; "
+        f"stdout={result.stdout!r}; stderr={result.stderr!r}")
+    attempts = sorted((root / ".dreamwork" / "review-dispatches").glob("*.launch.json"))
+    assert len(attempts) == 1
+    attempt = json.loads(attempts[0].read_text(encoding="utf-8"))
+    assert "spawn failed" not in attempt["state"], attempt["state"]
+    assert "completed during settle" in attempt["state"], attempt["state"]
+    runner_log = Path(attempt["runner_log"])
+    for _ in range(100):
+        if runner_log.is_file():
+            break
+        time.sleep(0.01)
+    assert verdict_text in runner_log.read_text(encoding="utf-8")
+    exit_path = runner_log.with_name(
+        runner_log.name[:-len(".runner.log")] + ".runner.exit.json")
+    exit_record = json.loads(exit_path.read_text(encoding="utf-8"))
+    assert exit_record["runner_exit"] == 0, exit_record
+
+
+def test_launch_review_fast_review_with_blank_log_still_refuses(tmp_path):
+    """#1214 round 3 / P1(b) trap-guard: accepting a completed fast review
+    requires a VALID witness, not merely an absent live runner. A reviewer that
+    exits 0 inside the settle window but produces a BLANK log leaves an exit
+    integer but no recoverable verdict; _read_runner_exit rejects it (blank
+    log) and launch_review still refuses (return 3). This proves the fast-exit
+    acceptance did NOT reopen round 1 — a review that died producing nothing
+    does not read as delivered."""
+    branch = "cx-blank"
+    cli, root = _sandbox_review_cli(tmp_path, branch)
+    prompt = _review_prompt(tmp_path, root, branch)
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_ccc = fake_bin / "ccc"
+    # Exits 0 immediately, writing nothing — a blank capture beside exit 0.
+    fake_ccc.write_text(
+        "#!/usr/bin/env python3\n"
+        "import sys\n"
+        "sys.exit(0)\n",
+        encoding="utf-8",
+    )
+    fake_ccc.chmod(0o755)
+    env = {
+        **os.environ,
+        "DREAMWORK_ALLOW_PIPED_STDOUT": "1",
+        "PATH": f"{fake_bin}{os.pathsep}{os.environ.get('PATH', '')}",
+        "REVIEW_RUNNER_SETTLE": "0.1",
+    }
+    result = subprocess.run(
+        [
+            sys.executable, str(cli), "--launch-review", str(prompt),
+            "--review-branch", branch, "--review-round", "1", "--",
+            "ccc", "--permission-mode", "plan", "@cx-reviewer",
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert result.returncode == 3, (
+        f"a blank-log fast exit was accepted (round 1 reopened); "
+        f"stdout={result.stdout!r}; stderr={result.stderr!r}")
+    attempts = sorted((root / ".dreamwork" / "review-dispatches").glob("*.launch.json"))
+    assert len(attempts) == 1
+    attempt = json.loads(attempts[0].read_text(encoding="utf-8"))
+    assert "spawn failed" in attempt["state"], attempt["state"]
+
+
 @pytest.mark.parametrize("write_controls", [
     ["-y"],
     ["--permission-mode", "plan", "--permission-mode", "yolo"],

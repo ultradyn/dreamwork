@@ -813,6 +813,29 @@ def launch_review(prompt_path: Path, branch: str, round_num: int,
                     break
                 time.sleep(0.05)
             if not present:
+                # Before refusing, read the exit witness (#1214 round 3 / P1(b)):
+                # a review that finished inside the settle window leaves a valid
+                # terminal witness (non-blank matching log + .runner.exit.json)
+                # but no LIVE runner. That is a COMPLETED review, not a spawn
+                # failure — accept and report it. Exhaustion with NO witness is
+                # still a genuine spawn failure (return 3); the witness must be
+                # READ, not assumed, so a review that died at startup does NOT
+                # read as delivered (round 1's defect stays closed).
+                observed = _read_runner_exit(record)
+                if observed is not None:
+                    record["state"] = (
+                        "spawned: reviewer completed during settle; verdict "
+                        f"captured to {runner_log.resolve()} (exit "
+                        f"{observed['runner_exit']} observed via "
+                        ".runner.exit.json)")
+                    _write_json_atomic(attempt_path, record)
+                    print(
+                        f"review launched then completed during settle: "
+                        f"branch={branch}; review_lane={review_lane}; "
+                        f"worktree={worktree.resolve()}; attempt={attempt_id}; "
+                        f"runner_log={runner_log.resolve()}; "
+                        f"runner_exit={observed['runner_exit']}")
+                    return 0
                 record["state"] = (
                     "spawn failed: dispatcher exit=0 but no reviewer runner "
                     "holds the review worktree cwd"
