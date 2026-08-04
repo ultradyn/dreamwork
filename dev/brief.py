@@ -996,22 +996,41 @@ def _citation_title(task: int, ledger: Path) -> str | None:
 _LIST_MARKER = re.compile(r"^(?P<lead> *)(?P<mark>[-*+]|[0-9]+[.)])(?P<gap>[ \t]+)")
 
 
+def _expand_tabs(text: str, start: int = 0) -> int:
+    """CommonMark column advance over ``text`` from column ``start``.
+
+    A space (or any non-TAB glyph) adds one; a TAB jumps to the next multiple
+    of 4 measured from the CURRENT column — not four flat spaces.  This is the
+    single tab rule shared by the list-marker measurement and the code-block
+    test (``_expanded_indent``), so a TAB in the marker gap and a TAB in a
+    code block's indent are scored by one yardstick and can never disagree
+    (#1213 r3: round 2 scored the gap in byte lengths while the indent test
+    expanded tabs, and the gap won — silently exempting list prose).
+    """
+    col = start
+    for char in text:
+        if char == "\t":
+            col = 4 * (col // 4 + 1)
+        else:
+            col += 1
+    return col
+
+
 def _expanded_indent(line: str) -> int:
     """Leading indent in CommonMark columns — a TAB advances to a multiple of 4.
 
     A naive ``len(line) - len(line.lstrip(" "))`` counts only spaces, so a
     tab-indented code block reads as indent 0 and the citation check skips
-    nothing CommonMark would (#1213 r2: tabs).
+    nothing CommonMark would (#1213 r2: tabs).  The rule itself lives in
+    ``_expand_tabs`` and is shared with the marker measurement (#1213 r3).
     """
-    indent = 0
+    lead = ""
     for char in line:
-        if char == " ":
-            indent += 1
-        elif char == "\t":
-            indent = 4 * (indent // 4 + 1)
+        if char == " " or char == "\t":
+            lead += char
         else:
             break
-    return indent
+    return _expand_tabs(lead)
 
 
 # A fence opener with no cap on leading spaces: whether a leading fence is a
@@ -1080,10 +1099,18 @@ def _citation_prose_lines(core: str):
         ci = list_stack[-1] if list_stack else 0
         marker = _LIST_MARKER.match(line)
         if marker is not None:
-            mark_lead = len(marker.group("lead"))
+            lead = marker.group("lead")
+            mark_lead = _expand_tabs(lead)
             while list_stack and list_stack[-1] > mark_lead:
                 list_stack.pop()
-            content_col = mark_lead + len(marker.group("mark")) + len(marker.group("gap"))
+            # The content column is where the item's text begins — lead, marker
+            # and gap scored in CommonMark columns, so a TAB in the gap (a
+            # natural way to indent list prose) lands at the same column the
+            # code-block test measures from.  Byte-length ``len()`` here would
+            # disagree with ``_expanded_indent`` and silently exempt the very
+            # list prose this check exists to protect (#1213 r3).
+            content_col = _expand_tabs(
+                lead + marker.group("mark") + marker.group("gap"))
             if not list_stack or content_col > list_stack[-1]:
                 list_stack.append(content_col)
             blank_before = False
