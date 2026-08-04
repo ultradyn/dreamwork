@@ -2684,11 +2684,19 @@ def test_review_status_cli_shows_signalled_rejection_reason_in_output(tmp_path):
     # THE P2 DELIVERABLE AT THE CLI SURFACE: the rejection reason a coordinator
     # reads.  Under the round-4 bare-None regression this disappears and the
     # line reads only 'runner_exit never observed' — the misread that cost an
-    # hour.  Pin the wording that ships.
-    assert "capture rejected" in line, (
-        f"the rejection reason was lost before the CLI output a coordinator "
-        f"reads; line={line!r}")
-    assert "runner exited -9" in line, (
-        f"the signalled-exit reason did not reach the status output; "
-        f"line={line!r}")
+    # hour.  #1214 round 7: pin the WHOLE contiguous contract a human reads to
+    # diagnose, not two fragments of it.  A substring assertion on a contract
+    # accepts every truncation of that contract, and truncation is the exact
+    # failure mode this test exists to catch (a reviewer's report cut short):
+    # asserting "capture rejected" and "runner exited -9" separately greens on a
+    # truncated "capture rejected: runner exited -9; ..." that dropped the
+    # "(signalled/nonzero); capture may be truncated" tail.  Pin the contiguous
+    # reason; do not pin the runner-absent diagnostic that follows it, or the
+    # next unrelated detail change reds this test.
+    assert (
+        "capture rejected: runner exited -9 (signalled/nonzero); "
+        "capture may be truncated" in line
+    ), (
+        f"the signalled-rejection contract did not survive intact into the "
+        f"CLI output a coordinator reads; line={line!r}")
 
