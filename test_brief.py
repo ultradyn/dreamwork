@@ -373,6 +373,21 @@ def _citation_lineno(core: str, token: str) -> int:
         ("- a\n  - b\n\n    ```\n    missing.py:999\n    ```", "missing.py:999", False),
         # tab-indented code block (a tab is four columns to CommonMark)
         ("para\n\n\tcode `lessons.md:430`", "lessons.md:430", False),
+        # #1213 r3 P1: a TAB in the list-marker gap.  "   -\titem" puts the
+        # item's content at column 8 (3 spaces + "-" + tab-to-8), so prose at
+        # column 9 is list prose (rel 1) and is CHECKED.  Round 2 scored the
+        # gap in byte lengths (content column 5) and read this as code.
+        ("   -\titem\n\n         prose `lessons.md:430`", "lessons.md:430", True),
+        # the boundary the P1 fix must preserve: same marker, code at column 12
+        # (content column 8 + 4) IS genuine nested code and is skipped.
+        ("   -\titem\n\n            code `lessons.md:430`", "lessons.md:430", False),
+        # #1213 r3 P2: a top-level fence DIRECTLY after a list item (no blank)
+        # closes the item and opens fresh, so a coordinate inside is skipped.
+        ("- top\n```\nmissing.py:999\n```", "missing.py:999", False),
+        # P2 direction 2: a paragraph line directly after an item (no blank, no
+        # fence) is a lazy continuation and stays CHECKED — the fence-only pop
+        # must not bleed into non-fence dedents.
+        ("- top\nprose `lessons.md:430`", "lessons.md:430", True),
     ],
     ids=[
         "top-paragraph", "top-indented-code", "top-fenced", "lazy-continuation",
@@ -380,6 +395,8 @@ def _citation_lineno(core: str, token: str) -> int:
         "continuation-paragraph", "p1-nested-prose-indent4",
         "nested-code-indent6", "deeper-nested-code-indent8",
         "fence-in-list-ci2", "fence-in-deep-list-ci4", "tab-indented-code",
+        "r3-tab-gap-prose-checked", "r3-tab-gap-code-skipped",
+        "r3-fence-after-item-skipped", "r3-lazy-continuation-checked",
     ],
 )
 def test_citation_check_context_table(core, token, expect_checked):
@@ -454,6 +471,63 @@ def test_a_tab_indented_code_block_is_skipped(lane):
     )
     generated = brief.build(881, lane, ["dev/brief.py", "test_brief.py"], core)
     assert "lessons.md:430" in generated
+
+
+def test_a_tab_in_the_list_marker_gap_keeps_prose_checked(lane):
+    """#1213 r3 P1, end to end: a bullet written ``   -\\titem`` puts the item's
+    content at CommonMark column 8 (3 spaces, ``-``, then a TAB that advances to
+    the next multiple of 4).  Prose indented nine spaces after a blank line is
+    list prose (rel 1), so an unresolvable citation there must REFUSE.  Round 2
+    scored the gap in byte lengths (content column 5) and classified this as
+    indented code, silently passing the citation — the exact signature
+    ``CURRENT-TAB-GAP-P1: DID NOT RAISE``."""
+    core = GOOD_CORE.replace(
+        "`## Standing rules` was retyped 33 times and produced 32 distinct bodies.",
+        "A tab-gapped item:\n\n"
+        "   -\titem\n\n"
+        "         prose naming `lessons.md:430` (unresolvable).",
+    )
+    with pytest.raises(
+        brief.BriefFault,
+        match=r"file:line citation does not resolve at generation sha.*lessons\.md:430",
+    ):
+        brief.build(881, lane, ["dev/brief.py", "test_brief.py"], core)
+
+
+def test_genuine_nested_code_after_a_tab_gap_marker_is_still_skipped(lane):
+    """#1213 r3 direction 2: the P1 fix must not over-check.  Same tab-gapped
+    marker (content column 8), but the following line is indented TWELVE spaces
+    (content column + 4): that IS a genuine nested code block, and its
+    unresolvable coordinate must STILL generate cleanly.  A fix that checks
+    everything is as wrong as one that checks nothing."""
+    core = GOOD_CORE.replace(
+        "`## Standing rules` was retyped 33 times and produced 32 distinct bodies.",
+        "A tab-gapped item:\n\n"
+        "   -\titem\n\n"
+        "            REFUSE ... `lessons.md:430` (path absent).",
+    )
+    generated = brief.build(881, lane, ["dev/brief.py", "test_brief.py"], core)
+    assert "lessons.md:430" in generated
+
+
+def test_a_top_level_fence_directly_after_a_list_item_is_skipped(lane):
+    """#1213 r3 P2: a fenced code block is not a lazy continuation, so a fence
+    placed at the document level directly after a list item (no blank line)
+    closes that item and opens fresh.  A coordinate inside it is quoted
+    material and must be skipped.  Round 2 popped list state only after a blank
+    line, so the fence was measured against a stale item column, read as prose,
+    and its content was checked — an over-check that could refuse a correct
+    brief."""
+    core = GOOD_CORE.replace(
+        "`## Standing rules` was retyped 33 times and produced 32 distinct bodies.",
+        "A list then a fence:\n\n"
+        "- item\n"
+        "```\n"
+        "missing.py:999\n"
+        "```",
+    )
+    generated = brief.build(881, lane, ["dev/brief.py", "test_brief.py"], core)
+    assert "missing.py:999" in generated
 
 
 def _lesson_citation_false_positive_count_at(sha: str) -> int:
