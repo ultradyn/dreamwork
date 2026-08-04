@@ -3470,7 +3470,8 @@ def test_a_lint_gated_doc_reports_lint_provenance_not_name(landing_repo):
     assert "lint=1" in result.stdout, result.stdout
     assert "[name=0" in result.stdout, result.stdout
     assert "test_lint.py" in result.stdout
-    _assert_base_unmoved(root, before)
+    # A successful gate advances master
+    assert _git(root, "rev-parse", "refs/heads/master") != before
     _assert_retained(root, lane)
 
 
