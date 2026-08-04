@@ -451,7 +451,8 @@ def _write_exclusive(path: Path, content: str) -> None:
 
 
 def _supervise_review_runner(
-        runner: list[str], prompt: str, runner_log: Path) -> None:
+        runner: list[str], prompt: str, runner_log: Path,
+        runner_token: str) -> None:
     """Fork the reviewer, tee its output to ``runner_log``, and record its exit.
 
     Runs in the detached child (session leader, lane lock held, cwd at the
@@ -461,8 +462,22 @@ def _supervise_review_runner(
     a grandchild whose stdout and stderr are replaced by a pipe the supervisor
     reads; the supervisor tees the pipe to ``runner_log``. When the grandchild
     exits the supervisor writes ``_runner_exit_path_for(runner_log)`` — an
-    atomic JSON object recording the integer ``runner_exit`` and the log path —
-    and then itself exits with the same code.
+    atomic JSON object recording the integer ``runner_exit``, the log path, a
+    per-attempt ``runner_token`` binding the witness to this launch, and a
+    ``runner_log_sha256`` of the exact bytes the supervisor captured — and then
+    itself exits with the same code.
+
+    #1214 round 4: the token and digest are what bind a capture to its launch.
+    The token is generated per launch and carried in both the launch record and
+    the exit record, so a stale exit record from a different attempt (or a
+    collision resolving to the same path) cannot read as this attempt's
+    witness. The digest is a rolling sha256 over the bytes the supervisor
+    actually wrote, so a sidecar or leftover writer that replaces the log
+    content after close produces a mismatch and the capture falls through to
+    runner-absent — never reading as a delivered verdict. The log is created
+    with ``O_CREAT|O_EXCL|O_NOFOLLOW`` so the path is one the supervisor owns
+    (a collision or symlink does not silently capture a different writer's
+    file).
     """
     read_fd, write_fd = os.pipe()
     grandchild = os.fork()
@@ -483,28 +498,51 @@ def _supervise_review_runner(
     os.close(write_fd)
     runner_log.parent.mkdir(parents=True, exist_ok=True)
     out_paths = [fd for fd in (1, 2) if _fd_ok(fd)]
+    # #1214 round 4: exclusive, no-symlink creation. O_EXCL refuses a
+    # pre-existing file (collision or stale leftover); O_NOFOLLOW refuses to
+    # create through a symlink. A failure is fail-closed: no capture is
+    # written, so _read_runner_exit sees no matching log and falls through to
+    # runner-absent.
+    log_handle = None
     try:
-        with runner_log.open("wb", buffering=0) as log:
-            while True:
+        log_fd = os.open(
+            str(runner_log),
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        log_handle = os.fdopen(log_fd, "wb", buffering=0)
+    except OSError:
+        pass  # drain the pipe below; no capture → runner-absent
+    # Rolling digest over the bytes the supervisor actually captured, so a
+    # later replacement of the log file is detectable (#1214 round 4).
+    digest = hashlib.sha256()
+    try:
+        while True:
+            try:
+                chunk = os.read(read_fd, 65536)
+            except OSError:
+                break
+            if not chunk:
+                break
+            if log_handle is not None:
+                log_handle.write(chunk)
+            digest.update(chunk)
+            for fd in out_paths:
                 try:
-                    chunk = os.read(read_fd, 65536)
+                    os.write(fd, chunk)
                 except OSError:
-                    break
-                if not chunk:
-                    break
-                log.write(chunk)
-                for fd in out_paths:
-                    try:
-                        os.write(fd, chunk)
-                    except OSError:
-                        pass
+                    pass
     except OSError:
         pass  # the log file itself is the fallback record; review_status names it
+    if log_handle is not None:
+        try:
+            log_handle.close()
+        except OSError:
+            pass
     os.close(read_fd)
     _, status = os.waitpid(grandchild, 0)
     runner_exit = os.waitstatus_to_exitcode(status)
     exit_path = _runner_exit_path_for(runner_log)
-    _write_runner_exit(exit_path, runner_exit, str(runner_log))
+    _write_runner_exit(
+        exit_path, runner_exit, str(runner_log), runner_token, digest.hexdigest())
     os._exit(runner_exit)
 
 
@@ -513,7 +551,8 @@ def _runner_exit_path_for(runner_log: Path) -> Path:
     return runner_log.with_name(runner_log.name[:-len(".runner.log")] + ".runner.exit.json")
 
 
-def _write_runner_exit(exit_path: Path, runner_exit: int, runner_log: str) -> None:
+def _write_runner_exit(exit_path: Path, runner_exit: int, runner_log: str,
+                       runner_token: str, runner_log_sha256: str) -> None:
     """Atomically record the supervisor's observation of the runner's exit.
 
     Mirrors ``_write_json_atomic``'s rename pattern but is called from the
@@ -521,14 +560,18 @@ def _write_runner_exit(exit_path: Path, runner_exit: int, runner_log: str) -> No
     (which assumes a long-lived parent) and writes the temp file beside the
     target then renames. The integer ``runner_exit`` is the only field a
     consumer needs to decide terminal-vs-unobserved; ``runner_log`` repeats the
-    log path so the verdict is recoverable from this record alone.
+    log path so the verdict is recoverable from this record alone;
+    ``runner_token`` and ``runner_log_sha256`` bind the witness to this launch
+    and to a stable snapshot of the captured bytes (#1214 round 4).
     """
     try:
         exit_path.parent.mkdir(parents=True, exist_ok=True)
         temp = exit_path.with_name(f".{exit_path.name}.{os.getpid()}.tmp")
         with temp.open("x", encoding="utf-8") as handle:
             json.dump(
-                {"runner_exit": runner_exit, "runner_log": runner_log},
+                {"runner_exit": runner_exit, "runner_log": runner_log,
+                 "runner_token": runner_token,
+                 "runner_log_sha256": runner_log_sha256},
                 handle, sort_keys=True)
             handle.write("\n")
             handle.flush()
@@ -555,7 +598,8 @@ def _launch_detached(
         worktree: Path, task: int, lane: str, prompt_path: Path,
         runner: list[str], prompt: str, *, cwd: Path | None = None,
         child_env: dict[str, str] | None = None,
-        runner_log: Path | None = None) -> int:
+        runner_log: Path | None = None,
+        runner_token: str = "") -> int:
     """Fork, setsid, acquire the lane lock, and exec the runner (#876).
 
     All validation has already run in the parent; this is the LAST step. The
@@ -619,7 +663,8 @@ def _launch_detached(
             # confirm the launch. A grandchild exec failure is caught by the
             # spawn-time liveness probe, not by this pipe — same safety net.
             os.close(write_fd)
-            _supervise_review_runner(runner, prompt, runner_log.resolve())
+            _supervise_review_runner(
+                runner, prompt, runner_log.resolve(), runner_token)
             os._exit(0)  # unreachable; _supervise… exits
         try:
             os.execvp(runner[0], [*runner, prompt])
@@ -755,6 +800,14 @@ def launch_review(prompt_path: Path, branch: str, round_num: int,
         runner_log = persisted.with_name(
             persisted.name[:-len(".prompt.md")] + ".runner.log"
         )
+        # #1214 round 4: a per-attempt token binds the exit witness to this
+        # launch. It is generated here, recorded in the launch record, and
+        # passed to the supervisor (via _launch_detached) so it appears in the
+        # exit record too. _read_runner_exit requires both to carry and match
+        # it, so a stale exit record from a different attempt — or a collision
+        # resolving to the same computed path — cannot read as this attempt's
+        # witness.
+        runner_token = secrets.token_hex(16)
         record: dict[str, object] = {
             "attempt_id": attempt_id,
             "branch": branch,
@@ -769,6 +822,7 @@ def launch_review(prompt_path: Path, branch: str, round_num: int,
             "state": "prepared; reviewer not attempted",
             "runner_exit": None,
             "runner_log": str(runner_log.resolve()),
+            "runner_token": runner_token,
             "runs": 0,
         }
         _write_json_atomic(attempt_path, record, create=True)
@@ -794,6 +848,7 @@ def launch_review(prompt_path: Path, branch: str, round_num: int,
             cwd=worktree,
             child_env={LANE_ROLE_ENV: "reviewer", LANE_ID_ENV: secrets.token_hex(16)},
             runner_log=runner_log.resolve(),
+            runner_token=runner_token,
         )
         if result == 0:
             settle = float(os.environ.get("REVIEW_RUNNER_SETTLE", "0.3"))
@@ -1127,11 +1182,21 @@ def _read_runner_exit(record: dict) -> dict | None:
       plain ``isinstance`` check accepted it; a bool is not an exit code);
     * the exit record's ``runner_log`` is the SAME path the launch recorded (a
       divergent path is a lying or stale witness);
-    * that log file EXISTS on disk with non-blank content (#1214 round 2 — an
-      empty, missing, or whitespace-only capture is NOT a delivered verdict).
-      "Non-blank" is a TEXT judgment (#1214 round 3 / P2(a)): the log is
-      decoded as UTF-8 (lenient) and ``str.strip`` — Unicode-aware, unlike
-      ``bytes.strip`` — decides, so a capture of only U+2003 is blank.
+    * the exit record carries a ``runner_token`` that MATCHES the launch
+      record's ``runner_token`` (#1214 round 4 — a per-attempt identity in both
+      records binds the witness to this launch, so a stale exit record from a
+      different attempt or a collision resolving to the same path cannot read
+      as this attempt's outcome);
+    * the log file is reopened with ``O_NOFOLLOW`` (a symlink at the path is
+      refused, not followed — #1214 round 4), EXISTS on disk with non-blank
+      content (#1214 round 2 — an empty, missing, or whitespace-only capture is
+      NOT a delivered verdict), and its sha256 MATCHES the exit record's
+      ``runner_log_sha256`` (#1214 round 4 — a stable snapshot of the bytes the
+      supervisor captured, so a sidecar or leftover writer that replaced the
+      content after close produces a mismatch and falls through). "Non-blank"
+      is a TEXT judgment (#1214 round 3 / P2(a)): the log is decoded as UTF-8
+      (lenient) and ``str.strip`` — Unicode-aware, unlike ``bytes.strip`` —
+      decides, so a capture of only U+2003 is blank.
     """
     runner_log = record.get("runner_log")
     if not isinstance(runner_log, str) or not runner_log:
@@ -1155,6 +1220,38 @@ def _read_runner_exit(record: dict) -> dict | None:
     exit_runner_log = parsed.get("runner_log")
     if not isinstance(exit_runner_log, str) or exit_runner_log != runner_log:
         return None
+    # #1214 round 4: the exit record must carry this launch's per-attempt
+    # token. A stale exit record from a different attempt, or one written by a
+    # collision resolving to the same computed path, carries a different token
+    # (or none) and cannot establish terminal for this attempt. Both records
+    # must carry a non-empty token string and they must match.
+    launch_token = record.get("runner_token")
+    exit_token = parsed.get("runner_token")
+    if (not isinstance(launch_token, str) or not launch_token
+            or not isinstance(exit_token, str) or exit_token != launch_token):
+        return None
+    # #1214 round 4: reopen with O_NOFOLLOW so a symlink planted at the log
+    # path cannot redirect the read at an unrelated file. Read the bytes ONCE
+    # and reuse them for both the non-blank check and the digest comparison.
+    try:
+        log_fd = os.open(runner_log, os.O_RDONLY | os.O_NOFOLLOW)
+    except OSError:
+        return None
+    log_bytes = bytearray()
+    try:
+        while True:
+            chunk = os.read(log_fd, 65536)
+            if not chunk:
+                break
+            log_bytes.extend(chunk)
+    except OSError:
+        os.close(log_fd)
+        return None
+    finally:
+        try:
+            os.close(log_fd)
+        except OSError:
+            pass
     # #1214 round 2: an empty, missing, or whitespace-only runner log is NOT a
     # delivered verdict. A reviewer that died before producing output leaves an
     # exit integer but no recoverable verdict; classifying that as terminal
@@ -1168,11 +1265,19 @@ def _read_runner_exit(record: dict) -> dict | None:
     # is a verdict a human reads, decoded as UTF-8; decode leniently
     # (``errors="replace"`` so non-UTF-8 bytes become U+FFFD, which is content,
     # not silence) and let ``str.strip`` — which IS Unicode-aware — decide.
-    try:
-        log_text = Path(runner_log).read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return None
+    log_text = bytes(log_bytes).decode("utf-8", errors="replace")
     if not log_text.strip():
+        return None
+    # #1214 round 4: the bytes at the path NOW must match the sha256 the
+    # supervisor recorded when it closed the log. A sidecar or stale writer
+    # that replaced the content after close — the realistic form of the
+    # "capture not from this reviewer" threat (staleness and collision, not an
+    # adversary) — produces a different digest and falls through to
+    # runner-absent, never reading as a delivered verdict.
+    exit_digest = parsed.get("runner_log_sha256")
+    if not isinstance(exit_digest, str):
+        return None
+    if hashlib.sha256(bytes(log_bytes)).hexdigest() != exit_digest:
         return None
     return {"runner_exit": parsed["runner_exit"], "runner_log": runner_log}
 
@@ -1194,7 +1299,7 @@ def classify_review_dispatch(
     * ``unknown`` — the probe examined 0 processes (#868): no verdict on
       whether a runner is present, never an all-clear.
     * ``terminal`` — the sibling ``.runner.exit.json`` witness was read and
-      passed the three-condition check (#1214); not the defect. The launch
+      passed the binding check (#1214); not the defect. The launch
       record's own ``runner_exit`` is NOT a terminal witness (#1214 round 3 /
       P1(c)): it is always null for this format, so a non-null value is a stale
       or corrupt record, not an observed outcome.

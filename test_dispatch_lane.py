@@ -1849,7 +1849,11 @@ def test_classify_review_is_unknown_without_review_lane():
 def _classify_with_exit_record(
         tmp_path: Path, *, log_bytes: bytes | None = b"",
         exit_runner_log: str | None = None,
-        exit_runner_exit: object = 0, **liveness) -> tuple[str, str]:
+        exit_runner_exit: object = 0,
+        exit_runner_token: str | None = None,
+        exit_runner_log_sha256: str | None = None,
+        launch_runner_token: str | None = None,
+        **liveness) -> tuple[str, str]:
     """Build a launch record + sibling ``.runner.log``/``.runner.exit.json`` in
     ``tmp_path`` and classify it.
 
@@ -1859,6 +1863,14 @@ def _classify_with_exit_record(
     mismatch).  ``exit_runner_exit`` defaults to ``0``; pass a non-int
     (e.g. ``True``) to test a lying exit record.  The liveness kwargs are
     forwarded so the fall-through path can be driven deterministically.
+
+    #1214 round 4: by default the exit record carries a ``runner_token`` that
+    MATCHES the launch record and a ``runner_log_sha256`` that MATCHES the
+    actual content of ``log_bytes`` — the well-formed case.  Override
+    ``exit_runner_token`` / ``launch_runner_token`` to test a token mismatch
+    (a stale exit record from a different attempt); override
+    ``exit_runner_log_sha256`` to test a content mismatch (a sidecar that
+    replaced the log after the supervisor closed it).
     """
     dl = _import_dispatch_lane()
     runner_log = tmp_path / "cx-review-review-r1-deadbeef.runner.log"
@@ -1867,12 +1879,22 @@ def _classify_with_exit_record(
     if log_bytes is not None:
         runner_log.write_bytes(log_bytes)
     log_in_exit = exit_runner_log if exit_runner_log is not None else str(runner_log)
-    exit_path.write_text(json.dumps(
-        {"runner_exit": exit_runner_exit, "runner_log": log_in_exit}
-    ) + "\n", encoding="utf-8")
+    token = launch_runner_token or "match-token-aabbccdd"
+    exit_token = exit_runner_token if exit_runner_token is not None else token
+    if exit_runner_log_sha256 is not None:
+        digest = exit_runner_log_sha256
+    elif log_bytes is not None:
+        digest = hashlib.sha256(log_bytes).hexdigest()
+    else:
+        digest = hashlib.sha256(b"").hexdigest()
+    exit_path.write_text(json.dumps({
+        "runner_exit": exit_runner_exit, "runner_log": log_in_exit,
+        "runner_token": exit_token, "runner_log_sha256": digest,
+    }) + "\n", encoding="utf-8")
     record = {
         "runner_exit": None,
         "runner_log": str(runner_log),
+        "runner_token": token,
         "review_lane": "cx-review-review-r1",
         "branch": "cx-review", "round": 1,
         "attempt_id": "cx-review-review-r1-deadbeef",
@@ -1968,6 +1990,144 @@ def test_unicode_whitespace_only_runner_log_does_not_classify_as_terminal(tmp_pa
     assert category == "runner-absent", (
         f"a U+2003-only capture classified as {category!r}; detail={detail!r}")
     assert "verdict recoverable" not in detail, detail
+
+
+# --- #1214 round 4: bind the exit witness and captured log to this launch -----
+
+def test_sidecar_replaced_capture_does_not_classify_as_terminal(tmp_path):
+    """#1214 round 4 / P1: the reviewer's supervisor captured an EMPTY log (the
+    reviewer wrote nothing), but a non-reviewer sidecar wrote ``COUNTERFEIT``
+    to the computed log path afterward. Without the content-digest binding this
+    reads as a delivered verdict (non-blank log, exit 0, path match). With the
+    binding, the exit record carries sha256 of the EMPTY bytes the supervisor
+    captured; the current content is ``COUNTERFEIT``; the digests do not match
+    and the capture falls through to runner-absent — never terminal."""
+    empty_digest = hashlib.sha256(b"").hexdigest()
+    category, detail = _classify_with_exit_record(
+        tmp_path,
+        log_bytes=b"COUNTERFEIT\n",          # sidecar's replacement
+        exit_runner_log_sha256=empty_digest,  # supervisor captured empty
+        **_FALLTHROUGH_LIVENESS)
+    assert category == "runner-absent", (
+        f"a sidecar-replaced capture classified as {category!r}; "
+        f"detail={detail!r}")
+    assert "verdict recoverable" not in detail, detail
+
+
+def test_stale_exit_record_token_mismatch_does_not_classify_as_terminal(tmp_path):
+    """#1214 round 4: a per-attempt token in both records binds the witness to
+    THIS launch. A stale exit record from a different attempt carries a
+    different token; even with a path match and a correct digest, the token
+    mismatch falls through to runner-absent."""
+    category, detail = _classify_with_exit_record(
+        tmp_path, log_bytes=b"REAL VERDICT\n",
+        launch_runner_token="this-attempt-token",
+        exit_runner_token="different-attempt-token",
+        **_FALLTHROUGH_LIVENESS)
+    assert category == "runner-absent", (
+        f"a token-mismatched exit record classified as {category!r}; "
+        f"detail={detail!r}")
+    assert "verdict recoverable" not in detail, detail
+
+
+def test_exit_record_without_token_does_not_classify_as_terminal(tmp_path):
+    """#1214 round 4: an exit record that omits ``runner_token`` (e.g. from an
+    older supervisor before the binding was added) cannot establish terminal
+    for a launch record that carries one."""
+    category, detail = _classify_with_exit_record(
+        tmp_path, log_bytes=b"VERDICT\n", exit_runner_token="",
+        **_FALLTHROUGH_LIVENESS)
+    assert category == "runner-absent", detail
+
+
+def test_exit_record_without_digest_does_not_classify_as_terminal(tmp_path):
+    """#1214 round 4: an exit record that omits ``runner_log_sha256`` cannot
+    prove its capture is unchanged; treated as unobserved."""
+    category, detail = _classify_with_exit_record(
+        tmp_path, log_bytes=b"VERDICT\n", exit_runner_log_sha256="",
+        **_FALLTHROUGH_LIVENESS)
+    assert category == "runner-absent", detail
+
+
+def test_symlink_runner_log_does_not_classify_as_terminal(tmp_path):
+    """#1214 round 4: the log path is reopened with O_NOFOLLOW. A symlink at the
+    path — which could redirect the read at an unrelated file — is refused, not
+    followed, and the capture falls through to runner-absent."""
+    real_target = tmp_path / "real-target.log"
+    real_target.write_bytes(b"VERDICT FROM ELSEWHERE\n")
+    runner_log = tmp_path / "cx-review-review-r1-deadbeef.runner.log"
+    runner_log.symlink_to(real_target)
+    # log_bytes=None so the helper does not overwrite the symlink; the exit
+    # record's digest matches the target's content so the ONLY reason this
+    # falls through is the O_NOFOLLOW refusal, not a digest mismatch.
+    category, detail = _classify_with_exit_record(
+        tmp_path, log_bytes=None,
+        exit_runner_log_sha256=hashlib.sha256(
+            b"VERDICT FROM ELSEWHERE\n").hexdigest(),
+        **_FALLTHROUGH_LIVENESS)
+    assert category == "runner-absent", (
+        f"a symlink log path classified as {category!r}; detail={detail!r}")
+
+
+def test_launch_review_sidecar_capture_is_refused_not_completed(tmp_path):
+    """#1214 round 4 / P1 end-to-end: a fake reviewer writes NOTHING and exits 0,
+    while a non-reviewer sidecar forks and writes ``COUNTERFEIT`` into the
+    computed log path. Round 3's unbound read accepted this as a completed
+    review (non-blank log, exit 0, path match → return 0). The content-digest
+    binding must refuse it: the supervisor captured empty, the sidecar replaced
+    the content, the digests mismatch, and launch_review returns 3 (spawn
+    failed), not 0 (completed)."""
+    branch = "cx-sidecar"
+    cli, root = _sandbox_review_cli(tmp_path, branch)
+    prompt = _review_prompt(tmp_path, root, branch)
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_ccc = fake_bin / "ccc"
+    dispatches = root / ".dreamwork" / "review-dispatches"
+    # The reviewer writes nothing to stdout; it forks a sidecar that overwrites
+    # the runner.log with COUNTERFEIT shortly after the supervisor closes it.
+    fake_ccc.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, os, pathlib, sys, time\n"
+        "dispatches = pathlib.Path(os.environ['REVIEW_TEST_DISPATCHES'])\n"
+        "launches = sorted(dispatches.glob('*.launch.json'))\n"
+        "record = json.loads(launches[-1].read_text())\n"
+        "log_path = record['runner_log']\n"
+        "pid = os.fork()\n"
+        "if pid == 0:\n"
+        "    os.setsid()\n"
+        "    time.sleep(0.05)\n"
+        "    pathlib.Path(log_path).write_text('COUNTERFEIT\\n')\n"
+        "    sys.exit(0)\n"
+        "sys.exit(0)\n",
+        encoding="utf-8",
+    )
+    fake_ccc.chmod(0o755)
+    env = {
+        **os.environ,
+        "DREAMWORK_ALLOW_PIPED_STDOUT": "1",
+        "PATH": f"{fake_bin}{os.pathsep}{os.environ.get('PATH', '')}",
+        "REVIEW_TEST_DISPATCHES": str(dispatches),
+        "REVIEW_RUNNER_SETTLE": "0.3",
+    }
+    result = subprocess.run(
+        [
+            sys.executable, str(cli), "--launch-review", str(prompt),
+            "--review-branch", branch, "--review-round", "1", "--",
+            "ccc", "--permission-mode", "plan", "@cx-reviewer",
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert result.returncode == 3, (
+        f"a sidecar-replaced capture was accepted as completed (round 1 "
+        f"reopened); stdout={result.stdout!r}; stderr={result.stderr!r}")
+    attempts = sorted(dispatches.glob("*.launch.json"))
+    assert len(attempts) == 1
+    attempt = json.loads(attempts[0].read_text(encoding="utf-8"))
+    assert "spawn failed" in attempt["state"], attempt["state"]
+    assert "completed during settle" not in attempt["state"], attempt["state"]
 
 
 def test_review_status_cli_reports_runner_absent_dispatch(tmp_path):
