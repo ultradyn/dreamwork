@@ -1170,7 +1170,11 @@ def classify_review_dispatch(
       present at spawn is gone; this is the alarm a dead review now expresses.
     * ``unknown`` — the probe examined 0 processes (#868): no verdict on
       whether a runner is present, never an all-clear.
-    * ``terminal`` — ``runner_exit`` was observed (non-null); not the defect.
+    * ``terminal`` — the sibling ``.runner.exit.json`` witness was read and
+      passed the three-condition check (#1214); not the defect. The launch
+      record's own ``runner_exit`` is NOT a terminal witness (#1214 round 3 /
+      P1(c)): it is always null for this format, so a non-null value is a stale
+      or corrupt record, not an observed outcome.
 
     Read-only: it never writes ``runner_exit`` or any state.  The launcher's
     null is honest (#1177); this consumes it rather than corrupting it.
@@ -1191,16 +1195,20 @@ def classify_review_dispatch(
     exit integer alone does not prove the verdict landed (#1214 P1).  See
     ``_read_runner_exit`` for the exact conditions.
     """
-    runner_exit = record.get("runner_exit")
+    # The sibling .runner.exit.json (read below) is the ONLY terminal witness
+    # for the supervisor format. The launch record's own runner_exit is, per
+    # file-formats.md, always null — a non-null value is a stale or corrupt
+    # record, the cheapest lying witness of the three, and it must NOT
+    # establish terminal on its own (#1214 round 3 / P1(c)): with no
+    # .runner.log and no .runner.exit.json at all, a launch record
+    # {runner_exit: 0} classified terminal and bypassed every condition. Let
+    # it fall through to the liveness probe (runner-absent / in-progress).
     observed = _read_runner_exit(record)
     if observed is not None:
         return (_REVIEW_CATEGORY_TERMINAL,
                 f"runner exit observed ({observed['runner_exit']}) via "
                 f".runner.exit.json; verdict recoverable from "
                 f"{observed['runner_log']}")
-    if runner_exit is not None:
-        return (_REVIEW_CATEGORY_TERMINAL,
-                f"runner_exit observed ({runner_exit}); state: {record.get('state', '?')}")
     review_lane = record.get("review_lane")
     if not review_lane:
         return (_REVIEW_CATEGORY_UNKNOWN,

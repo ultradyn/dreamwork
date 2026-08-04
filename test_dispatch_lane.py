@@ -1701,12 +1701,28 @@ def test_classify_review_is_unknown_when_probe_examined_nothing():
     assert "not an all-clear" in detail
 
 
-def test_classify_review_is_terminal_when_exit_was_observed():
-    """A future revision that observes the runner's exit sets runner_exit; the
-    classifier reports terminal rather than re-probing.  Not the defect case."""
-    category, detail = _classify(record_overrides={"runner_exit": 0, "state": "done"})
-    assert category == "terminal"
-    assert "runner_exit observed (0)" in detail
+def test_launch_record_runner_exit_alone_does_not_classify_as_terminal():
+    """#1214 round 3 / P1(c): the launch record's own ``runner_exit`` is always
+    null for the supervisor format (file-formats.md), so a non-null value is a
+    stale or corrupt record — the cheapest lying witness of the three. With no
+    ``.runner.log`` and no ``.runner.exit.json`` at all, a launch record
+    ``{runner_exit: 0}`` used to classify ``terminal`` via a fallback that
+    bypassed every condition; it must now fall through to the liveness probe and
+    report ``runner-absent`` when the runner is gone. (The #1207 era model — a
+    future revision sets runner_exit in the launch record — is superseded: the
+    supervisor writes the sibling ``.runner.exit.json`` instead, never this
+    field. The real terminal path is covered by
+    ``test_nonempty_runner_log_with_exit_record_classifies_as_terminal``.)"""
+    category, detail = _classify(
+        record_overrides={"runner_exit": 0, "state": "done"},
+        process_entries=["999999"],
+        read_cwd=lambda pid: "/somewhere/else",
+        read_cmdline=lambda pid: b"/x/ccc\x00",
+    )
+    assert category == "runner-absent", (
+        f"a launch-record-only runner_exit classified as {category!r}; "
+        f"detail={detail!r}")
+    assert "verdict recoverable" not in detail, detail
 
 
 def test_classify_review_is_unknown_without_review_lane():
