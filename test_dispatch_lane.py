@@ -2291,3 +2291,327 @@ def test_review_status_malformed_in_middle_does_not_hide_later_alarm(tmp_path):
         f"a malformed record in the middle hid the later alarm; line={alarm_line!r}"
     )
 
+
+# --- #1214 round 5 --------------------------------------------------------
+#
+# P1(a): a SIGKILLed reviewer's partial capture (matching token AND digest) is
+# refused — the digest is accumulated over bytes-as-written, so a prefix digests
+# correctly and only exit 0 proves the reviewer finished. P2: every rejection
+# surfaces a reason so status says "capture rejected: <reason>" not "never
+# observed". P1(b): a pre-existing log reserves BEFORE the fork, reported
+# through the handshake pipe. Standards: _write_runner_exit no longer swallows
+# OSError silently.
+
+
+def test_signalled_reviewer_partial_capture_does_not_classify_as_terminal(tmp_path):
+    """#1214 round 5 / P1(a): the reviewer wrote one genuine line then received
+    SIGKILL. The supervisor captured that prefix, so the witness carries
+    runner_exit -9 with a MATCHING token and a MATCHING digest (the digest is
+    accumulated over the bytes actually written). Classification must REFUSE it:
+    a signalled reviewer is an incomplete delivery, never terminal. A clean
+    exit (0) is the explicit completion protocol."""
+    category, detail = _classify_with_exit_record(
+        tmp_path,
+        log_bytes=b"P1: first genuine finding only\n",
+        exit_runner_exit=-9,   # SIGKILL
+        **_FALLTHROUGH_LIVENESS)
+    assert category == "runner-absent", (
+        f"a SIGKILLed reviewer's partial capture classified as {category!r}; "
+        f"detail={detail!r}")
+    assert "verdict recoverable" not in detail, detail
+
+
+def test_nonzero_reviewer_exit_does_not_classify_as_terminal(tmp_path):
+    """#1214 round 5 / P1(a): a reviewer that exited nonzero (e.g. 1, a Python
+    traceback) with a non-blank log and matching token+digest is NOT a delivered
+    verdict. Nonzero means the reviewer itself reported a failure; the capture
+    may be a partial traceback. Reject it."""
+    category, detail = _classify_with_exit_record(
+        tmp_path,
+        log_bytes=b"Traceback: something broke\n",
+        exit_runner_exit=1,
+        **_FALLTHROUGH_LIVENESS)
+    assert category == "runner-absent", (
+        f"a nonzero-exit reviewer classified as {category!r}; "
+        f"detail={detail!r}")
+    assert "verdict recoverable" not in detail, detail
+
+
+def test_signalled_partial_capture_rejection_reason_survives_into_status(tmp_path):
+    """#1214 round 5 / P2: a SIGKILLed reviewer's rejection carries a REASON
+    into the status detail, so a coordinator reads 'capture rejected: runner
+    exited -9 (signalled/nonzero)' rather than the misleading 'runner exit
+    never observed'. The two point at completely different diagnostics."""
+    category, detail = _classify_with_exit_record(
+        tmp_path,
+        log_bytes=b"partial\n",
+        exit_runner_exit=-9,
+        **_FALLTHROUGH_LIVENESS)
+    assert category == "runner-absent", detail
+    assert "capture rejected" in detail, (
+        f"the rejection reason was discarded; detail={detail!r}")
+    assert "runner exited -9" in detail, detail
+
+
+def test_digest_mismatch_rejection_reason_survives_into_status(tmp_path):
+    """#1214 round 5 / P2: a digest-mismatch rejection (a sidecar replaced the
+    log) surfaces its reason too — 'capture rejected: ... sha256 does not
+    match' — distinguishing it from a signalled exit."""
+    empty_digest = hashlib.sha256(b"").hexdigest()
+    category, detail = _classify_with_exit_record(
+        tmp_path, log_bytes=b"COUNTERFEIT\n",
+        exit_runner_log_sha256=empty_digest,
+        **_FALLTHROUGH_LIVENESS)
+    assert category == "runner-absent", detail
+    assert "capture rejected" in detail, detail
+    assert "sha256" in detail, detail
+
+
+def test_supervisor_refuses_signalled_grandchild_partial_capture(tmp_path):
+    """#1214 round 5 / P1(a) end-to-end: fork the REAL supervisor against a
+    reviewer that writes one line then receives SIGKILL. The supervisor
+    captures the prefix, writes the exit witness (runner_exit -9, matching
+    token, matching digest over the prefix), and _read_runner_exit must REFUSE
+    it. This is the reviewer-killed path (the supervisor-killed path is already
+    safe: no witness is written). Run against an isolated tmp_path; no live
+    review-dispatches touched."""
+    import dispatch_lane
+    runner_log = tmp_path / "cx-review-review-r1-deadbeef.runner.log"
+    exit_path = runner_log.with_name(
+        runner_log.name[:-len(".runner.log")] + ".runner.exit.json")
+    token = "killtest-token-aabbccdd"
+    # A reviewer that writes one line, flushes, then SIGKILLs itself.
+    killer = (
+        "import os, signal, sys; "
+        "sys.stdout.write('P1: first genuine finding only\\n'); "
+        "sys.stdout.flush(); "
+        "os.kill(os.getpid(), signal.SIGKILL)")
+    # Fork a child that becomes the supervisor: reserve the log (as
+    # _launch_detached does), then call the REAL _supervise_review_runner,
+    # which forks the killer as a grandchild, tees, and writes the witness.
+    supervisor_pid = os.fork()
+    if supervisor_pid == 0:
+        try:
+            os.setsid()
+            log_fd = os.open(
+                str(runner_log),
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            dispatch_lane._supervise_review_runner(
+                [sys.executable, "-c", killer], "", runner_log.resolve(),
+                token, reserved_log_fd=log_fd)
+        except BaseException as exc:  # noqa: BLE001 — supervisor crash debug
+            sys.stderr.write(f"supervisor-test crashed: {exc}\n")
+            os._exit(99)
+        os._exit(0)  # unreachable; _supervise… exits
+    _, _status = os.waitpid(supervisor_pid, 0)
+    # The witness landed (matching token + matching digest over the prefix).
+    assert exit_path.is_file(), "exit witness was not written"
+    witness = json.loads(exit_path.read_text())
+    assert witness["runner_exit"] == -9, witness
+    assert witness["runner_token"] == token, witness
+    assert witness["runner_log_sha256"] == hashlib.sha256(
+        b"P1: first genuine finding only\n").hexdigest(), witness
+    # _read_runner_exit must REFUSE it: a signalled reviewer is incomplete.
+    record = {"runner_log": str(runner_log), "runner_token": token,
+              "runner_exit": None}
+    observed = dispatch_lane._read_runner_exit(record)
+    assert observed is not None and "rejected" in observed, (
+        f"a SIGKILLed partial capture was accepted as terminal; "
+        f"observed={observed!r}")
+    assert "runner exited -9" in observed["rejected"], observed
+    assert "signalled" in observed["rejected"], observed
+
+
+def test_genuine_complete_fast_review_still_accepted_after_signal_rejection(tmp_path):
+    """#1214 round 5 / P1(a) trap-guard: refusing signalled/nonzero exits must
+    NOT refuse a genuine complete fast review. A reviewer that writes a real
+    verdict and exits 0 (the explicit completion signal) inside the settle
+    window must still be accepted at launch (return 0), not spawn-failed. This
+    is the half that proves the signal check did not simply re-refuse
+    everything (#1214 round 2's defect)."""
+    branch = "cx-fastclean"
+    cli, root = _sandbox_review_cli(tmp_path, branch)
+    prompt = _review_prompt(tmp_path, root, branch)
+    verdict_text = "MERGE: clean exit, three findings addressed"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_ccc = fake_bin / "ccc"
+    fake_ccc.write_text(
+        "#!/usr/bin/env python3\n"
+        "import sys\n"
+        f"sys.stdout.write({verdict_text!r} + chr(10))\n"
+        "sys.stdout.flush()\n"
+        "sys.exit(0)\n",
+        encoding="utf-8",
+    )
+    fake_ccc.chmod(0o755)
+    env = {
+        **os.environ,
+        "DREAMWORK_ALLOW_PIPED_STDOUT": "1",
+        "PATH": f"{fake_bin}{os.pathsep}{os.environ.get('PATH', '')}",
+        "REVIEW_RUNNER_SETTLE": "0.1",
+    }
+    result = subprocess.run(
+        [
+            sys.executable, str(cli), "--launch-review", str(prompt),
+            "--review-branch", branch, "--review-round", "1", "--",
+            "ccc", "--permission-mode", "plan", "@cx-reviewer",
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert result.returncode == 0, (
+        f"a genuine complete fast review (exit 0) was refused; "
+        f"stdout={result.stdout!r}; stderr={result.stderr!r}")
+    attempts = sorted((root / ".dreamwork" / "review-dispatches").glob("*.launch.json"))
+    assert len(attempts) == 1
+    attempt = json.loads(attempts[0].read_text(encoding="utf-8"))
+    assert "completed during settle" in attempt["state"], attempt["state"]
+    assert "spawn failed" not in attempt["state"], attempt["state"]
+
+
+def test_launch_review_pre_existing_log_refuses_before_reviewer_forks(tmp_path):
+    """#1214 round 5 / P1(b): a pre-existing runner.log at the computed path
+    must be detected BEFORE the reviewer forks and reported through the launch
+    handshake (return 2), so no reviewer runs and no output is silently
+    discarded. Previously EEXIST was swallowed after the fork: the reviewer ran,
+    its output was thrown away, the stale log survived, and status read
+    runner-absent — identical to a killed reviewer."""
+    branch = "cx-preexist"
+    cli, root = _sandbox_review_cli(tmp_path, branch)
+    prompt = _review_prompt(tmp_path, root, branch)
+    dispatches = root / ".dreamwork" / "review-dispatches"
+    # Persist the prompt first (--review-prompt) so the exact slug the launcher
+    # will use is materialized on disk; the runner_log path is derived from that
+    # stem. This avoids re-deriving the pinned-sha injection the launcher does.
+    persist = subprocess.run(
+        [sys.executable, str(cli), "--review-prompt", str(prompt),
+         "--review-branch", branch],
+        capture_output=True, text=True,
+        env={**os.environ, "DREAMWORK_ALLOW_PIPED_STDOUT": "1"})
+    assert persist.returncode == 0, persist.stderr
+    prompt_files = sorted(dispatches.glob(f"{branch}-r1-*.prompt.md"))
+    assert len(prompt_files) == 1, f"expected one persisted prompt; got {prompt_files}"
+    stem = prompt_files[0].name[:-len(".prompt.md")]
+    stale_log = dispatches / f"{stem}.runner.log"
+    stale_log.write_text("STALE CONTENT FROM A PREVIOUS ATTEMPT\n", encoding="utf-8")
+    # A reviewer that writes a verdict — if it forks at all, the test fails,
+    # because the whole point is the log reservation refuses before the fork.
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_ccc = fake_bin / "ccc"
+    fake_ccc.write_text(
+        "#!/usr/bin/env python3\n"
+        "import sys\n"
+        "sys.stdout.write('THIS REVIEWER RAN AND SHOULD NOT HAVE\\n')\n"
+        "sys.exit(0)\n",
+        encoding="utf-8",
+    )
+    fake_ccc.chmod(0o755)
+    env = {
+        **os.environ,
+        "DREAMWORK_ALLOW_PIPED_STDOUT": "1",
+        "PATH": f"{fake_bin}{os.pathsep}{os.environ.get('PATH', '')}",
+        "REVIEW_RUNNER_SETTLE": "0.1",
+    }
+    result = subprocess.run(
+        [
+            sys.executable, str(cli), "--launch-review", str(prompt),
+            "--review-branch", branch, "--review-round", "1", "--",
+            "ccc", "--permission-mode", "plan", "@cx-reviewer",
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    # The launch must refuse (return 2) because the log reservation failed.
+    assert result.returncode == 2, (
+        f"a pre-existing log did not refuse the launch; rc={result.returncode}; "
+        f"stdout={result.stdout!r}; stderr={result.stderr!r}")
+    assert "runner_log reserve refused" in result.stderr, (
+        f"the EEXIST was not reported through the handshake; stderr={result.stderr!r}")
+    # The stale log content survives unchanged — the reviewer never wrote to it.
+    assert stale_log.read_text() == "STALE CONTENT FROM A PREVIOUS ATTEMPT\n", (
+        f"the stale log was overwritten; the reviewer must not have run")
+    assert "THIS REVIEWER RAN" not in stale_log.read_text(), (
+        "the reviewer forked and wrote despite the reservation refusal")
+
+
+def test_launch_review_symlink_log_refuses_before_reviewer_forks(tmp_path):
+    """#1214 round 5 / P1(b): a SYMLINK at the computed runner_log path must
+    also be refused at reservation (O_NOFOLLOW on the create), reported through
+    the handshake, before any reviewer forks — so a planted symlink cannot
+    redirect the supervisor's writes at an unrelated file."""
+    branch = "cx-symlink"
+    cli, root = _sandbox_review_cli(tmp_path, branch)
+    prompt = _review_prompt(tmp_path, root, branch)
+    dispatches = root / ".dreamwork" / "review-dispatches"
+    # Persist the prompt first to materialize the exact slug on disk.
+    persist = subprocess.run(
+        [sys.executable, str(cli), "--review-prompt", str(prompt),
+         "--review-branch", branch],
+        capture_output=True, text=True,
+        env={**os.environ, "DREAMWORK_ALLOW_PIPED_STDOUT": "1"})
+    assert persist.returncode == 0, persist.stderr
+    prompt_files = sorted(dispatches.glob(f"{branch}-r1-*.prompt.md"))
+    assert len(prompt_files) == 1, f"expected one persisted prompt; got {prompt_files}"
+    stem = prompt_files[0].name[:-len(".prompt.md")]
+    target = tmp_path / "symlink-target.log"
+    target.write_text("UNRELATED FILE CONTENT\n", encoding="utf-8")
+    symlink_log = dispatches / f"{stem}.runner.log"
+    symlink_log.symlink_to(target)
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_ccc = fake_bin / "ccc"
+    fake_ccc.write_text(
+        "#!/usr/bin/env python3\nimport sys; sys.exit(0)\n", encoding="utf-8")
+    fake_ccc.chmod(0o755)
+    env = {
+        **os.environ,
+        "DREAMWORK_ALLOW_PIPED_STDOUT": "1",
+        "PATH": f"{fake_bin}{os.pathsep}{os.environ.get('PATH', '')}",
+        "REVIEW_RUNNER_SETTLE": "0.1",
+    }
+    result = subprocess.run(
+        [
+            sys.executable, str(cli), "--launch-review", str(prompt),
+            "--review-branch", branch, "--review-round", "1", "--",
+            "ccc", "--permission-mode", "plan", "@cx-reviewer",
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert result.returncode == 2, (
+        f"a symlink log did not refuse the launch; rc={result.returncode}; "
+        f"stderr={result.stderr!r}")
+    assert "runner_log reserve refused" in result.stderr, result.stderr
+    # The symlink target is unchanged — the supervisor never wrote through it.
+    assert target.read_text() == "UNRELATED FILE CONTENT\n", (
+        "the symlink was followed and the target overwritten")
+
+
+def test_write_runner_exit_emits_diagnostic_on_persistence_failure(tmp_path, capsys):
+    """#1214 round 5 / Standards: _write_runner_exit no longer silently swallows
+    OSError. When the witness cannot be persisted (here: exit_path's parent is
+    unwritable), a diagnostic naming the lost witness path AND the fallback log
+    is written to stderr, so a supervisor obligation failure is visible rather
+    than indistinguishable from a supervisor that died before writing one."""
+    import dispatch_lane
+    exit_path = tmp_path / "sub" / "exit.runner.exit.json"
+    runner_log = str(tmp_path / "x.runner.log")
+    # Make the parent directory unwritable so the atomic write fails.
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub").chmod(0o500)
+    try:
+        dispatch_lane._write_runner_exit(
+            exit_path, 0, runner_log, "tok", hashlib.sha256(b"").hexdigest())
+    finally:
+        (tmp_path / "sub").chmod(0o700)
+    captured = capsys.readouterr()
+    assert "persistence failed" in captured.err, (
+        f"the persistence failure was silently suppressed; stderr={captured.err!r}")
+    assert str(exit_path) in captured.err, captured.err
+    assert runner_log in captured.err, captured.err
+
