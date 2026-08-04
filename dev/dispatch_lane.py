@@ -451,26 +451,24 @@ def _write_exclusive(path: Path, content: str) -> None:
 
 
 def _supervise_review_runner(
-        runner: list[str], prompt: str, runner_log: Path, report_fd: int) -> None:
+        runner: list[str], prompt: str, runner_log: Path) -> None:
     """Fork the reviewer, tee its output to ``runner_log``, and record its exit.
 
     Runs in the detached child (session leader, lane lock held, cwd at the
-    review worktree). It forks the reviewer as a grandchild whose stdout and
-    stderr are replaced by a pipe the supervisor reads; the supervisor tees the
-    pipe to ``runner_log`` and inherits its own stdout/stderr so a coordinator
-    that redirected the launcher still sees the runner's stream live. When the
-    grandchild exits the supervisor writes
-    ``runner_exit_path_for(runner_log)`` — an atomic JSON object recording the
-    integer ``runner_exit`` and the log path — and then itself exits with the
-    same code. From the dispatcher's vantage nothing changes: exit 0 still means
-    the launch confirmed, not that the review finished (#876 invariant intact).
+    review worktree) AFTER the parent-child handshake pipe's write end has been
+    closed — so the dispatcher's ``_pipe_drain`` has already returned and the
+    launch is confirmed detached (#876). The supervisor forks the reviewer as
+    a grandchild whose stdout and stderr are replaced by a pipe the supervisor
+    reads; the supervisor tees the pipe to ``runner_log``. When the grandchild
+    exits the supervisor writes ``_runner_exit_path_for(runner_log)`` — an
+    atomic JSON object recording the integer ``runner_exit`` and the log path —
+    and then itself exits with the same code.
     """
     read_fd, write_fd = os.pipe()
     grandchild = os.fork()
     if grandchild == 0:
         # Grandchild: replace stdout/stderr with the pipe, then exec the reviewer.
         os.close(read_fd)
-        os.close(report_fd)
         os.dup2(write_fd, 1)
         os.dup2(write_fd, 2)
         os.close(write_fd)
@@ -500,8 +498,8 @@ def _supervise_review_runner(
                         os.write(fd, chunk)
                     except OSError:
                         pass
-    except OSError as exc:
-        _pipe_write(report_fd, f"runner_log {runner_log}: {exc}\n")
+    except OSError:
+        pass  # the log file itself is the fallback record; review_status names it
     os.close(read_fd)
     _, status = os.waitpid(grandchild, 0)
     runner_exit = os.waitstatus_to_exitcode(status)
@@ -613,7 +611,15 @@ def _launch_detached(
             # to runner_exit_path before itself exiting. The dispatcher never
             # observes a byte of this; the launcher exit is still 0 at the
             # parent-close, so #876's detach invariant is unchanged.
-            _supervise_review_runner(runner, prompt, runner_log, write_fd)
+            #
+            # The supervisor does NOT exec, so the close-on-exec that closed
+            # this pipe's write end in the work-lane path never fires. Close
+            # it explicitly: every setup step that could fail (setsid, cwd,
+            # lock) has succeeded, so the parent's _pipe_drain may proceed and
+            # confirm the launch. A grandchild exec failure is caught by the
+            # spawn-time liveness probe, not by this pipe — same safety net.
+            os.close(write_fd)
+            _supervise_review_runner(runner, prompt, runner_log.resolve())
             os._exit(0)  # unreachable; _supervise… exits
         try:
             os.execvp(runner[0], [*runner, prompt])
@@ -793,7 +799,19 @@ def launch_review(prompt_path: Path, branch: str, round_num: int,
             settle = float(os.environ.get("REVIEW_RUNNER_SETTLE", "0.3"))
             if settle > 0:
                 time.sleep(settle)
-            present, examined, _ = _review_lane_live(review_lane, coordinator_root)
+            # The runner is a grandchild of the dispatcher (#1214 supervisor),
+            # so a single probe can race the fork/exec under load. Probe a few
+            # times with short sleeps: the first succeeds when the runner is
+            # ready, retries cover the launch window. A real reviewer runs for
+            # minutes, so production hits on the first probe.
+            probes = int(os.environ.get("REVIEW_RUNNER_PROBES", "10"))
+            present = False
+            examined = 0
+            for _ in range(max(1, probes)):
+                present, examined, _ = _review_lane_live(review_lane, coordinator_root)
+                if present:
+                    break
+                time.sleep(0.05)
             if not present:
                 record["state"] = (
                     "spawn failed: dispatcher exit=0 but no reviewer runner "
@@ -808,7 +826,7 @@ def launch_review(prompt_path: Path, branch: str, round_num: int,
                 return 3
             record["state"] = (
                 "spawned: reviewer present in review worktree (cwd-containment); "
-                "runner exit not observed"
+                "runner exit observed on completion via .runner.exit.json"
             )
             _write_json_atomic(attempt_path, record)
             print(

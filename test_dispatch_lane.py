@@ -1257,7 +1257,7 @@ def test_launch_review_creates_attached_branch_worktree_and_records_cwd(tmp_path
         "    'argv': sys.argv[1:], 'cwd': os.getcwd(),\n"
         "    'role': os.environ.get('DREAMWORK_LANE_ROLE'),\n"
         "}), encoding='utf-8')\n"
-        "os.execlp('sleep', 'ccc', '2')\n",
+        "os.execlp('sleep', 'ccc', '4')\n",
         encoding="utf-8",
     )
     fake_ccc.chmod(0o755)
@@ -1266,7 +1266,7 @@ def test_launch_review_creates_attached_branch_worktree_and_records_cwd(tmp_path
         "DREAMWORK_ALLOW_PIPED_STDOUT": "1",
         "PATH": f"{fake_bin}{os.pathsep}{os.environ.get('PATH', '')}",
         "REVIEW_TEST_OUTPUT": str(observed),
-        "REVIEW_RUNNER_SETTLE": "0.05",
+        "REVIEW_RUNNER_SETTLE": "0.2",
     }
     result = subprocess.run(
         [
@@ -1363,12 +1363,18 @@ def test_launch_review_captures_runner_log_and_records_it(tmp_path):
     fake_bin.mkdir()
     fake_ccc = fake_bin / "ccc"
     # The reviewer prints its verdict to stdout and exits 0 — a successful
-    # review whose output would be lost without the capture mechanism.
+    # review whose output would be lost without the capture mechanism. It then
+    # execs ``sleep`` with argv[0]=ccc so the spawn-time liveness probe
+    # recognises it (a real ccc binary's argv[0] is ccc; a shebang script's is
+    # /usr/bin/env, which is not a known runner), mirroring the existing launch
+    # test's fake runner.
     fake_ccc.write_text(
         "#!/usr/bin/env python3\n"
         "import sys\n"
         f"sys.stdout.write({verdict_text!r} + chr(10))\n"
-        "sys.stdout.flush()\n",
+        "sys.stdout.flush()\n"
+        "import os\n"
+        "os.execlp('sleep', 'ccc', '4')\n",
         encoding="utf-8",
     )
     fake_ccc.chmod(0o755)
@@ -1376,7 +1382,7 @@ def test_launch_review_captures_runner_log_and_records_it(tmp_path):
         **os.environ,
         "DREAMWORK_ALLOW_PIPED_STDOUT": "1",
         "PATH": f"{fake_bin}{os.pathsep}{os.environ.get('PATH', '')}",
-        "REVIEW_RUNNER_SETTLE": "0.05",
+        "REVIEW_RUNNER_SETTLE": "0.2",
     }
     result = subprocess.run(
         [
