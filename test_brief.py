@@ -388,6 +388,13 @@ def _citation_lineno(core: str, token: str) -> int:
         # fence) is a lazy continuation and stays CHECKED — the fence-only pop
         # must not bleed into non-fence dedents.
         ("- top\nprose `lessons.md:430`", "lessons.md:430", True),
+        # #1213 r4 P1: a TAB-led closing fence is at the correct CommonMark
+        # column (content col 4 + tab → 4) and must CLOSE the block, so prose
+        # after it is checked.  Round 3's spaces-only regex failed to match it.
+        ("- top\n\n    ```\n    code\n\t```\n    prose `lessons.md:430`", "lessons.md:430", True),
+        # r4 P1 direction 2: a tab-led closer WITH trailing text is NOT a close
+        # (CommonMark §4.6), so the coordinate inside the fence stays skipped.
+        ("```\n\t``` trailing\nmissing.py:999\n```", "missing.py:999", False),
     ],
     ids=[
         "top-paragraph", "top-indented-code", "top-fenced", "lazy-continuation",
@@ -397,6 +404,7 @@ def _citation_lineno(core: str, token: str) -> int:
         "fence-in-list-ci2", "fence-in-deep-list-ci4", "tab-indented-code",
         "r3-tab-gap-prose-checked", "r3-tab-gap-code-skipped",
         "r3-fence-after-item-skipped", "r3-lazy-continuation-checked",
+        "r4-tab-led-closer-opens-fence", "r4-tab-led-closer-trailing-text-not-close",
     ],
 )
 def test_citation_check_context_table(core, token, expect_checked):
@@ -530,7 +538,42 @@ def test_a_top_level_fence_directly_after_a_list_item_is_skipped(lane):
     assert "missing.py:999" in generated
 
 
-def _lesson_citation_false_positive_count_at(sha: str) -> int:
+def test_a_citation_after_a_tab_led_closing_fence_is_checked(lane):
+    """#1213 r4 P1, end to end: a closing fence led by a TAB sits at the correct
+    CommonMark column but failed the spaces-only regex, so the fence never
+    closed and every later line was silently exempted from citation checking.
+    The unresolvable coordinate after it must REFUSE."""
+    core = GOOD_CORE.replace(
+        "`## Standing rules` was retyped 33 times and produced 32 distinct bodies.",
+        "A fence that closes on a tab:\n\n"
+        "- an item\n\n"
+        "    ```\n"
+        "    code here\n"
+        "\t```\n"
+        "    prose naming `lessons.md:430` (unresolvable).",
+    )
+    with pytest.raises(
+        brief.BriefFault,
+        match=r"file:line citation does not resolve at generation sha.*lessons\.md:430",
+    ):
+        brief.build(881, lane, ["dev/brief.py", "test_brief.py"], core)
+
+
+def test_a_tab_led_closer_with_trailing_text_does_not_close(lane):
+    """#1213 r4 P1 direction 2: a tab-led closer carrying trailing text after
+    the fence is NOT a close (CommonMark §4.6), so the fence stays open and the
+    coordinate inside it must still be skipped.  A fence that closes too
+    eagerly is the mirror defect — code would be checked as prose."""
+    core = GOOD_CORE.replace(
+        "`## Standing rules` was retyped 33 times and produced 32 distinct bodies.",
+        "A fence with a trailing-text closer:\n\n"
+        "```\n"
+        "\t``` trailing\n"
+        "missing.py:999\n"
+        "```",
+    )
+    generated = brief.build(881, lane, ["dev/brief.py", "test_brief.py"], core)
+    assert "missing.py:999" in generated
     """Independent expectation for #1209; mirror the lint contract, not brief.py."""
     paths = subprocess.run(
         [
@@ -792,6 +835,9 @@ def test_scope_report_derives_test_lint_for_a_lint_gated_executable_doc(tmp_path
     assert "selected 1 existing test(s)" in report, report
     assert "test_lint.py" in report, report
     assert "FAULT" not in report, report
+    # #1213 r4 P2: the provenance must be 'lint', not 'name'
+    assert "lint=1" in report, report
+    assert "name=0" in report, report
 
 
 def test_a_doc_only_lane_owning_only_a_lint_gated_doc_generates_a_brief(lane):
