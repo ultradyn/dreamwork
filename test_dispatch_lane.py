@@ -1542,3 +1542,238 @@ def test_review_liveness_resolves_worktree_from_coordinator_root(tmp_path):
     )
     assert not live
     assert examined == 1
+
+
+# --- #1207: consume runner_exit=null so a dead review is not "still thinking" -
+
+def _classify(record_overrides: dict | None = None, **liveness) -> tuple[str, str]:
+    """Call classify_review_dispatch with injectable liveness readers.
+
+    Mirrors the injectable-reader pattern the _review_lane_live tests use, so
+    the dead/slow discrimination is proven in-process without a real process.
+    """
+    dl = _import_dispatch_lane()
+    record = {"runner_exit": None, "review_lane": "cx-review-review-r1",
+              "branch": "cx-review", "round": 1, "attempt_id": "cx-review-review-r1-deadbeef",
+              "state": "spawned: reviewer present in review worktree (cwd-containment); "
+                       "runner exit not observed"}
+    if record_overrides:
+        record.update(record_overrides)
+    return dl.classify_review_dispatch(record, Path("/tmp"), **liveness)
+
+
+def test_classify_dead_review_is_runner_absent_the_alarm():
+    """#1207 Direction 2 (dead half): a review whose runner is GONE while
+    runner_exit is still null is the alarm — runner-absent.  Before this fix
+    nothing consumed that null and the record read as benign."""
+    # A process exists but holds a DIFFERENT cwd (the runner left the worktree).
+    category, detail = _classify(
+        process_entries=["999999"],
+        read_cwd=lambda pid: "/somewhere/else",
+        read_cmdline=lambda pid: b"/x/ccc\x00",
+    )
+    assert category == "runner-absent", detail
+    assert "runner_exit never observed" in detail
+    assert "no longer progressing" in detail
+
+
+def test_classify_slow_review_is_in_progress_not_an_alarm():
+    """#1207 Direction 2 (slow half): a review whose runner is STILL PRESENT
+    is in-progress — it must NOT trip the alarm.  A 20-minute reviewer thinking
+    under load is live, not dead.  This is the false-positive half: without it
+    the classifier is a dead-review machine that also files every slow review."""
+    category, detail = _classify(
+        process_entries=["999999"],
+        read_cwd=lambda pid: "/tmp/.worktrees/cx-review-review-r1",
+        read_cmdline=lambda pid: b"/x/ccc\x00",
+    )
+    assert category == "in-progress", detail
+    assert "still in progress" in detail
+
+
+def test_classify_review_is_unknown_when_probe_examined_nothing():
+    """#868: a probe that examined 0 processes reports unknown, never an
+    all-clear.  This is the honest 'I could not tell' — not runner-absent."""
+    category, detail = _classify(process_entries=[])
+    assert category == "unknown"
+    assert "examined 0" in detail
+    assert "not an all-clear" in detail
+
+
+def test_classify_review_is_terminal_when_exit_was_observed():
+    """A future revision that observes the runner's exit sets runner_exit; the
+    classifier reports terminal rather than re-probing.  Not the defect case."""
+    category, detail = _classify(record_overrides={"runner_exit": 0, "state": "done"})
+    assert category == "terminal"
+    assert "runner_exit observed (0)" in detail
+
+
+def test_classify_review_is_unknown_without_review_lane():
+    """A malformed record with no review_lane cannot be probed; unknown, not a
+    silent pass."""
+    category, detail = _classify(record_overrides={"review_lane": None})
+    assert category == "unknown"
+    assert "no review_lane" in detail
+
+
+def test_review_status_cli_reports_runner_absent_dispatch(tmp_path):
+    """The --review-status verb reads every *.launch.json and classifies it, so
+    a dispatch whose runner is gone surfaces as runner-absent instead of the
+    benign 'runner exit not observed' the launch record is frozen at."""
+    cli, root = _sandbox_review_cli(tmp_path)
+    dispatches = root / ".dreamwork" / "review-dispatches"
+    dispatches.mkdir(parents=True, exist_ok=True)
+    (dispatches / "cx-review-r1-deadbeef.prompt.md").write_text("prompt\n", encoding="utf-8")
+    (dispatches / "cx-review-r1-deadbeef.launch.json").write_text(json.dumps({
+        "attempt_id": "cx-review-review-r1-deadbeef",
+        "branch": "cx-review", "round": 1,
+        "review_lane": "cx-review-review-r1",
+        "pinned_sha": "abc123", "prompt_sha256": "f" * 64, "prompt_bytes": 7,
+        "prompt": str(dispatches / "cx-review-r1-deadbeef.prompt.md"),
+        "worktree": str(root.parent / ".worktrees" / "cx-review-review-r1"),
+        "permission_mode": "plan",
+        "state": "spawned: reviewer present in review worktree (cwd-containment); "
+                 "runner exit not observed",
+        "runner_exit": None, "runs": 1,
+    }) + "\n", encoding="utf-8")
+    # No live runner holds that worktree, so the real /proc probe finds it gone.
+    env = {**os.environ, "DREAMWORK_ALLOW_PIPED_STDOUT": "1"}
+    result = subprocess.run(
+        [sys.executable, str(cli), "--review-status"],
+        capture_output=True, text=True, env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "classified 1 dispatch" in result.stdout
+    line = next(l for l in result.stdout.splitlines() if "deadbeef" in l)
+    assert "runner-absent" in line, (
+        f"a dead review (runner gone, runner_exit null) did not surface as "
+        f"runner-absent; line={line!r}"
+    )
+
+
+def test_review_status_cli_reports_no_launches_cleanly(tmp_path):
+    """With no launched reviews the verb reports none found, not an error or a
+    false all-clear over zero records."""
+    cli, root = _sandbox_review_cli(tmp_path)
+    env = {**os.environ, "DREAMWORK_ALLOW_PIPED_STDOUT": "1"}
+    result = subprocess.run(
+        [sys.executable, str(cli), "--review-status"],
+        capture_output=True, text=True, env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "no launched review dispatches found" in result.stdout
+
+
+# --- #1207 round 2: malformed launch records must not abort or corrupt the report -
+
+def _write_launch_json(dispatches: Path, slug: str, content: str) -> None:
+    """Write arbitrary text as a .launch.json (for malformed-record tests)."""
+    (dispatches / f"{slug}.launch.json").write_text(content, encoding="utf-8")
+
+
+def _write_valid_launch(dispatches: Path, slug: str, *, review_lane: str,
+                        runner_exit=None) -> None:
+    """Write a minimal valid .launch.json that classify_review_dispatch accepts."""
+    (dispatches / f"{slug}.prompt.md").write_text("prompt\n", encoding="utf-8")
+    _write_launch_json(dispatches, slug, json.dumps({
+        "attempt_id": f"{slug}-attempt", "branch": slug, "round": 1,
+        "review_lane": review_lane,
+        "pinned_sha": "abc123", "prompt_sha256": "f" * 64, "prompt_bytes": 7,
+        "prompt": str(dispatches / f"{slug}.prompt.md"),
+        "worktree": str(dispatches.parent.parent / ".worktrees" / review_lane),
+        "permission_mode": "plan",
+        "state": "spawned: reviewer present in review worktree (cwd-containment); "
+                 "runner exit not observed",
+        "runner_exit": runner_exit, "runs": 1,
+    }) + "\n")
+
+
+def test_review_status_invalid_json_first_is_unknown(tmp_path):
+    """A corrupt .launch.json as the FIRST record must not crash the report
+    (#1207 P1).  Without the per-iteration record reset, the first decode
+    failure leaves ``record`` unbound and the report aborts with
+    UnboundLocalError — hiding every other alarm."""
+    cli, root = _sandbox_review_cli(tmp_path)
+    dispatches = root / ".dreamwork" / "review-dispatches"
+    dispatches.mkdir(parents=True, exist_ok=True)
+    _write_launch_json(dispatches, "aaa-corrupt", "{not valid json\n")
+    env = {**os.environ, "DREAMWORK_ALLOW_PIPED_STDOUT": "1"}
+    result = subprocess.run(
+        [sys.executable, str(cli), "--review-status"],
+        capture_output=True, text=True, env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "classified 1 dispatch" in result.stdout
+    line = next(l for l in result.stdout.splitlines() if "aaa-corrupt" in l)
+    assert "unknown" in line
+
+
+def test_review_status_invalid_json_after_valid_does_not_leak_prior_identity(tmp_path):
+    """A corrupt record AFTER a valid one must not display the previous record's
+    identity (#1207 P1 staleness).  Without the per-iteration reset, ``record``
+    is stale from the prior iteration and the corrupt row shows the PREVIOUS
+    dispatch's attempt_id/branch/round while claiming to describe this one.
+    This is the test that distinguishes the unset bug from the stale bug."""
+    cli, root = _sandbox_review_cli(tmp_path)
+    dispatches = root / ".dreamwork" / "review-dispatches"
+    dispatches.mkdir(parents=True, exist_ok=True)
+    _write_valid_launch(dispatches, "aaa-firstvalid", review_lane="aaa-review-r1")
+    _write_launch_json(dispatches, "bbb-corrupt", "{not valid json\n")
+    env = {**os.environ, "DREAMWORK_ALLOW_PIPED_STDOUT": "1"}
+    result = subprocess.run(
+        [sys.executable, str(cli), "--review-status"],
+        capture_output=True, text=True, env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "classified 2 dispatch" in result.stdout
+    corrupt_line = next(l for l in result.stdout.splitlines() if "bbb-corrupt" in l)
+    assert "unknown" in corrupt_line
+    # The corrupt record must NOT leak the prior record's identity.
+    assert "aaa-firstvalid" not in corrupt_line, (
+        f"corrupt record leaked prior identity; line={corrupt_line!r}"
+    )
+
+
+def test_review_status_non_object_json_array_is_unknown(tmp_path):
+    """Valid JSON that is not an object (e.g. ``[]``) must classify as unknown,
+    not crash (#1207 P1).  Without the isinstance guard, ``[]`` reaches
+    classify_review_dispatch where ``record.get()`` raises AttributeError and
+    aborts the entire report."""
+    cli, root = _sandbox_review_cli(tmp_path)
+    dispatches = root / ".dreamwork" / "review-dispatches"
+    dispatches.mkdir(parents=True, exist_ok=True)
+    _write_launch_json(dispatches, "aaa-array", "[]\n")
+    env = {**os.environ, "DREAMWORK_ALLOW_PIPED_STDOUT": "1"}
+    result = subprocess.run(
+        [sys.executable, str(cli), "--review-status"],
+        capture_output=True, text=True, env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "classified 1 dispatch" in result.stdout
+    line = next(l for l in result.stdout.splitlines() if "aaa-array" in l)
+    assert "unknown" in line
+
+
+def test_review_status_malformed_in_middle_does_not_hide_later_alarm(tmp_path):
+    """A malformed record in the middle must not prevent later records from
+    being classified (#1207 P1).  Without the fix, a ``[]`` record aborts the
+    report via AttributeError, hiding every subsequent alarm — including a
+    runner-absent dispatch, which is the whole point of --review-status."""
+    cli, root = _sandbox_review_cli(tmp_path)
+    dispatches = root / ".dreamwork" / "review-dispatches"
+    dispatches.mkdir(parents=True, exist_ok=True)
+    _write_valid_launch(dispatches, "aaa-first", review_lane="aaa-review-r1")
+    _write_launch_json(dispatches, "bbb-malformed", "[]\n")
+    _write_valid_launch(dispatches, "ccc-alarm", review_lane="ccc-review-r1")
+    env = {**os.environ, "DREAMWORK_ALLOW_PIPED_STDOUT": "1"}
+    result = subprocess.run(
+        [sys.executable, str(cli), "--review-status"],
+        capture_output=True, text=True, env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "classified 3 dispatch" in result.stdout
+    alarm_line = next(l for l in result.stdout.splitlines() if "ccc-alarm" in l)
+    assert "runner-absent" in alarm_line, (
+        f"a malformed record in the middle hid the later alarm; line={alarm_line!r}"
+    )
+
