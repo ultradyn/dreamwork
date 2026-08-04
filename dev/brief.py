@@ -562,7 +562,24 @@ def _scope_derivation_report(checkout: Path, owns: list[str]) -> str:
     authored = land_lane._named_files(owns)
     covered = tuple(path for path in existing if path in authored)
     omitted = tuple(path for path in existing if path not in authored)
-    by_rule = f"name={len(named)} import={len(imported)} map={len(mapped)}"
+    # Split the name slot's provenance for honest reporting: tests derived from
+    # a LINT_GATED_EXECUTABLE_DOCS member come from the lint-gate, not the
+    # filename convention (#1213 r4 P2).  Selection is unchanged — both halves
+    # are in ``named`` and flow into ``derived`` — only the reported label
+    # differs.
+    lint_gated = tuple(sorted(set(filter(None, (
+        land_lane._derived_test(p) for p in changed
+        if p in land_lane.LINT_GATED_EXECUTABLE_DOCS
+    )))))
+    name_only = tuple(sorted(set(filter(None, (
+        land_lane._derived_test(p) for p in changed
+        if p not in land_lane.LINT_GATED_EXECUTABLE_DOCS
+    )))))
+    by_rule = (
+        f"name={len(name_only)}"
+        + (f" lint={len(lint_gated)}" if lint_gated else "")
+        + f" import={len(imported)} map={len(mapped)}"
+    )
     if not existing:
         raise BriefFault(
             f"scope derivation FAULT: selected 0 existing test(s) from "

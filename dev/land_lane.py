@@ -981,8 +981,23 @@ def _test_relation_rules(
     """Which derivation rules relate one selected test to the diff."""
     test_file = _selected_test_file(selector)
     rules: list[str] = []
-    if any(_derived_test(path) == test_file for path in changed):
+    # _derived_test covers two provenances: the filename convention ("name")
+    # and the lint-gate derivation ("lint").  A test_lint.py derived from a
+    # LINT_GATED_EXECUTABLE_DOCS member is NOT the name convention — labelling
+    # it "name" attributes the selection to a provenance that did not produce
+    # it (#1213 r4 P2).
+    if any(
+        _derived_test(path) == test_file
+        and path not in LINT_GATED_EXECUTABLE_DOCS
+        for path in changed
+    ):
         rules.append("name")
+    if any(
+        _derived_test(path) == test_file
+        and path in LINT_GATED_EXECUTABLE_DOCS
+        for path in changed
+    ):
+        rules.append("lint")
     modules = tuple(
         module for module in (_dotted_module(path) for path in changed) if module
     )
@@ -1284,6 +1299,7 @@ def _derived_tests_line(
     diff: Diff,
     *,
     name: Sequence[str],
+    lint: Sequence[str] = (),
     imported: Sequence[str],
     imported_direct: Sequence[str],
     imported_report_only: Sequence[str],
@@ -1326,7 +1342,9 @@ def _derived_tests_line(
         "by this line"
     )
     by_rule = (
-        f"name={len(name)} import={len(imported)} map={len(mapped)} data={len(data)}"
+        f"name={len(name)}"
+        + (f" lint={len(lint)}" if lint else "")
+        + f" import={len(imported)} map={len(mapped)} data={len(data)}"
         + (f" (matched dirs: {' '.join(mapped_dirs)})" if mapped_dirs else "")
         + (f" (matched data paths: {' '.join(data_paths)})" if data_paths else "")
     )
@@ -2813,6 +2831,19 @@ def land(
     # #936, where a true "not run" line was read past for two hours).
     deriv = _derive_tests_from_diff(gate_worktree, diff)
     name_tests = deriv.name
+    # Split the name slot's provenance for honest reporting: tests derived from
+    # a LINT_GATED_EXECUTABLE_DOCS member come from the lint-gate, not the
+    # filename convention (#1213 r4 P2).  Selection is unchanged — both halves
+    # are in ``name_tests`` and flow into the union — only the reported label
+    # differs.
+    lint_tests = tuple(sorted(set(filter(None, (
+        _derived_test(p) for p in diff.changed
+        if p in LINT_GATED_EXECUTABLE_DOCS
+    )))))
+    name_only = tuple(sorted(set(filter(None, (
+        _derived_test(p) for p in diff.changed
+        if p not in LINT_GATED_EXECUTABLE_DOCS
+    )))))
     import_tests = deriv.imported
     direct_import_tests = deriv.imported_direct
     import_report_only = deriv.imported_report_only
@@ -2841,7 +2872,8 @@ def land(
         )
     print(_derived_tests_line(
         diff,
-        name=name_tests,
+        name=name_only,
+        lint=lint_tests,
         imported=import_tests,
         imported_direct=direct_import_tests,
         imported_report_only=import_report_only,
