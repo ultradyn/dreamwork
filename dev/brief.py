@@ -1129,15 +1129,28 @@ def _citation_prose_lines(core: str):
                 list_stack.pop()
             ci = list_stack[-1] if list_stack else 0
 
-        rel = leading - ci
         opened = _FENCE_OPEN_ANY.match(line)
-        if opened is not None and 0 <= rel <= 3:
-            in_fence = True
-            fence_char = opened.group("fence")[0]
-            fence_len = len(opened.group("fence"))
-            fence_col = ci
-            blank_before = False
-            continue
+        if opened is not None:
+            # A fence outdents every open list item whose content column sits
+            # right of it (content column > leading): a fenced code block is
+            # not a lazy continuation, so a top-level fence placed directly
+            # after an item — with no blank line — closes that item and opens
+            # fresh, rather than being measured against a stale item column and
+            # yielded as prose (#1213 r3 P2: round 2 popped list state only
+            # after a blank line, so the fence read as prose and its content was
+            # checked).  The pop mirrors the blank-line dedent, just without the
+            # blank precondition that a paragraph lazy continuation would need.
+            while list_stack and list_stack[-1] > leading:
+                list_stack.pop()
+            ci = list_stack[-1] if list_stack else 0
+            rel = leading - ci
+            if 0 <= rel <= 3:
+                in_fence = True
+                fence_char = opened.group("fence")[0]
+                fence_len = len(opened.group("fence"))
+                fence_col = ci
+                blank_before = False
+                continue
 
         if blank_before and leading >= ci + 4:
             in_indented = True
