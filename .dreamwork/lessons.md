@@ -7288,3 +7288,111 @@ Two things to carry:
   reading a hash manifest. `grep -c` on the two sides answered it in one command, and 24-versus-27
   is the whole argument. When a merge resolution feels too cheap, find the number that would be
   different if it were wrong.
+
+
+## A reviewer's coordinates are valid in a tree the brief will never be generated against (2026-08-04, #1206/#1213)
+
+Brief generation refused three round-N dispatches today on the same check (`#644`'s citation
+resolution), and each time the coordinate I had written was **correct** — just correct somewhere
+else.
+
+    REFUSE phase=brief-generation: 1 violation(s)
+    - file:line citation does not resolve at generation sha f8ccd01c...:
+      core line 35 `dev/brief.py:999999` (line exceeds file's 1961 lines)
+
+Three distinct sub-cases, and it is worth separating them because only the first is the one I already
+had a lesson for:
+
+1. **A deliberately-unresolvable coordinate quoted as an illustration.** The reviewer's tab-gap
+   reproducer used a line far past EOF *on purpose*, to show a citation that should refuse. Quoting
+   it verbatim in a brief re-creates it as a live citation. (Same shape as quoting a refusal message
+   that contains a bad coordinate — already recorded.)
+2. **A path that resolves under a different spelling.** The coordinate itself was real, but I wrote
+   the path as a bare `lessons.md` when the repo-relative path is `.dreamwork/lessons.md`, so the
+   check reported *path absent*. The row text I was quoting used the short form, because that is how
+   lint prints it. (This paragraph deliberately does not name the line number: writing the short path
+   next to a number would create exactly the citation it is describing, which is `#1176` — the check
+   cannot tell a citation from a mention. I found that out by appending an earlier draft of this
+   lesson and watching a new WARN row appear.)
+3. **A valid coordinate in the wrong tree.** This is the new one. A review reads the *branch*; the
+   brief is generated against *master*. `test_launch_lane.py` is 796 lines on master and 1030 on the
+   branch, so every line the reviewer cited for the round-4 tests — code that does not exist on
+   master at all — is unresolvable by construction. The check is right and my citation was right;
+   they were right about different trees.
+
+The trap in (3) is that the coordinate *looks* verified. It came from a reviewer who had the file
+open. I even wrote a sentence into the brief explaining that the numbers were branch-relative — which
+helps the lane and does nothing for the check, because the check resolves rather than reads.
+
+Two things to carry:
+
+- **Cite by NAME across a tree boundary.** `test_reap_lane_recipe_does_not_shell_evaluate_arguments`
+  survives a rebase, a squash, and the master/branch gap; `test_launch_lane.py:995` survives none of
+  them. A brief that describes new code — code the generation tree does not have — has no coordinate
+  available to it, and pretending otherwise is what the refusal is for.
+- **Check the coordinate against the tree the brief will be generated in, not the tree it came
+  from.** One `git show master:<path> | wc -l` would have caught all three refusals before dispatch,
+  and after the third I started doing exactly that. The cheap pre-flight is `git show` plus a regex
+  for `` `path:NNN` ``, run before `launch_lane.py`, not after it refuses.
+
+The through-line with the day's other findings is the same: a true statement — "the defect is at line
+995" — read as a stronger claim than it supports, because *which file at which sha* was never part of
+what made it true.
+
+## A caveat travels with a result only as far as the next summary of it (2026-08-04, #1218/#606)
+
+`#606` exists because a browser guard under load returns a **wrong** answer, not a slow one — `#666`
+measured it dying before its first assertion while the `#471` sentinel read like a failure and gated
+nothing. So `just guards` refuses outright above load 32, and the escape hatch was built with unusual
+care: forcing it does not merely permit the run, it **attaches the caveat to the verdict**.
+
+    NOTE: run forced under load — guard preflight: WRONG-ANSWER-RISK [load 63.83 (4.0x cores) ...]
+          treat a PASS here with suspicion; a load-induced FAIL
+          may be the regime, not the code.
+
+The justfile comment states the intent exactly: *"A green summary that hides a wrong-answer-regime run
+is the exact 'waved through as flaky' failure this gate exists to prevent."*
+
+The mechanism worked. The `#1218` lane's report still said:
+
+> chatsurface guard 31 PASS (load ~64, single-process — passed despite high load)
+
+No NOTE. And that guard was the only thing the lane offered as closing its own named false green — a
+`useState(props.data)` freeze that passes every static-render unit test while freezing in a live
+mount. So the one piece of evidence load-bearing for the round was the one piece the tooling had
+already refused to vouch for.
+
+**What makes this worth recording is where the failure sits.** The caveat was not lost by the tool, or
+by a pipe, or by a truncation. It was lost when a human-written prose summary described the tool's
+output. `#606` guarantees the annotation reaches the verdict; nothing guarantees it survives someone
+writing a sentence about the verdict. Every mechanism of this shape — an annotated result, a
+qualified pass, a flag on a row — has the same horizon, and the horizon is one summary deep.
+
+Two details that make it sharper rather than softer:
+
+- **The lane was not careless.** It noticed the anomaly and reasoned about it in its own dogfood
+  section: the threshold "may be conservative for single-server guards, or this run got lucky." Both
+  explanations locate the problem in the threshold. The third explanation — that the run was in a
+  regime the tooling refuses by default — is the one that does not occur to you when you are holding
+  a green result.
+- **The reviewer hit the same wall and got it right.** It attempted the same guard, got
+  `WRONG-ANSWER-RISK` at load 63.83, **did not force**, and reported `UNVERIFIABLE FROM THIS RUN`,
+  explicitly downgrading the author's number to evidence rather than verification. The difference was
+  not skill. It was that the reviewer met the refusal and the lane met a pass.
+
+Three things to carry:
+
+- **Ask what the tool refused, not only what it returned.** A green that required an override is a
+  different fact from a green. When a result came through an escape hatch, the hatch is part of the
+  result and must be quoted with it.
+- **A qualified pass is not a pass you may summarise.** Quote the qualification verbatim or do not
+  cite the run. Paraphrase is where the qualifier dies — "passed despite high load" is the paraphrase
+  of "treat this PASS with suspicion", and it inverts it.
+- **At delegation 6 the fleet's own load exceeds the refusal threshold.** So browser-guard-heavy work
+  — which is most of the react migration, the main near-term goal — cannot earn its verification while
+  the fleet is at target. That is a scheduling fact, not a defect: sequence those increments into
+  drained windows instead of accepting forced passes. Filed.
+
+The through-line with the day's other findings is unchanged, and this is its cleanest specimen: a true
+statement — *the guard reported 31 PASS* — read as a stronger claim than it supports, because the
+condition that made it weak was attached one layer down and did not survive being retold.

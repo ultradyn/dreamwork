@@ -186,6 +186,42 @@
     and if you say "only report" the work is to record the ruling, not to build anything.
   - If you say nothing, I will take the split above and keep the runtime bound strict.
 
+- **P2 · 2026-08-04 — goal #10, "Dreamhub's end state has a front door", is the only goal in the
+  tree with no work under it at all. Is it parked behind the React migration, or is there work I
+  should be filing? (#1233)**
+  - **Nothing is blocked on this.** The loop has plenty of actionable work and I am not idling on
+    your answer. This is a coverage question, not a request for direction.
+  - **How it came up.** `#1233` found that SKILL.md's maintenance rotation had been checking a task
+    `parent` field that does not exist — tasks reach your goals through group membership
+    (`task -> task_group_member -> group -> parent_id -> goal`), so the rotation's check had no data
+    and could not fail. It had been examining nothing for the whole life of the SQLite cutover.
+  - **What I fixed without asking.** Coverage was 11% when I measured it. I attached the open P1s,
+    the day's filings, the dogfooding cluster, and then eleven tasks that genuinely serve goal #3
+    ("the loop's memory survives anything that ends a session") — the inbox read-cursor gap, the
+    rotation loss, handoff grammar and visibility, journal cursor integrity, and the coordinator
+    checklist's own retrieval problem. Coverage is now 30% and goal #3 holds eleven tasks.
+  - **A correction I owe you, because I nearly asked you the wrong question.** My first pass reported
+    that three goals held zero tasks: #3, #9 and #10. That count was true and the conclusion drawn
+    from it was wrong. #9 ("Dreamhub is the successor surface, not a second window") is a *parent*
+    goal whose single child is #1, the React migration — 44 tasks plus the 10-task cutover epic. A
+    goal with children is not supposed to hold tasks directly. So #9 is among the best-covered goals
+    in the tree, and I had it filed as untracked because I counted membership at one level and read
+    that number as coverage.
+  - **After that correction, exactly one goal is genuinely empty: #10.** No direct tasks, no child
+    groups, nothing anywhere in the ledger that serves it.
+  - **My read, offered so you can just confirm or flip it.** "A front door" sounds like the thing
+    that only makes sense once Dreamhub is actually the successor surface — so I would expect it to
+    be deliberately parked behind #1 rather than forgotten. If that is right, say "parked" and I will
+    record it as a deliberate hold with the React migration as its blocker, which also stops the
+    rotation flagging it every time it comes round.
+  - **If it is not parked**, a sentence or two on what "front door" means to you is enough — whether
+    it is auth and multi-user, a landing page, a hosted entry point, or something else — and I will
+    file the work rather than guess at it.
+  - **One process change this produced.** The rotation line I wrote into SKILL.md asks for "the
+    ungrouped count", which invites exactly the misreading I made. Ungrouped *tasks* and empty *leaf
+    goals* are different questions and only the second one found #10. I am filing that as a
+    follow-up.
+
 ## Answered
 
 - **P1 · 2026-08-03 — Syncthing is replicating `.dreamwork/` and `../.worktrees/`, and it made a
