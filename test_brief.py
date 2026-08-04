@@ -271,6 +271,60 @@ def test_generation_does_not_treat_fenced_history_as_a_live_citation(lane):
     assert "missing.py:999" in generated
 
 
+def test_generation_does_not_treat_an_indented_code_block_as_a_live_citation(lane):
+    """#1213: a coordinate inside an indented (4-space) code block is quoted
+    material, not a citation.  The same ``lessons.md:430`` coordinate that is
+    REFUSED in prose (the test above) must generate cleanly inside a pasted
+    block — a refusal message is the canonical thing a brief about citation
+    defects must be able to show, and refusal messages are pasted as indented
+    blocks.  The block opens only after a blank line (CommonMark: an indented
+    code block cannot interrupt a paragraph)."""
+    core = GOOD_CORE.replace(
+        "`## Standing rules` was retyped 33 times and produced 32 distinct bodies.",
+        "A pasted refusal follows:\n\n"
+        "    REFUSE phase=brief-generation: file:line citation does not resolve\n"
+        "    at the sha: core line 9 `lessons.md:430` (path absent).",
+    )
+    generated = brief.build(881, lane, ["dev/brief.py", "test_brief.py"], core)
+    assert "lessons.md:430" in generated
+
+
+def test_generation_lets_a_core_quote_a_refusal_carrying_an_unresolvable_coordinate(lane):
+    """#1213 self-referential, the measured case: the brief describing THIS
+    defect refused at generation because it quoted the original refusal
+    verbatim and that refusal names ``lessons.md:430``.  A coordinate inside an
+    indented block is displayed, not dereferenced, so the brief must generate."""
+    core = GOOD_CORE.replace(
+        "`## Standing rules` was retyped 33 times and produced 32 distinct bodies.",
+        "The check refuses like so:\n\n"
+        "    REFUSE phase=brief-generation: file:line citation does not resolve\n"
+        "    at generation sha 44397ea6: core line 9 `lessons.md:430` (path\n"
+        "    absent). Cite the repo-relative path and a line present in that\n"
+        "    exact tree; this proves resolution only, not that the line\n"
+        "    supports the claim.",
+    )
+    generated = brief.build(881, lane, ["dev/brief.py", "test_brief.py"], core)
+    assert "lessons.md:430" in generated
+
+
+def test_a_four_space_indented_paragraph_continuation_is_still_checked(lane):
+    """#1213 direction 2: the blank-line precondition is what keeps a real
+    citation visible.  A 4-space indent inside a paragraph (no blank line
+    before it) is lazy continuation, not a code block, so an unresolvable
+    coordinate there must STILL refuse.  Without the precondition the check
+    would skip every incidentally-indented line and silently disable itself."""
+    core = GOOD_CORE.replace(
+        "`## Standing rules` was retyped 33 times and produced 32 distinct bodies.",
+        "A paragraph that runs onto\n"
+        "    an indented continuation naming `lessons.md:430` inline.",
+    )
+    with pytest.raises(
+        brief.BriefFault,
+        match=r"file:line citation does not resolve at generation sha.*lessons\.md:430",
+    ):
+        brief.build(881, lane, ["dev/brief.py", "test_brief.py"], core)
+
+
 def _lesson_citation_false_positive_count_at(sha: str) -> int:
     """Independent expectation for #1209; mirror the lint contract, not brief.py."""
     paths = subprocess.run(
@@ -508,6 +562,44 @@ def test_scope_report_distinguishes_an_existing_doc_only_lane(tmp_path):
     assert report.startswith("scope derivation NOT CHECKED"), report
     assert "resolved 1 existing Lane-owns file(s), all inert documentation" in report
     assert "doc-only lane declared explicitly" in report
+
+
+def test_scope_report_derives_test_lint_for_a_lint_gated_executable_doc(tmp_path):
+    """#1212: a lint-gated executable doc is genuinely not inert (the landing
+    gate runs the checker that parses it), so a doc-only lane naming it faulted
+    at 'selected 0 existing tests' — no name/import/map rule reaches a ``.md``.
+    The derivation that is actually true is the test that gates it: membership
+    of ``LINT_GATED_EXECUTABLE_DOCS`` is the claim "lint checks this file", and
+    ``test_lint.py`` runs that checker."""
+    import land_lane
+    # Precondition the check depends on: the doc must be lint-gated and
+    # therefore NOT inert. A literal that drifted out of the set would make
+    # this test pass for the wrong reason (it would be inert: NOT CHECKED).
+    assert ".dreamwork/docs/doc-map.md" in land_lane.LINT_GATED_EXECUTABLE_DOCS
+    assert not land_lane._is_inert_doc(".dreamwork/docs/doc-map.md")
+
+    doc = tmp_path / ".dreamwork" / "docs" / "doc-map.md"
+    doc.parent.mkdir(parents=True)
+    doc.write_text("# doc map\n", encoding="utf-8")
+    (tmp_path / "test_lint.py").write_text("def test_lint(): pass\n", encoding="utf-8")
+
+    report = brief._scope_derivation_report(tmp_path, [".dreamwork/docs/doc-map.md"])
+    assert "selected 1 existing test(s)" in report, report
+    assert "test_lint.py" in report, report
+    assert "FAULT" not in report, report
+
+
+def test_a_doc_only_lane_owning_only_a_lint_gated_doc_generates_a_brief(lane):
+    """#1212 end to end: a lane that owns ONLY the lint-gated doc-map could not
+    generate a brief — it faulted at 'selected 0 existing tests' because no
+    derivation rule reached the ``.md``.  It now derives ``test_lint.py`` and
+    the brief generates; the scope report (on stderr) names the covering test
+    rather than refusing.  ``notes.md`` (inert) reports NOT CHECKED; the
+    lint-gated doc is the discriminating case this test binds."""
+    import land_lane
+    assert ".dreamwork/docs/doc-map.md" in land_lane.LINT_GATED_EXECUTABLE_DOCS
+    generated = brief.build(881, lane, [".dreamwork/docs/doc-map.md"], GOOD_CORE)
+    assert ".dreamwork/docs/doc-map.md" in generated
 
 
 def test_scope_report_allows_a_new_file_beside_an_existing_owned_test(tmp_path):
