@@ -989,60 +989,158 @@ def _citation_title(task: int, ledger: Path) -> str | None:
         raise
 
 
+# A Markdown list marker (CommonMark §5.1/§5.2): bullet or ordered, with the
+# whitespace that separates it from its content.  The content column of the
+# item is where its text begins (lead + marker + gap), and that — not column
+# zero — is the baseline an indented code block is measured from (#1213 r2).
+_LIST_MARKER = re.compile(r"^(?P<lead> *)(?P<mark>[-*+]|[0-9]+[.)])(?P<gap>[ \t]+)")
+
+
+def _expanded_indent(line: str) -> int:
+    """Leading indent in CommonMark columns — a TAB advances to a multiple of 4.
+
+    A naive ``len(line) - len(line.lstrip(" "))`` counts only spaces, so a
+    tab-indented code block reads as indent 0 and the citation check skips
+    nothing CommonMark would (#1213 r2: tabs).
+    """
+    indent = 0
+    for char in line:
+        if char == " ":
+            indent += 1
+        elif char == "\t":
+            indent = 4 * (indent // 4 + 1)
+        else:
+            break
+    return indent
+
+
+# A fence opener with no cap on leading spaces: whether a leading fence is a
+# REAL fence is decided against the enclosing list context (up to three spaces
+# past the item's content column), so a block nested inside a list item still
+# opens and closes (#1213 r2: list-fence gap).  ``_FENCE_OPEN`` (capped at three
+# absolute spaces) stays the rule for the top-level-only walkers that share it.
+_FENCE_OPEN_ANY = re.compile(r"^(?P<lead> *)(?P<fence>`{3,}|~{3,})")
+
+
+def _citation_prose_lines(core: str):
+    """Yield ``(line_no, line)`` for authored prose; skip genuine code blocks.
+
+    Code blocks are quoted material — a pasted refusal, captured output — not
+    live citations, so a brief about citation defects can show one (#1213).
+    Two things make the skip correct rather than blanket:
+
+    * it is RELATIVE to the enclosing list item.  CommonMark measures an
+      indented code block from the item's CONTENT column, not from column zero,
+      so four-space-indented text inside a list item whose text begins at
+      column 2 or 3 is list content (checked), and only content-column + 4 is a
+      code block.  Round 1 used an absolute four-column rule, which exempted
+      most of a typical brief — briefs are almost entirely nested bullets — and
+      turned a check that exists to refuse bad citations into one that passes
+      them quietly (#1213 r2).
+    * the blank-line precondition is kept: an indented code block cannot
+      interrupt a paragraph, so a four-space continuation with no preceding
+      blank line stays prose and stays checked.
+
+    Inline code is NOT exempt here; only fenced and indented blocks are skipped.
+    """
+    list_stack: list[int] = []          # content columns of open list items
+    in_indented = False
+    code_indent = 4                      # meaningful only while in_indented
+    in_fence = False
+    fence_char = ""
+    fence_len = 0
+    fence_col = 0                        # content column the fence opened at
+    blank_before = True
+
+    for line_no, line in enumerate(core.splitlines(), 1):
+        if in_fence:
+            # The closing fence may sit at the same content column, up to three
+            # past it (CommonMark §4.5); the block lives inside the list item,
+            # so the close is measured from ``fence_col`` too.
+            lead = _expanded_indent(line)
+            close = _FENCE_OPEN_ANY.match(line)
+            if (close is not None
+                    and close.group("fence")[0] == fence_char
+                    and len(close.group("fence")) >= fence_len
+                    and fence_col <= lead <= fence_col + 3
+                    and not line[lead + len(close.group("fence")):].strip()):
+                in_fence = False
+            continue
+
+        leading = _expanded_indent(line)
+
+        if in_indented:
+            if not line.strip():
+                blank_before = True
+                continue
+            if leading >= code_indent:
+                continue
+            in_indented = False            # block closed — re-classify the line
+
+        ci = list_stack[-1] if list_stack else 0
+        marker = _LIST_MARKER.match(line)
+        if marker is not None:
+            mark_lead = len(marker.group("lead"))
+            while list_stack and list_stack[-1] > mark_lead:
+                list_stack.pop()
+            content_col = mark_lead + len(marker.group("mark")) + len(marker.group("gap"))
+            if not list_stack or content_col > list_stack[-1]:
+                list_stack.append(content_col)
+            blank_before = False
+            yield line_no, line
+            continue
+
+        if not line.strip():
+            blank_before = True
+            continue
+
+        # A non-marker line after a blank that dedents below the open item
+        # closes that item (and anything deeper); a lazy continuation, with no
+        # blank before it, does not, and leaves the content column untouched.
+        if blank_before and leading < ci:
+            while list_stack and list_stack[-1] > leading:
+                list_stack.pop()
+            ci = list_stack[-1] if list_stack else 0
+
+        rel = leading - ci
+        opened = _FENCE_OPEN_ANY.match(line)
+        if opened is not None and 0 <= rel <= 3:
+            in_fence = True
+            fence_char = opened.group("fence")[0]
+            fence_len = len(opened.group("fence"))
+            fence_col = ci
+            blank_before = False
+            continue
+
+        if blank_before and leading >= ci + 4:
+            in_indented = True
+            code_indent = ci + 4
+            blank_before = False
+            continue
+
+        blank_before = False
+        yield line_no, line
+
+
 def _validate_file_line_citations(core: str, checkout: Path, sha: str) -> None:
     """Refuse repo ``file:line`` citations absent at the generation SHA.
 
-    This checks only authored prose.  Fenced and indented (4-space) code blocks
-    are specimens or captured output, not active citations; treating their
+    This checks only authored prose.  Fenced and indented code blocks are
+    specimens or captured output, not active citations; treating their
     historical coordinates as current claims would refuse correct briefs — a
     brief that quotes a refusal message cannot show the coordinate it warns
     about (#1213).  Inline code is NOT exempt: a live citation is normally
     written in backticks, so exempting it would disable the check outright.
     Semantic accuracy is outside this check: a line can resolve and still
     support the wrong conclusion.
+
+    The block classification is delegated to ``_citation_prose_lines``: it
+    measures an indented code block from the enclosing list item's content
+    column, not from column zero, so nested bullets and continuation paragraphs
+    stay checked while only genuine code blocks are skipped (#1213 r2).
     """
     citations: list[tuple[int, str, int, int]] = []
-    in_fence = False
-    fence_char = ""
-    fence_len = 0
-    # An indented code block opens only after a blank line (CommonMark: it
-    # cannot interrupt a paragraph) and closes at the first non-blank line
-    # indented fewer than four spaces.  ``blank_before`` starts True so a
-    # leading indented block is recognised; a fence opener clears both states
-    # so the two block styles never overlap (a fence cannot live inside an
-    # indented block — its lines are literal).
-    in_indented = False
-    blank_before = True
-    for line_no, line in enumerate(core.splitlines(), 1):
-        if in_fence:
-            if re.match(
-                rf"^ {{0,3}}{re.escape(fence_char)}{{{fence_len},}}[ \t]*$", line
-            ):
-                in_fence = False
-            continue
-        opened = _FENCE_OPEN.match(line)
-        if opened:
-            in_fence = True
-            fence_char = opened.group(2)[0]
-            fence_len = len(opened.group(2))
-            in_indented = False
-            blank_before = False
-            continue
-        leading = len(line) - len(line.lstrip(" "))
-        if in_indented:
-            if not line.strip():
-                continue
-            if leading >= 4:
-                continue
-            in_indented = False
-        elif not line.strip():
-            blank_before = True
-            continue
-        elif blank_before and leading >= 4:
-            in_indented = True
-            blank_before = False
-            continue
-        blank_before = False
+    for line_no, line in _citation_prose_lines(core):
         prose = re.sub(r"https?://\S+", " ", line)
         for match in _FILE_LINE_CITATION.finditer(prose):
             first = int(match.group("first"))

@@ -325,6 +325,137 @@ def test_a_four_space_indented_paragraph_continuation_is_still_checked(lane):
         brief.build(881, lane, ["dev/brief.py", "test_brief.py"], core)
 
 
+# --- #1213 round 2: the exemption is relative to the enclosing list item ----
+#
+# Round 1's "blank line, then 4+ spaces" rule was absolute — measured from
+# column zero — so a nested bullet whose prose sits four spaces in (ordinary
+# list content, not a code block) was exempted and its citation skipped.  The
+# classifier now measures from the item's CONTENT column.  The table below is
+# the enumeration the fix must survive: every brief context, checked vs skipped.
+
+
+def _citation_lineno(core: str, token: str) -> int:
+    for number, line in enumerate(core.splitlines(), 1):
+        if token in line:
+            return number
+    raise AssertionError(f"token {token!r} absent from core")
+
+
+@pytest.mark.parametrize(
+    "core,token,expect_checked",
+    [
+        # top-level paragraph
+        ("Prose names `lessons.md:430`.", "lessons.md:430", True),
+        # genuine top-level indented code (blank line, then 4 spaces)
+        ("para\n\n    code `lessons.md:430`", "lessons.md:430", False),
+        # fenced block outside any list
+        ("```\nmissing.py:999\n```", "missing.py:999", False),
+        # lazy continuation (4-space indent, NO blank before it) — checked
+        ("para\n    cont `lessons.md:430`", "lessons.md:430", True),
+        # nested-bullet MARKER lines at 2/4/6/8 spaces — all checked
+        ("- top\n  - x `lessons.md:430`", "lessons.md:430", True),
+        ("- a\n  - b\n    - x `lessons.md:430`", "lessons.md:430", True),
+        ("- a\n  - b\n    - c\n      - x `lessons.md:430`", "lessons.md:430", True),
+        ("- a\n  - b\n    - c\n      - d\n        - x `lessons.md:430`",
+         "lessons.md:430", True),
+        # continuation paragraph at the item's content column — checked
+        ("- top\n\n  para `lessons.md:430`", "lessons.md:430", True),
+        # THE P1: prose indented 4 under a content-column-2 item — checked
+        # (round 1 skipped this; CommonMark needs content + 4 = 6 for code)
+        ("- top\n\n    prose `lessons.md:430`", "lessons.md:430", True),
+        # genuine nested code: content column 2, code at 6 — skipped
+        ("- top\n\n      code `lessons.md:430`", "lessons.md:430", False),
+        # genuine deeper nested code: content column 4, code at 8 — skipped
+        ("- a\n  - b\n\n        code `lessons.md:430`", "lessons.md:430", False),
+        # fenced block nested in a list item (fence indented to content col)
+        ("- top\n\n  ```\n  missing.py:999\n  ```", "missing.py:999", False),
+        # fenced block nested DEEP (content column 4) — list-fence gap
+        ("- a\n  - b\n\n    ```\n    missing.py:999\n    ```", "missing.py:999", False),
+        # tab-indented code block (a tab is four columns to CommonMark)
+        ("para\n\n\tcode `lessons.md:430`", "lessons.md:430", False),
+    ],
+    ids=[
+        "top-paragraph", "top-indented-code", "top-fenced", "lazy-continuation",
+        "marker-indent2", "marker-indent4", "marker-indent6", "marker-indent8",
+        "continuation-paragraph", "p1-nested-prose-indent4",
+        "nested-code-indent6", "deeper-nested-code-indent8",
+        "fence-in-list-ci2", "fence-in-deep-list-ci4", "tab-indented-code",
+    ],
+)
+def test_citation_check_context_table(core, token, expect_checked):
+    """Every brief context, asserted checked-vs-skipped.  The property is not
+    'this input is checked' but 'the exemption never covers prose' (#1213 r2):
+    a row whose prose is wrongly skipped is the bug this guards."""
+    checked = _citation_lineno(core, token) in {
+        number for number, _ in brief._citation_prose_lines(core)
+    }
+    assert checked is expect_checked
+
+
+def test_nested_list_prose_is_still_checked(lane):
+    """#1213 r2 P1, end to end: prose indented four spaces under a list item
+    (content column 2) is list CONTENT, not an indented code block, so an
+    unresolvable citation there must REFUSE.  Round 1's absolute four-column
+    rule skipped it — a brief carrying the bad citation generated cleanly, a
+    silent pass — which is exactly the defect #644's check exists to refuse."""
+    core = GOOD_CORE.replace(
+        "`## Standing rules` was retyped 33 times and produced 32 distinct bodies.",
+        "A list item carries it:\n\n"
+        "- top\n\n"
+        "    nested prose naming `lessons.md:430` (unresolvable).",
+    )
+    with pytest.raises(
+        brief.BriefFault,
+        match=r"file:line citation does not resolve at generation sha.*lessons\.md:430",
+    ):
+        brief.build(881, lane, ["dev/brief.py", "test_brief.py"], core)
+
+
+def test_a_genuinely_nested_code_block_is_still_skipped(lane):
+    """#1213 r2 direction 2: the fix must not over-check.  A real indented code
+    block nested in a list item (content column 2, code at column 6) is quoted
+    material and its unresolvable coordinate must STILL generate cleanly — a
+    refusal quoted deep in a bullet is the nested analogue of #1213's case."""
+    core = GOOD_CORE.replace(
+        "`## Standing rules` was retyped 33 times and produced 32 distinct bodies.",
+        "A nested refusal follows:\n\n"
+        "- top\n\n"
+        "      REFUSE ... `lessons.md:430` (path absent).",
+    )
+    generated = brief.build(881, lane, ["dev/brief.py", "test_brief.py"], core)
+    assert "lessons.md:430" in generated
+
+
+def test_a_fenced_block_nested_in_a_list_item_is_skipped(lane):
+    """#1213 r2 list-fence gap: a fenced block whose fence is indented to the
+    list item's content column must still open and close, so a coordinate
+    inside it is skipped.  A deep variant (content column 4) is covered in the
+    context table; this is the common shallow one, end to end."""
+    core = GOOD_CORE.replace(
+        "`## Standing rules` was retyped 33 times and produced 32 distinct bodies.",
+        "A list with a fence:\n\n"
+        "- top\n\n"
+        "  ```\n"
+        "  missing.py:999\n"
+        "  ```",
+    )
+    generated = brief.build(881, lane, ["dev/brief.py", "test_brief.py"], core)
+    assert "missing.py:999" in generated
+
+
+def test_a_tab_indented_code_block_is_skipped(lane):
+    """#1213 r2 tabs: a tab advances to a multiple of four columns, so a
+    tab-indented block is a code block and its coordinate is skipped — the
+    naive 'count spaces' rule read it as indent 0 and checked it."""
+    core = GOOD_CORE.replace(
+        "`## Standing rules` was retyped 33 times and produced 32 distinct bodies.",
+        "A tabbed refusal follows:\n\n"
+        "\tREFUSE ... `lessons.md:430` (path absent).",
+    )
+    generated = brief.build(881, lane, ["dev/brief.py", "test_brief.py"], core)
+    assert "lessons.md:430" in generated
+
+
 def _lesson_citation_false_positive_count_at(sha: str) -> int:
     """Independent expectation for #1209; mirror the lint contract, not brief.py."""
     paths = subprocess.run(
