@@ -18,6 +18,9 @@
     "client/shader.js": "e293165e637d135da651d35fa7834208a07e6dc1142d670d2cd6018a1017a462",
     "client/style.css": "fe684b55d98501419b63469c0d09bbe12c14cbff2210bf154f949c42f9cc3a1a",
     "client/views.js": "3d55e5e217711c8adf605d3f283e2bcb200b3ef229c54af4c1c68a9de5962e58",
+    "dev/build/ds-src/Answers.d.ts": "41037336f4c819cf1256592c701ce61a494331af620098218f38c92591494843",
+    "dev/build/ds-src/Answers.fixture.json": "7c433932a0e15e089d73041e48abb53d13ec0ca6fe23cd1feb6cc285a0a6c81b",
+    "dev/build/ds-src/Answers.prompt.md": "f12fb5c8dc1c09219cdd2a3c868a8d74344632079f712d9096181ada95cb5bf9",
     "dev/build/ds-src/ArtifactRow.d.ts": "12ace56abf0721bdd65bbb781e52937fdbd8dbe21897fd5eab3455a3b4da04cb",
     "dev/build/ds-src/ArtifactRow.fixture.json": "a38b3cf2012178882d4c60cf29361cef79e3192e954518830580959648fffd76",
     "dev/build/ds-src/ArtifactRow.prompt.md": "0ee7afa94f02d495b71e321150c6563a6246ece1cfcacc2488f627f384e203c5",
@@ -49,12 +52,12 @@
     "dev/build/src/question.js": "4c324cc693dd17c3458c7bf8f8aac19c64c173aa15985d4a3defa5b9865fd3ca",
     "dev/build/src/registry.js": "6d8b3a665afcec61e7d0ab59b32b6ee23b0fc0bff90bf23b2558823057beb0a8",
     "dev/build/src/research.js": "26813363dcb58d20cef045528fbf55da86827053584a480f9b549d03626987cd",
-    "dev/build/wrapper-exports.js": "a923f50b990938f8dab4cb6f3cf77937c7704855f2f655a656e1a4d98449a67f"
+    "dev/build/wrapper-exports.js": "07668ff54504f9551dc7213fc5d75c7ad7e968e2fe20c3debee4cffc6f429c26"
   },
   "outputs": {
-    "client/dist/ds/index.js": "dc2ccfdbcadde60ac59696fe16085fcaa43ead07222e0c48cd0b89368db91e3d",
+    "client/dist/ds/index.js": "858bfadfa3737b5ee0116eacd38de247c1fb16bacaba350776ca13acb0085426",
     "client/dist/ds/styles.css": "fe684b55d98501419b63469c0d09bbe12c14cbff2210bf154f949c42f9cc3a1a",
-    "client/dist/native.js": "5464c76caecf261945c52da1aea3fbd6f7d3a3eaea3412575f998876c466a6ff"
+    "client/dist/native.js": "b6729322a7bf901efd8824182fe0556615363ef05c90101a8a5a5d713360d790"
   },
   "schema": 1,
   "tool": {

@@ -429,6 +429,65 @@ def test_reviews_fixture_covers_loading_empty_and_distinct_multi_row_states():
         "Reviews multi fixture rows need distinct question links")
 
 
+def test_answers_fixture_covers_unreadable_empty_open_answered_and_askform():
+    fixture = json.loads((ROOT / client_dist.DS_SOURCE_DIR /
+                          "Answers.fixture.json").read_text(encoding="utf-8"))
+    assert set(fixture) == {"unreadable", "empty", "open", "answered",
+                            "askform"}
+    # unreadable exercises the d.answers_health === 'unreadable' banner branch
+    # (views.js:1214) — the only conditional that emits the channel-broken bar.
+    assert fixture["unreadable"]["data"]["answers_health"] == "unreadable"
+    # empty exercises both fallbacks: "none awaiting the dreamer" and "none
+    # yet" render only when an answers_* list maps to an empty join (1219-1222).
+    assert fixture["empty"]["data"]["answers_open"] == []
+    assert fixture["empty"]["data"]["answers_answered"] == []
+    # open exercises the answerRecord open path with a real question + aid:
+    # a non-empty title/body is what qaCard's own guard calls a "real
+    # question", and the aid drives the data-aqid branch (views.js:1207-1211).
+    open_recs = fixture["open"]["data"]["answers_open"]
+    assert open_recs, "Answers open fixture has no open record"
+    assert open_recs[0]["title"] and open_recs[0]["body"], (
+        "Answers open fixture props do not exercise a real question")
+    assert open_recs[0].get("aid"), (
+        "Answers open fixture does not exercise the data-aqid path")
+    assert fixture["open"]["data"]["answers_answered"] == []
+    # answered exercises the answerRecord answered path with a real answer +
+    # aid, driving the data-aid/data-keep branch (views.js:1194-1198).
+    ans_recs = fixture["answered"]["data"]["answers_answered"]
+    assert ans_recs, "Answers answered fixture has no answered record"
+    assert ans_recs[0]["title"] and ans_recs[0]["body"], (
+        "Answers answered fixture props do not exercise a real answer")
+    assert ans_recs[0].get("aid"), (
+        "Answers answered fixture does not exercise the data-aid path")
+    assert fixture["answered"]["data"]["answers_open"] == []
+    # askform is the non-empty ask-form surface: a populated healthy state
+    # where the always-rendered form sits alongside real open and answered
+    # records, not the unreadable banner branch.
+    af = fixture["askform"]["data"]
+    assert af.get("answers_health") != "unreadable", (
+        "Answers askform fixture must not be the unreadable branch")
+    assert af["answers_open"] and af["answers_answered"], (
+        "Answers askform fixture must populate a non-empty surface alongside "
+        "the form")
+    # Every record across the open/answered/askform cases must carry a real
+    # question (non-empty title+body) and a content-stable aid. A [0]-only
+    # check would miss a hollow record in a non-first position (the askform
+    # case carries two) that exercises no answerRecord branch — a false-zero
+    # fixture, #136.
+    all_recs = [(case, r) for case in ("open", "answered", "askform")
+                for r in (fixture[case]["data"]["answers_open"]
+                          + fixture[case]["data"]["answers_answered"])]
+    for case, r in all_recs:
+        assert r.get("title") and r.get("body"), (
+            "Answers %s fixture record does not exercise a real question"
+            % case)
+        assert r.get("aid"), (
+            "Answers %s fixture record has no content-stable aid" % case)
+    titles = [r["title"] for _, r in all_recs]
+    assert len(set(titles)) == len(titles), (
+        "Answers fixture reuses question titles across cases (hollow)")
+
+
 def test_reviews_wrapper_dom_strictly_equals_live_builder_for_every_state():
     """Both sides pass through one real DOM parser/serializer before equality.
 
@@ -604,6 +663,117 @@ try {
         for r in readings if r["expected"] != r["actual"]]
     assert not mismatches, (
         "Reviews wrapper serialization differs from live buildReviews after "
+        "the same DOM parser/serializer: " + " | ".join(mismatches))
+
+
+def test_answers_wrapper_dom_strictly_equals_live_builder_for_every_fixture():
+    """The Answers delegate must render exactly buildAnswers(props.data).
+
+    Round 1 shipped the Answers export with no equality guard of its own.
+    The generic browser loop only requires every export to MOUNT and preserve
+    its input, and the strict DOM serialization comparison above was
+    hard-coded to Reviews — so replacing the Answers delegate's
+    buildAnswers(data) with '' left the whole suite green and the export's
+    entire purpose unguarded. This closes that gap over all five Answers
+    fixtures: each mounted delegate output is passed through one DOM
+    parser/serializer and compared byte-for-byte against the same
+    serialization of buildAnswers(props.data). It does not touch Reviews or
+    the shared mutation loop.
+    """
+    server = http.server.ThreadingHTTPServer(
+        ("127.0.0.1", 0),
+        watch.make_handler(str(ROOT), journal_shadow=False))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = "http://127.0.0.1:%d" % server.server_address[1]
+    script = r"""
+import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { readFileSync, readdirSync } from 'node:fs';
+const [base, designPath, nativePath, fixtureDir] = process.argv.slice(1);
+const fixtures = Object.fromEntries(
+  readdirSync(fixtureDir)
+    .filter(name => name.endsWith('.fixture.json'))
+    .map(name => [name.slice(0, -'.fixture.json'.length),
+      JSON.parse(readFileSync(fixtureDir + '/' + name, 'utf8'))]));
+const cases = fixtures.Answers;
+const browser = await chromium.launch();
+const page = await browser.newPage();
+try {
+  await page.goto(base + '/answers', { waitUntil: 'networkidle' });
+  await page.addScriptTag({ content: readFileSync(nativePath, 'utf8') });
+  await page.evaluate(() => {
+    delete document.getElementById('cmdpalette').dataset.composerMount;
+  });
+  await page.addScriptTag({ content: readFileSync(designPath, 'utf8') });
+  const readings = [];
+  for (const [state, props] of Object.entries(cases)) {
+    const result = await page.evaluate(async ({ state, props }) => {
+      const builder = buildAnswers(props.data);
+      const root = document.createElement('div');
+      dwNative.ReactDOM.createRoot(root).render(
+        dwNative.React.createElement(DreamworkDesign.Answers, props));
+      let mounted = null;
+      for (let i = 0; i < 100; i++) {
+        const host = root.querySelector('[data-dw-delegate="buildAnswers"]');
+        if (host) { mounted = host.innerHTML; break; }
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      const serialize = raw => {
+        const template = document.createElement('template');
+        template.innerHTML = raw;
+        const host = document.createElement('div');
+        host.append(template.content.cloneNode(true));
+        return host.innerHTML;
+      };
+      const expected = serialize(builder);
+      const actual = serialize(mounted === null ? '' : mounted);
+      let at = 0;
+      while (expected[at] === actual[at] &&
+             at < expected.length && at < actual.length) at++;
+      return { state, expected, actual, at };
+    }, { state, props });
+    readings.push(result);
+  }
+  console.log(JSON.stringify({ readings }));
+} finally {
+  await browser.close();
+}
+"""
+    try:
+        result = subprocess.run(
+            ["node", "--input-type=module", "-e", script, base,
+             str(ROOT / client_dist.DS_DIR / "index.js"),
+             str(ROOT / client_dist.NATIVE_REL),
+             str(ROOT / client_dist.DS_SOURCE_DIR)],
+            text=True, capture_output=True, timeout=60)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+    assert result.returncode == 0, (
+        "Answers wrapper equality browser failed before comparison:\n%s\n%s" %
+        (result.stdout, result.stderr))
+    payload = json.loads(result.stdout.strip().splitlines()[-1])
+    readings = payload["readings"]
+    assert {r["state"] for r in readings} == {
+        "unreadable", "empty", "open", "answered", "askform"}, (
+        "Answers equality guard did not exercise all five fixture cases: %r" %
+        sorted({r["state"] for r in readings}))
+    for reading in readings:
+        assert reading["expected"], (
+            "Answers %s builder precondition: fixture output is non-empty" %
+            reading["state"])
+        assert reading["actual"], (
+            "Answers %s wrapper precondition: mounted output is non-empty "
+            "(a hollow delegate renders nothing)" % reading["state"])
+    mismatches = [
+        "%s differs at %d: builder=%r wrapper=%r" %
+        (r["state"], r["at"],
+         r["expected"][r["at"]:r["at"] + 100],
+         r["actual"][r["at"]:r["at"] + 100])
+        for r in readings if r["expected"] != r["actual"]]
+    assert not mismatches, (
+        "Answers wrapper serialization differs from live buildAnswers after "
         "the same DOM parser/serializer: " + " | ".join(mismatches))
 
 

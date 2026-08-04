@@ -100,3 +100,11 @@ export const Reviews = ({ data }) => React.createElement(HOST, {
 
 Reviews.displayName = 'Reviews';
 Reviews.dwBuilder = 'buildReviews';
+
+export const Answers = ({ data }) => React.createElement(HOST, {
+  'data-dw-delegate': 'buildAnswers',
+  dangerouslySetInnerHTML: { __html: buildAnswers(data) },
+});
+
+Answers.displayName = 'Answers';
+Answers.dwBuilder = 'buildAnswers';
