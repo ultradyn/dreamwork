@@ -7396,3 +7396,52 @@ Three things to carry:
 The through-line with the day's other findings is unchanged, and this is its cleanest specimen: a true
 statement — *the guard reported 31 PASS* — read as a stronger claim than it supports, because the
 condition that made it weak was attached one layer down and did not survive being retold.
+
+## A conclusion about a condition, stated as a conclusion about the system (2026-08-04, #1243)
+
+I got the same measurement wrong twice in one hour, in opposite directions, and the second error was
+committed while I was writing up the first.
+
+The setup: `just guards` refuses above a one-minute load average of 32. The box read 55 to 63 all
+morning. I concluded my fleet was the load, filed a task saying browser guards need drained windows,
+and then rationed dispatches against that belief — holding slots empty for a react window, down to one
+lane against a delegation target of six.
+
+**First error.** I never measured what the load consisted of. When I finally did, the numbers said the
+fleet was not it: four lanes 63.5, three 57.8, two 56.7 — about one point per lane. Thread-level
+runnable-plus-uninterruptible was 54 while the *process*-level count was 11, which is the whole
+discrepancy: load average counts tasks, and I was sampling with `ps -eo state`, which counts
+processes. Of those 54 threads, 36 were ripgrep in uninterruptible sleep, belonging to a different
+agent in a different repository, one of them six hours old and all of them niced.
+
+**Second error, in the write-up of the first.** I wrote "THE DRAIN ACCOMPLISHES NOTHING." That was
+true of the regime and false of the machine. When the foreign processes were killed, the load decayed
+exactly as the gate assumes — 61.34 to 33.13 in a hundred seconds with a full fleet of six still
+working — and shedding lanes became a working remedy again. Six lanes now measure about 35, so the
+threshold is two lanes away rather than unreachable.
+
+Both errors have one shape, and it is the shape this whole day kept producing: **a true statement about
+the conditions in front of me, promoted to a claim about how the system behaves.** "My lanes are not
+the load" was true and stayed true. "Therefore draining does not work" was a different sentence, and
+its truth depended on a condition — foreign processes I did not control — that was gone twenty minutes
+later. The first framing survives the condition changing; the second one dies with it, and takes the
+plan built on it along.
+
+Three things to carry:
+
+- **Measure the composition, not just the magnitude.** A number over a threshold does not say what is
+  over it. `ps -eLo state` against `ps -eo state`, D versus R, and whose process tree — those turn "the
+  box is loaded" into "36 ripgrep threads in another repo are blocked on I/O", which is the difference
+  between a plan and a guess. I rationed a morning's dispatch on the magnitude alone.
+- **When a remedy is not working, check whether you are the cause before concluding the remedy is
+  broken.** Draining looked useless because I was draining against something draining could not reach.
+  The gate was right the whole time; its implicit advice was just addressed to a cause that was not
+  mine.
+- **Write the condition into the conclusion.** "Draining cannot reach the threshold *while foreign
+  niced I/O waiters dominate the load*" is the same finding with its expiry date attached, and it would
+  not have needed reversing an hour later. A conclusion that does not name what it depends on cannot
+  tell you when it has stopped being true.
+
+The gate's own refusal text says a load-induced failure is the regime, not the code. The same warning
+applies one level up, to the coordinator reading the gauge: a load-induced *conclusion* is the regime,
+not the system.
