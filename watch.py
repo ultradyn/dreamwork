@@ -275,6 +275,9 @@ def parse_args(argv=None):
                    help="dev mode: show an fps counter on the page")
     p.add_argument("--autoreload", action="store_true",
                    help="re-exec on source change (implied by --dev)")
+    p.add_argument("--migrate-question-ids", action="store_true",
+                   help="with every server stopped, add missing question ids "
+                        "and exit")
     args = p.parse_args(argv)
     if args.bind is None:
         args.bind = "127.0.0.1"
@@ -2341,6 +2344,144 @@ def _note_entry(stripped, author):
 
 
 ENTRY_MARK = "- **"
+QUESTION_ID_MARK = re.compile(
+    r"^\s*<!--\s*qid:([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-"
+    r"[89ab][0-9a-f]{3}-[0-9a-f]{12})\s*-->\s*", re.I)
+QUESTION_ID_TOKEN = re.compile(r"<!--\s*qid\b", re.I)
+QUESTION_ID_ANY = re.compile(
+    r"<!--\s*qid:([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-"
+    r"[89ab][0-9a-f]{3}-[0-9a-f]{12})\s*-->", re.I)
+
+
+def _question_id_from_rest(rest):
+    """Return ``(persisted id, visible remainder)`` after a title close."""
+    match = QUESTION_ID_MARK.match(rest)
+    return ((match.group(1).lower(), rest[match.end():])
+            if match else (None, rest))
+
+
+def validate_question_ids(text):
+    """Return the number of legacy entries, refusing ambiguous id syntax.
+
+    A qid-looking comment is reserved everywhere in this file.  It is valid
+    only immediately after an Open/Answered entry's closing title ``**``;
+    malformed, misplaced, or duplicate identity must be repaired by a human,
+    never guessed by a migration that is about to replace the file.
+    """
+    if not text:
+        return 0
+    lines = text.splitlines(keepends=True)
+    allowed = {}
+    entry_closes = []
+    in_questions = False
+    awaiting_close = False
+
+    for index, line in enumerate(lines):
+        if line.startswith("## "):
+            in_questions = line.strip() in ("## Open", "## Answered")
+            awaiting_close = False
+            continue
+        if not in_questions:
+            continue
+        stripped = line.strip()
+        if line.startswith(ENTRY_MARK) and not answer_author(stripped) \
+                and note_author(stripped) is None:
+            segment = line[len(ENTRY_MARK):]
+            close_at = line.find("**", len(ENTRY_MARK))
+            if close_at >= 0:
+                split_at = close_at + 2
+                entry_closes.append((index, split_at))
+                awaiting_close = False
+            else:
+                awaiting_close = True
+            continue
+        if awaiting_close and "**" in line:
+            split_at = line.find("**") + 2
+            entry_closes.append((index, split_at))
+            awaiting_close = False
+
+    qids = {}
+    missing = 0
+    for index, split_at in entry_closes:
+        rest = lines[index][split_at:]
+        match = QUESTION_ID_MARK.match(rest)
+        if not match:
+            missing += 1
+            continue
+        marker_offset = match.group(0).lower().find("<!--")
+        position = split_at + marker_offset
+        qid = match.group(1).lower()
+        allowed[(index, position)] = qid
+        if qid in qids:
+            raise ValueError(
+                "duplicate question id %s on lines %d and %d; repair one "
+                "marker before migrating" % (qid, qids[qid], index + 1))
+        qids[qid] = index + 1
+
+    for index, line in enumerate(lines):
+        for token in QUESTION_ID_TOKEN.finditer(line):
+            position = (index, token.start())
+            if position in allowed:
+                continue
+            if QUESTION_ID_ANY.match(line, token.start()):
+                kind = "misplaced"
+            else:
+                kind = "malformed"
+            raise ValueError(
+                "%s question id marker on line %d; place one complete UUID "
+                "comment immediately after the title's closing **" %
+                (kind, index + 1))
+    return missing
+
+
+def migrate_question_ids(text, mint=None):
+    """Add an opaque persisted id to every Questions entry that lacks one.
+
+    The marker lives after the closing title ``**`` so a title-only edit keeps
+    it.  Existing markers are byte-identical; callers write the returned text
+    atomically.  UUID assignment happens here, never in the renderer.
+    """
+    if not text:
+        return text
+    validate_question_ids(text)
+    mint = mint or (lambda: str(uuid.uuid4()))
+    lines = text.splitlines(keepends=True)
+    in_questions = False
+    awaiting_close = False
+
+    def add_marker(line, search_from=0):
+        close_at = line.find("**", search_from)
+        if close_at < 0:
+            return line
+        split_at = close_at + 2
+        before, after = line[:split_at], line[split_at:]
+        if QUESTION_ID_MARK.match(after):
+            return line
+        return before + " <!-- qid:%s -->" % mint() + after
+
+    for index, line in enumerate(lines):
+        if line.startswith("## "):
+            in_questions = line.strip() in ("## Open", "## Answered")
+            awaiting_close = False
+            continue
+        if not in_questions:
+            continue
+        stripped = line.strip()
+        if line.startswith(ENTRY_MARK) and not answer_author(stripped) \
+                and note_author(stripped) is None:
+            segment = line[len(ENTRY_MARK):]
+            if "**" in segment:
+                lines[index] = add_marker(line, len(ENTRY_MARK))
+                awaiting_close = False
+            else:
+                awaiting_close = True
+            continue
+        if awaiting_close and "**" in line:
+            lines[index] = add_marker(line)
+            awaiting_close = False
+    migrated = "".join(lines)
+    validate_question_ids(migrated)
+    return migrated
 
 
 def _entry_title_parts(segment):
@@ -2427,7 +2568,9 @@ def _parse_entries(text, section, lift_answer):
         # invariant 1: this test comes FIRST and is unconditional
         if line.startswith(ENTRY_MARK) and not is_answer and author is None:
             seg, closed, rest = _entry_title_parts(line[len(ENTRY_MARK):])
-            cur = {"title": _join_title([seg]), "body": "", "follows": []}
+            qid, rest = _question_id_from_rest(rest) if closed else (None, rest)
+            cur = {"title": _join_title([seg]), "qid": qid,
+                   "body": "", "follows": []}
             if lift_answer:
                 cur.update(answer=None, answer_when=None, answer_by=None,
                            answer_at=None, answers=[])
@@ -2445,6 +2588,7 @@ def _parse_entries(text, section, lift_answer):
             cur["title"] = _join_title(title_parts)
             if closed:
                 title_parts = None
+                cur["qid"], rest = _question_id_from_rest(rest)
                 if rest.strip():
                     cur["body"] = rest.strip() + "\n"
             continue
@@ -2714,7 +2858,7 @@ def rewrite_append_only(path, mutate, *, seed_missing=False):
     return ("ok", new_text)
 
 
-def append_human_question(text, question, stamp):
+def append_human_question(text, question, stamp, qid=None):
     """Append a human question without letting pasted Markdown forge records.
 
     The compact title is a locator; the complete original words live in the
@@ -2732,13 +2876,44 @@ def append_human_question(text, question, stamp):
     if not text:
         text = "# Questions for the dreamer\n\n## Open\n\n## Answered\n"
     body = "\n".join("  " + line if line else "" for line in raw.splitlines())
-    entry = f"- **{stamp} — {title}**\n{body}\n"
+    qid = qid or str(uuid.uuid4())
+    entry = f"- **{stamp} — {title}** <!-- qid:{qid} -->\n{body}\n"
     marker = "## Answered"
     at = text.find(marker)
     if at < 0:
         return text
     prefix = text[:at].rstrip() + "\n\n" + entry + "\n"
     return prefix + text[at:].lstrip()
+
+
+def ensure_question_ids(target):
+    """Explicitly persist UUIDs while every questions.md writer is quiescent."""
+    path = os.path.join(os.path.abspath(target), ".dreamwork", "questions.md")
+    old = read_text_full(path)
+    if old is None:
+        return 0
+    new = migrate_question_ids(old)
+    if new == old:
+        return 0
+    atomic_write_text(path, new)
+    verified = read_text_full(path)
+    if verified != new:
+        raise OSError("question id migration did not verify after atomic write")
+    return sum(1 for before, after in zip(old.splitlines(), new.splitlines())
+               if before != after)
+
+
+def validate_question_file(target):
+    """Read-only serve/write guard for malformed question identity."""
+    path = os.path.join(os.path.abspath(target), ".dreamwork", "questions.md")
+    text = read_text_full(path)
+    return validate_question_ids(text) if text is not None else 0
+
+
+def validated_question_mutation(text, mutate):
+    """Refuse ambiguous identity before an existing user-requested write."""
+    validate_question_ids(text)
+    return mutate(text)
 
 
 # ── #504 composer `chat` — the chats-v1 transcript (main-dreamer first slice
@@ -5949,20 +6124,25 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 self._reject("schema_invalid"); return
             qpath = os.path.join(target, ".dreamwork", "questions.md")
             stamp = time.strftime("%Y-%m-%d %H:%M")
-            with ANSWER_LOCK:
-                # #632: the read is WHOLE and the write is loss-checked, both
-                # inside rewrite_append_only. This used to read through the
-                # bounded `read_text` and write the short result back over the
-                # full file, which is what deleted twelve answered entries.
-                # Atomic, like /ask thirty lines up (#370). Opening this path in
-                # plain write mode empties the file before it writes, so a
-                # failure between those two moments loses every question he ever
-                # asked and every answer he ever gave. (Phrased without the
-                # construct itself: the check for it greps the source, and an
-                # explanation quoting what it forbids is a violation of it.)
-                status, value = rewrite_append_only(
-                    qpath,
-                    lambda text: append_answer(text, title, answer, stamp))
+            try:
+                with ANSWER_LOCK:
+                    # #632: the read is WHOLE and the write is loss-checked, both
+                    # inside rewrite_append_only. This used to read through the
+                    # bounded `read_text` and write the short result back over the
+                    # full file, which is what deleted twelve answered entries.
+                    # Atomic, like /ask thirty lines up (#370). Opening this path in
+                    # plain write mode empties the file before it writes, so a
+                    # failure between those two moments loses every question he ever
+                    # asked and every answer he ever gave. (Phrased without the
+                    # construct itself: the check for it greps the source, and an
+                    # explanation quoting what it forbids is a violation of it.)
+                    status, value = rewrite_append_only(
+                        qpath,
+                        lambda text: validated_question_mutation(
+                            text, lambda clean: append_answer(
+                                clean, title, answer, stamp)))
+            except ValueError as exc:
+                self._reject("domain_invalid", detail=str(exc)); return
             if status == "missing":
                 self.send_error(404); return
             if status == "unmatched":
@@ -5991,11 +6171,15 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 self._reject("schema_invalid"); return
             qpath = os.path.join(target, ".dreamwork", "questions.md")
             stamp = time.strftime("%Y-%m-%d %H:%M")
-            with ANSWER_LOCK:
-                status, value = rewrite_append_only(   # #370 + #632, as above
-                    qpath,
-                    lambda text: append_comment(text, title, note, stamp,
-                                                section))
+            try:
+                with ANSWER_LOCK:
+                    status, value = rewrite_append_only(  # #370 + #632, as above
+                        qpath,
+                        lambda text: validated_question_mutation(
+                            text, lambda clean: append_comment(
+                                clean, title, note, stamp, section)))
+            except ValueError as exc:
+                self._reject("domain_invalid", detail=str(exc)); return
             if status == "missing":
                 self.send_error(404); return
             if status == "unmatched":
@@ -6866,11 +7050,25 @@ def _watch_source_and_restart(interval=1.0):
 
 def main(argv=None):
     args = parse_args(argv)
+    if args.migrate_question_ids:
+        try:
+            migrated = ensure_question_ids(args.target)
+        except ValueError as exc:
+            raise SystemExit(
+                f"watch.py: questions.md identity invalid: {exc}") from exc
+        print("question ids: migrated %d entr%s; existing text preserved" %
+              (migrated, "y" if migrated == 1 else "ies"))
+        return
     port = args.port or persistent_port(args.target)
     try:
         net = network_options(args.bind, args.allow_host, args.url_host, port)
     except ValueError as exc:
         raise SystemExit(f"watch.py: {exc}") from exc
+    try:
+        validate_question_file(args.target)
+    except ValueError as exc:
+        raise SystemExit(
+            f"watch.py: questions.md identity invalid: {exc}") from exc
     # Build the handler OUTSIDE the bind's except. It used to sit inside the
     # try, so any OSError it raised was reported as a port conflict — and
     # since #397 the handler reaches the client assets, which makes OSError

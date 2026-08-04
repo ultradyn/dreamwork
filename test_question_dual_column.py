@@ -240,10 +240,10 @@ class QuestionDualColumnSource(unittest.TestCase):
   await page.evaluate(() => {
     const save = dwDraft.save.bind(dwDraft);
     window.__fallbackSaveProbe = { attempts: 0 };
-    dwDraft.save = (title, value) => {
+    dwDraft.save = (qid, title, value) => {
       window.__fallbackSaveProbe.attempts += 1;
       if (window.__fallbackSaveProbe.attempts === 1) return false;
-      return save(title, value);
+      return save(qid, title, value);
     };
   });
   await page.locator('#qfocus .qa[data-qkey="o0"] textarea').fill(droppedDraft);
@@ -283,8 +283,10 @@ class QuestionDualColumnSource(unittest.TestCase):
       vanished.saveAttempts + '; restored-cards=0; absent target .qa[data-qid="' +
       encodeURIComponent(states.title) + '"]');
 
-  // The recovery key is title-derived. Prove a retitle does not find the old
-  // draft, then require the notice to state that exact limitation.
+  // #1183 rekeyed drafts by persisted question id. These fixture questions
+  // carry no qid (id falls back to title), so a retitle still separates the
+  // drafts — prove that, then require the notice to state the id-based
+  // recovery promise that replaced the old title-key wording.
   const retitledTitle = states.title + ' retitled';
   const retitledData = structuredClone(states.open);
   retitledData.questions_open[0].title = retitledTitle;
@@ -300,8 +302,8 @@ class QuestionDualColumnSource(unittest.TestCase):
   }), [states.title, retitledTitle]);
   if (retitled.oldStored !== droppedDraft || retitled.newStored !== '' ||
       retitled.restoredValue !== '' ||
-      !vanished.notice.includes('if this title returns'))
-    throw new Error('changed-title recovery promise disagreed with title key: ' +
+      !vanished.notice.includes('attached to this question id'))
+    throw new Error('changed-title recovery promise disagreed with id key: ' +
       'oldStored=' + JSON.stringify(retitled.oldStored) + ', newStored=' +
       JSON.stringify(retitled.newStored) + ', restoredValue=' +
       JSON.stringify(retitled.restoredValue));

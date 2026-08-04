@@ -65,7 +65,7 @@ leave the file byte-identical and no `.questions.md.*.tmp` behind.
 ## Open
 
 - **2026-07-25 14:32 — a question, whose bold title may hard-wrap across
-  source lines and closes its `**` wherever that falls.** The body is
+  source lines and closes its `**` wherever that falls.** <!-- qid:550e8400-e29b-41d4-a716-446655440000 --> The body is
   indented prose. Backticked paths like `.dreamwork/review/x.html`
   become links.
   - **Note (human, via watch, 2026-07-25 09:00):** a threaded note.
@@ -82,9 +82,35 @@ leave the file byte-identical and no `.questions.md.*.tmp` behind.
 
 ## Answered
 
-- **A folded question.** → resolved (2026-07-25): the resolution head
+- **A folded question.** <!-- qid:6ba7b810-9dad-41d1-80fb-2b150b1a1b75 -->
+  → resolved (2026-07-25): the resolution head
   comes first in the body, and `answered_at()` reads only that.
 ```
+
+The `qid` comment is an opaque UUID assigned by `watch.py` when a question is
+created. With every dashboard server stopped, migrate legacy Open and Answered
+entries explicitly with `python3 watch.py --target DIR --migrate-question-ids`;
+ordinary server startup validates the markers but never rewrites this file.
+The marker sits outside the bold title so a retitle preserves identity; the
+parser exposes it as `qid` and excludes the comment from visible body text.
+Malformed, misplaced, and globally duplicated markers refuse migration rather
+than being repaired by guesswork.
+
+Identity-write timing was selected with IGC in the context of manual/raw
+writers that share no enforceable lock:
+
+| Idea | All | G1 | G2 | G3 | G4 |
+|---|:---:|:---:|:---:|:---:|:---:|
+| explicit migration under operator quiescence | ✔ | ✔ | ✔ | ✔ | ✔ |
+| migrate inside `/answer` and `/comment` writes | ✘ | ✘ | ✘ | ✔ | ✔ |
+| assign missing ids only in serving memory | ✘ | ✔ | ✔ | ✘ | ✘ |
+
+G1: a format-compliant question created today has an id at creation, with no
+later migration reminder · G2: no automatic path writes without the exclusion
+other writers rely on · G3: identity survives retitles and restarts · G4:
+legacy entries can be converted without guessing. Locked writes are too late
+for a draft made before its first answer and their process lock excludes raw
+writers; memory-only ids do not survive restart and cannot durably migrate.
 
 **The resolution head goes in the BODY, never inside the title** — and the
 title is allowed to wrap, which is what makes this a trap rather than a
@@ -2719,8 +2745,9 @@ review_decision(
 
 The contract points, each of which has already been gotten wrong once:
 
-- **`question_title` is a TITLE, the same identity `data-qid` carries in
-  the rendered page.** It is not an id and the store does not follow title
+- **`question_title` is a TITLE, carried as `data-qtitle` in the rendered
+  page; `data-qid` prefers the persisted question UUID.** The decision field
+  is not an id and the store does not follow title
   edits: rename a question after a decision is recorded and the row dangles
   (see the lint check below).
 - **Unlinked ≠ pending.** An artifact with NO row is "unlinked" — a state,

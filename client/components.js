@@ -1086,9 +1086,9 @@ const qUpdatedHtml = q => {
    REAL LINK, the #252 argument three ways: the href makes it deep-linkable
    and copyable, keyboard operation is native, and the click rides the
    router's existing dissolve because isInternal already claims /question —
-   a button would re-implement all three. The key is the title identity the
-   card itself carries as data-qid, so the link and the card cannot
-   disagree about which question they name. It is headline CHROME, so it is
+   a button would re-implement all three. The link still names the title route;
+   the card prefers the persisted qid (with a legacy title fallback), and both
+   values come from this same question record. It is headline CHROME, so it is
    a node with a class, and that class is listed in dockHeadline (#474's
    rule). Suppressed when the card's explicit surface is focus — the page IS
    the focus — so markup never guesses its surface from router-global state. */
@@ -1185,22 +1185,23 @@ const qaInner = (q, key, surface='list') => {
    because a title may contain quotes and this is an attribute. */
 const qaCard = (q, key, surface='list') =>
   `<div class="qa ${qaState(q, key)}" data-qkey="${key}"` +
-  ` data-qid="${encodeURIComponent(q.title)}" data-qsurface="${surface}">` +
+  ` data-qid="${encodeURIComponent(q.qid || q.title)}"` +
+  ` data-qtitle="${encodeURIComponent(q.title)}" data-qsurface="${surface}">` +
   `${qaInner(q, key, surface)}</div>`;
 /* Resolve the logical question a LIVE CARD names, never merely the position it
    occupied when rendered (#266). A review route does not rebuild its dock on
    the data tick, so its `o<n>` can become stale while questions_open re-sorts.
-   `data-qid` is the title identity the card already uses to survive regrouping;
-   writes resolve that identity against fresh data. The positional fallback is
-   only for callers with no live card, and fails closed when neither matches. */
+   `data-qid` prefers persisted identity (legacy entries fall back to title),
+   so writes resolve that identity against fresh data. The positional fallback
+   is only for callers with no live card, and fails closed when neither matches. */
 const qaEntry = (key, card) => {
   if (!data || !key) return null;
   const list = key[0] === 'a' ? data.answered_entries : data.questions_open;
   const qid = card && card.dataset.qid;
   if (qid) {
-    let title = null;
-    try { title = decodeURIComponent(qid); } catch (e) { return null; }
-    return (list || []).find(entry => entry.title === title) || null;
+    let id = null;
+    try { id = decodeURIComponent(qid); } catch (e) { return null; }
+    return (list || []).find(entry => (entry.qid || entry.title) === id) || null;
   }
   return (list || [])[+key.slice(1)] || null;
 };
