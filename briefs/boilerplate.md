@@ -188,6 +188,32 @@ observed command, you cannot claim the paths were unrelated; re-arm instead.
   shortening `RED-PROOF INJECTION: presquash ref may be collected` to
   `presquash ref may be collected`.
 
+  **Your `--failure` string must ALSO not be a substring of the COMMAND you run** (`#1267`, measured
+  2026-08-04). `observe` and `restore` scan the captured output, and that output includes the echoed
+  command line. So a pytest NODE ID — or any path or test name appearing in the invocation — is
+  present in BOTH the injected run and the restored control, and `restore` finds it in the echo of a
+  control that was genuinely green. The result is a false `NOT_CAUGHT` reported against a red-proof
+  that actually succeeded. Two lanes hit this in one day; one recovered by declaring `KeyError`, whose
+  first instinct `snapshot` would have matched `begin`'s own "snapshotted" line. **Pick a string that
+  appears only INSIDE the FAILED block** — an assertion message you wrote is usually the right choice.
+  Note this pulls against the abbreviation rule above: short enough to survive pytest's rendering,
+  distinctive enough to be absent from the command. Read the captured output and confirm both.
+
+  **The expectation source must be a DIFFERENT tracked path from the file you inject into** (`#1264`).
+  `begin` refuses when they are the same canonical path, and a lane that owns exactly one file is
+  simply stuck — say so rather than forcing it. Which is which: **the file you CHANGE is the injection
+  target; the tracked file that ENCODES the expectation is the source.** For a test-and-fix round that
+  means injecting into the production file and pinning the test file as the source — except when the
+  behaviour under proof lives in the test's own harness, in which case the test file is the injection
+  target and some other tracked file is the source. Decide from where the change actually is, and if
+  the pairing a brief hands you looks wrong for what you built, SAY SO — this has been mislabelled in
+  a dispatched brief before.
+
+  **`check` prints the BASE its history scan runs since, not your branch tip** (`#1250`). Lanes have
+  copied that base and reported it as the tip, which makes a review compare the wrong commit and can
+  make a stale proof look current. **Label BASE and TIP separately and get each from its own source** —
+  the tip from `git rev-parse HEAD`, not from the check output.
+
   **Register against a TRACKED path that exists in every checkout.** The gate evaluates the registry
   from the MAIN CHECKOUT, so an injection registered against an ephemeral fixture or a lane-relative
   path FAULTS there — `cannot evaluate its injection; refusing rather than guessing` — even though
