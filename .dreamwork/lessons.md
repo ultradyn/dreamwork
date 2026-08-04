@@ -7168,3 +7168,123 @@ reason this verdict survived is that I went looking for a corpse and found a
 letter. Every brief since names the absolute path *and* names the worktree copy
 as the wrong one, which is still prose — the mechanism would be for the lane
 tooling to reject the relative write.
+
+## A master-versus-branch differential localises the CHANGE, not the DEFECT (2026-08-04, #1183)
+
+I gated `cx-1183r2write` and it refused on a live browser check, at load average 47, on a box with
+swap exhausted. The obvious worry was a load-induced flake, so I ran the same test file against
+master on the same host: **`4 passed in 6.64s`, EXIT=0.** Master passes, the branch fails, and the
+failure message was a behavioural assertion rather than a timeout.
+
+That was the right experiment and it answered the right question — **regression, not flake.** Then I
+carried it one step further and wrote into the round-3 brief that the branch's production code had
+broken a neighbouring draft-preservation path: *"round 2 fixed one path while breaking its
+neighbour."*
+
+The lane found the real cause and pushed back in its dogfood report. Both production paths already
+agreed on identity; both called the same 3-arg `dwDraft.save(qid, title, value)`. The defect was a
+**stale test monkey-patch** wrapping that façade with the pre-`#1183` 2-arg signature, so the third
+argument was dropped, `value` arrived `undefined`, and production's own `if (!value) clearCard()`
+deleted the draft.
+
+**The test file was byte-identical between master and the branch.** Round 2 never touched it. So the
+differential could only establish that the branch *introduced* the failure — never where the fault
+lived. I used a change-localising signal to make a defect-localising claim, and then wrote it into a
+brief as a premise. The lane's sentence is the one to keep: *"A lane that trusted the framing over
+the code would have searched for a production disagreement and not found one."*
+
+Two things to carry:
+
+- **A differential tells you which side changed, not which side is wrong.** When the branch changes a
+  *signature*, everything that adapts to that signature is now suspect — including tests, which are
+  the one population a master-vs-branch comparison of production code cannot see.
+- **A brief's premise is load-bearing in a way a note is not.** Being wrong in the ledger costs a
+  re-read; being wrong in a brief spends a lane's whole round hunting something that does not exist.
+  State the measurement and let the lane derive the location — I had the measurement right and the
+  derivation wrong, and only the derivation reached the lane.
+
+This is the same shape as the day's other four: a true statement read as a stronger claim than it
+supports. It is worth noting that on this occasion the statement was mine and the reader who caught
+it was a `@glm52` lane reading the code instead of the brief.
+
+## A refusal that names its own remedy was wrong about both, and I applied the remedy twice (2026-08-04, #1234)
+
+`launch_lane.py` refused the same brief three times:
+
+    REFUSE phase=brief-generation: 1 violation(s)
+    - the authored core prohibits the whole Markdown-file class while the standing contract
+      requires .dreamwork/inbox.md ...; protect the campaign by identity instead: `Documents
+      you must NOT edit — .dreamwork/docs/**.md, ...`
+
+The message is specific, it cites the contract, and it hands over a ready-made replacement block. I
+pasted that block in. Refused again. I reworded the standing-rules sentence it seemed to be pointing
+at. Refused again.
+
+The brief contained no blanket prohibition at all. `blanket_markdown_prohibition`
+(`dev/brief.py:402`) requires three regexes to co-occur in one "block" — but a block is a whole
+**paragraph**, joined line by line with spaces, so the three may each come from a **different
+sentence**. The actual trigger, from an ordinary Verification section:
+
+    ... make no row-set claim - do not guess. `file-formats.md` documents any
+    record-format change in the same commit.
+
+`_PROHIBITION` matched across the full stop; `_MARKDOWN_CLASS` matched `.md documents`; `_BLANKET`
+matched the `any` belonging to "any record-format change". Two unrelated sentences read as one
+claim. Splitting them into separate paragraphs — changing nothing about the meaning — made the
+refusal disappear.
+
+What cost me the two extra rounds was not the false positive. It was that **the refusal named a
+remedy, and a named remedy reads as a diagnosis.** A check that says "you did X, do Y instead" is
+asserting it knows what you did. Mine only knew that three patterns co-occurred within some
+paragraph; the "instead" was a template, not an inference.
+
+Two things to carry:
+
+- **When a check refuses twice on the same input, stop editing the input and read the predicate.**
+  The second refusal is the signal that your model of the check is wrong, and every further edit is
+  a guess sampled from that wrong model. Loading the function and running it over the file located
+  the exact span in one attempt.
+- **A remedy in a refusal message should be weaker than the detection.** If the detector cannot tell
+  which sentence offended, the message should say what it matched and where, not what to write
+  instead. Filed as `#1234`; the fix direction is to run the co-occurrence test per sentence, and
+  its Direction 2 is the interesting half — a narrowing that stops the check ever firing is worse
+  than the false positive.
+
+Third instance in two days of a brief-generation check refusing a correct brief (`#1212`, `#1213`,
+now `#1234`), and the same session shape once more: a true signal read as a stronger claim than it
+supports — this time by me, about a tool's own advice.
+
+## Taking "theirs" on a generated file is a deferral, not a resolution (2026-08-04, #1183)
+
+Rebasing `glm-1183r3fallback` onto master, 11 commits, one conflict: `client/dist/manifest.json`, a
+generated hash manifest. The obvious move is to take one side and move on — it is a build artifact,
+it will be regenerated, the content is machine-written.
+
+I took the branch side and then, only because the reconciliation felt too cheap, counted the entries
+before committing:
+
+    branch manifest: 24 ds-src entries
+    master manifest: 27 ds-src entries
+
+Three `dev/build/ds-src/` inputs had landed on master while this branch was out. Taking "theirs"
+would have **silently reverted three design-system inputs at the gate** — as a green landing, in a
+file no reviewer reads, attributed to a rebase nobody would look at again. `just build-client`
+restored all 27 while keeping the branch's own client source hashes, and a second build produced no
+further change.
+
+The reasoning error is precise. "It is generated, so either side is fine" is true of the *bytes* and
+false of the *decision*: a generated file's content is a **function of its inputs**, and neither side
+of the conflict is that function evaluated on the merged input set. Choosing a side picks one
+outdated evaluation. Only re-running the generator resolves the merge.
+
+Two things to carry:
+
+- **For a generated file, the resolution is the regeneration.** Taking a side is legitimate only as
+  a way to get past the replay; it is not the resolution, and the commit is not correct until the
+  generator has run on the merged tree. Restrict any automatic side-taking to generated paths and
+  stop on anything else — a loop that takes "theirs" for hand-written code is a silent revert with
+  a clean exit code.
+- **The count is what turns a hunch into a finding.** "Did I lose anything?" is unanswerable by
+  reading a hash manifest. `grep -c` on the two sides answered it in one command, and 24-versus-27
+  is the whole argument. When a merge resolution feels too cheap, find the number that would be
+  different if it were wrong.
