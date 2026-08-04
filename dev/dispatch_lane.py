@@ -915,6 +915,136 @@ def _review_lane_live(
     return False, examined, candidates
 
 
+# --- #1207: consume runner_exit=null so a dead review is not "still thinking" -
+#
+# launch_review records "runner_exit": null and "spawned: ... runner exit not
+# observed", and nothing ever changes them — the detached runner's exit is
+# genuinely never observed (#1093).  That null is honest and must NOT be
+# fabricated (#1177).  The defect is that NOTHING CONSUMES it: a review whose
+# runner died producing nothing reads identically to one still thinking (both
+# show the null state, a clean worktree, and "(no review decisions)").
+#
+# The consumer re-probes the SAME cwd-containment channel launch_review trusted
+# at spawn.  A live runner still holding the worktree is "in-progress" (still
+# thinking — benign); a runner that is GONE while runner_exit is still null is
+# "runner-absent" — the dispatch recorded no outcome and the review is no longer
+# progressing.  That is the readable alarm the durable record could not express.
+# It does NOT fire on a legitimately slow review (the runner is present) and it
+# does NOT require the coordinator to remember a step (it is a read-only probe).
+# See #1207's IGC grid: a pure timer false-positives under load, a launcher wait
+# serialises dispatch, and a reviewer-written terminal marker still needs
+# liveness to tell slow from dead — liveness is the necessary core either way.
+
+_REVIEW_CATEGORY_IN_PROGRESS = "in-progress"
+_REVIEW_CATEGORY_RUNNER_ABSENT = "runner-absent"
+_REVIEW_CATEGORY_UNKNOWN = "unknown"
+_REVIEW_CATEGORY_TERMINAL = "terminal"
+
+
+def classify_review_dispatch(
+        record: dict, coordinator_root: Path, *,
+        process_entries: list[str] | None = None,
+        read_cwd=None, read_cmdline=None, skip_pids: set[int] | None = None,
+) -> tuple[str, str]:
+    """Make a review dispatch's ``runner_exit: null`` readable (#1207).
+
+    Returns ``(category, detail)``:
+
+    * ``in-progress`` — a live runner still holds the review worktree; the
+      review is still thinking.  Benign: this MUST NOT fire for a slow review.
+    * ``runner-absent`` — ``runner_exit`` is null AND no live runner holds the
+      worktree.  The dispatch recorded no outcome and the runner that was
+      present at spawn is gone; this is the alarm a dead review now expresses.
+    * ``unknown`` — the probe examined 0 processes (#868): no verdict on
+      whether a runner is present, never an all-clear.
+    * ``terminal`` — ``runner_exit`` was observed (non-null); not the defect.
+
+    Read-only: it never writes ``runner_exit`` or any state.  The launcher's
+    null is honest (#1177); this consumes it rather than corrupting it.
+    Resolves ``/proc/<pid>/cwd`` (never argv) via ``_review_lane_live``, so the
+    #729 self-match trap does not apply.
+    """
+    runner_exit = record.get("runner_exit")
+    if runner_exit is not None:
+        return (_REVIEW_CATEGORY_TERMINAL,
+                f"runner_exit observed ({runner_exit}); state: {record.get('state', '?')}")
+    review_lane = record.get("review_lane")
+    if not review_lane:
+        return (_REVIEW_CATEGORY_UNKNOWN,
+                "record carries no review_lane; cannot probe liveness")
+    try:
+        live, examined, _ = _review_lane_live(
+            review_lane, coordinator_root,
+            process_entries=process_entries, read_cwd=read_cwd,
+            read_cmdline=read_cmdline, skip_pids=skip_pids,
+        )
+    except (DispatchFault, OSError) as exc:
+        return (_REVIEW_CATEGORY_UNKNOWN,
+                f"liveness probe did not run: {exc}; no verdict (#868)")
+    if examined == 0:
+        return (_REVIEW_CATEGORY_UNKNOWN,
+                "liveness probe examined 0 processes; no verdict on runner "
+                "presence (#868) — not an all-clear")
+    if live:
+        return (_REVIEW_CATEGORY_IN_PROGRESS,
+                f"reviewer runner present in {review_lane} worktree; review "
+                "still in progress")
+    return (_REVIEW_CATEGORY_RUNNER_ABSENT,
+            f"runner gone from {review_lane} worktree; runner_exit never "
+            "observed; the dispatch recorded no outcome — the review is no "
+            "longer progressing (a dead review, or one whose verdict landed "
+            "elsewhere; check inbox/ledger reviews)")
+
+
+def review_status() -> int:
+    """Print the liveness classification of every launched review (#1207).
+
+    Scans ``review-dispatches/*.launch.json`` (the launch witness, not the
+    persist-only ``.json`` receipt) and classifies each via
+    ``classify_review_dispatch``.  A review whose runner is gone while
+    ``runner_exit`` is still null is the alarm this loop could not previously
+    express; it is printed so a dead review no longer reads as benign.
+
+    Only the ``.launch.json`` files carry ``runner_exit``; a review persisted
+    with ``--review-prompt`` but never launched has no ``.launch.json`` and is
+    not in scope here.
+    """
+    coordinator_root = _coordinator_root()
+    dispatches_dir = _briefs_dir().parent.parent / "review-dispatches"
+    launches = sorted(dispatches_dir.glob("*.launch.json")) if dispatches_dir.is_dir() else []
+    if not launches:
+        print("review status: no launched review dispatches found")
+        return 0
+    counts: dict[str, int] = {}
+    lines: list[str] = []
+    for path in launches:
+        record = None
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            category, detail = _REVIEW_CATEGORY_UNKNOWN, f"unreadable launch record: {exc}"
+        else:
+            if not isinstance(parsed, dict):
+                category, detail = (
+                    _REVIEW_CATEGORY_UNKNOWN,
+                    f"launch record is valid JSON but not an object "
+                    f"({type(parsed).__name__}); cannot classify",
+                )
+            else:
+                record = parsed
+                category, detail = classify_review_dispatch(record, coordinator_root)
+        counts[category] = counts.get(category, 0) + 1
+        attempt_id = record.get("attempt_id", path.stem) if isinstance(record, dict) else path.stem
+        branch = record.get("branch", "?") if isinstance(record, dict) else "?"
+        round_num = record.get("round", "?") if isinstance(record, dict) else "?"
+        lines.append(f"{attempt_id}  {category}  {branch} r{round_num}  — {detail}")
+    summary = ", ".join(f"{counts[k]} {k}" for k in sorted(counts))
+    print(f"review status: classified {len(launches)} dispatch(es): {summary}")
+    for line in lines:
+        print(line)
+    return 0
+
+
 # --- Review dispatch persistence (#1112) -----------------------------------
 #
 # Lane dispatches are bound at three points: brief.py emits frame.md,
@@ -1080,6 +1210,11 @@ def _parser() -> argparse.ArgumentParser:
         "--launch-review", type=Path,
         help="create an attached review branch/worktree, record the attempt, "
              "and launch a plan-mode reviewer (#1163)")
+    mode.add_argument(
+        "--review-status", action="store_true",
+        help="classify every launched review dispatch by re-probing runner "
+             "liveness, so a runner that died producing nothing is reported "
+             "runner-absent instead of reading as benign (#1207)")
     parser.add_argument(
         "--prepare",
         action="store_true",
@@ -1111,6 +1246,13 @@ def main(argv: list[str] | None = None) -> int:
         return launch_review(
             args.launch_review, args.review_branch, args.review_round, args.runner
         )
+
+    if args.review_status:
+        if args.runner:
+            print("review status refused: runner is invalid in review-status mode",
+                  file=sys.stderr)
+            return 2
+        return review_status()
 
     if args.review_prompt:
         if args.runner:
