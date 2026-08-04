@@ -1717,6 +1717,103 @@ def test_classify_review_is_unknown_without_review_lane():
     assert "no review_lane" in detail
 
 
+# --- #1214 round 2: a present-but-empty capture must NOT classify as delivered --
+
+def _classify_with_exit_record(
+        tmp_path: Path, *, log_bytes: bytes | None = b"",
+        exit_runner_log: str | None = None,
+        exit_runner_exit: int = 0, **liveness) -> tuple[str, str]:
+    """Build a launch record + sibling ``.runner.log``/``.runner.exit.json`` in
+    ``tmp_path`` and classify it.
+
+    ``log_bytes`` is written to ``.runner.log`` (``None`` deletes it so the
+    missing-file case is testable); ``exit_runner_log`` defaults to the launch
+    record's ``runner_log`` path (pass a different string to test a path
+    mismatch).  The liveness kwargs are forwarded so the fall-through path can
+    be driven deterministically.
+    """
+    dl = _import_dispatch_lane()
+    runner_log = tmp_path / "cx-review-review-r1-deadbeef.runner.log"
+    exit_path = runner_log.with_name(
+        runner_log.name[:-len(".runner.log")] + ".runner.exit.json")
+    if log_bytes is not None:
+        runner_log.write_bytes(log_bytes)
+    log_in_exit = exit_runner_log if exit_runner_log is not None else str(runner_log)
+    exit_path.write_text(json.dumps(
+        {"runner_exit": exit_runner_exit, "runner_log": log_in_exit}
+    ) + "\n", encoding="utf-8")
+    record = {
+        "runner_exit": None,
+        "runner_log": str(runner_log),
+        "review_lane": "cx-review-review-r1",
+        "branch": "cx-review", "round": 1,
+        "attempt_id": "cx-review-review-r1-deadbeef",
+        "state": "spawned: reviewer present in review worktree (cwd-containment); "
+                 "runner exit observed on completion via .runner.exit.json",
+    }
+    return dl.classify_review_dispatch(record, Path("/tmp"), **liveness)
+
+
+# A runner whose cwd is NOT the review worktree — the fall-through liveness
+# probe sees it gone, so a capture that falls through reports runner-absent.
+_FALLTHROUGH_LIVENESS = dict(
+    process_entries=["999999"],
+    read_cwd=lambda pid: "/somewhere/else",
+    read_cmdline=lambda pid: b"/x/ccc\x00",
+)
+
+
+def test_empty_runner_log_with_exit_record_does_not_classify_as_terminal(tmp_path):
+    """#1214 round 2 P1: an EMPTY .runner.log beside a well-formed
+    .runner.exit.json must NOT classify as terminal. A reviewer that died before
+    producing output leaves an exit integer but no recoverable verdict; the
+    honest classification is runner-absent (fall through to liveness)."""
+    category, detail = _classify_with_exit_record(
+        tmp_path, log_bytes=b"", **_FALLTHROUGH_LIVENESS)
+    assert category == "runner-absent", (
+        f"an empty capture classified as {category!r}; detail={detail!r}")
+    assert "verdict recoverable" not in detail, detail
+
+
+def test_whitespace_only_runner_log_does_not_classify_as_terminal(tmp_path):
+    """A log whose only content is whitespace is as empty as zero bytes for the
+    purpose of recovering a verdict — the single-space trap (#1214 round 2)."""
+    category, detail = _classify_with_exit_record(
+        tmp_path, log_bytes=b"   \n\t\n", **_FALLTHROUGH_LIVENESS)
+    assert category == "runner-absent", detail
+
+
+def test_missing_runner_log_with_exit_record_does_not_classify_as_terminal(tmp_path):
+    """A .runner.exit.json whose sibling .runner.log does not exist is an
+    unobserved outcome — the log may have been cleaned up, or the exit record
+    was written ahead of the capture."""
+    category, detail = _classify_with_exit_record(
+        tmp_path, log_bytes=None, **_FALLTHROUGH_LIVENESS)
+    assert category == "runner-absent", detail
+
+
+def test_path_mismatched_exit_record_does_not_classify_as_terminal(tmp_path):
+    """An exit record whose runner_log names a DIFFERENT path than the launch
+    recorded is a lying or stale witness — it could point at a real log from a
+    different run.  Treated as unobserved (#1214 round 2)."""
+    category, detail = _classify_with_exit_record(
+        tmp_path, log_bytes=b"real verdict\n",
+        exit_runner_log="/tmp/different-runner.log",
+        **_FALLTHROUGH_LIVENESS)
+    assert category == "runner-absent", detail
+
+
+def test_nonempty_runner_log_with_exit_record_classifies_as_terminal(tmp_path):
+    """Discriminating positive: a non-empty .runner.log with a well-formed,
+    path-matching .runner.exit.json DOES classify as terminal — proving the
+    empty/mismatched tests above are exercising the content check, not a blanket
+    refusal."""
+    category, detail = _classify_with_exit_record(
+        tmp_path, log_bytes=b"VERDICT: ANOTHER ROUND, one P1\n")
+    assert category == "terminal", detail
+    assert "verdict recoverable" in detail, detail
+
+
 def test_review_status_cli_reports_runner_absent_dispatch(tmp_path):
     """The --review-status verb reads every *.launch.json and classifies it, so
     a dispatch whose runner is gone surfaces as runner-absent instead of the

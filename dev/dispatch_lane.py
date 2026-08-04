@@ -1093,12 +1093,17 @@ _REVIEW_CATEGORY_TERMINAL = "terminal"
 def _read_runner_exit(record: dict) -> dict | None:
     """Read the supervisor's ``.runner.exit.json`` for a review dispatch (#1214).
 
-    Returns the parsed ``{"runner_exit", "runner_log"}`` object when the file
-    exists and parses as a dict carrying an integer ``runner_exit``; otherwise
-    ``None``. A missing or unreadable record is the honest "not observed" case
-    — it must NOT be promoted to a success, so this helper returns None and the
-    caller falls through to the liveness probe (which keeps ``runner-absent``
-    as the unobserved alarm).
+    Returns the parsed ``{"runner_exit", "runner_log"}`` object only when ALL of
+    the following hold; otherwise ``None`` (the honest "outcome unobserved"
+    case, which must NOT be promoted to a success — the caller falls through to
+    the liveness probe, keeping ``runner-absent`` as the alarm):
+
+    * the exit record exists and parses as a dict carrying an integer
+      ``runner_exit``;
+    * the exit record's ``runner_log`` is the SAME path the launch recorded (a
+      divergent path is a lying or stale witness);
+    * that log file EXISTS on disk with non-blank content (#1214 round 2 — an
+      empty, missing, or whitespace-only capture is NOT a delivered verdict).
     """
     runner_log = record.get("runner_log")
     if not isinstance(runner_log, str) or not runner_log:
@@ -1111,10 +1116,24 @@ def _read_runner_exit(record: dict) -> dict | None:
     if (not isinstance(parsed, dict)
             or not isinstance(parsed.get("runner_exit"), int)):
         return None
-    log = parsed.get("runner_log")
-    if not isinstance(log, str) or not log:
-        log = runner_log
-    return {"runner_exit": parsed["runner_exit"], "runner_log": log}
+    # The exit record must name the SAME log the launch recorded — a divergent
+    # path is a lying or stale witness, treated as unobserved (#1214 round 2).
+    exit_runner_log = parsed.get("runner_log")
+    if not isinstance(exit_runner_log, str) or exit_runner_log != runner_log:
+        return None
+    # #1214 round 2: an empty, missing, or whitespace-only runner log is NOT a
+    # delivered verdict. A reviewer that died before producing output leaves an
+    # exit integer but no recoverable verdict; classifying that as terminal
+    # rebuilds the incident this branch exists to fix (a present-but-empty
+    # capture reads as success on a total loss). Require non-blank content and
+    # fall through to the liveness probe when it is absent.
+    try:
+        log_bytes = Path(runner_log).read_bytes()
+    except OSError:
+        return None
+    if not log_bytes.strip():
+        return None
+    return {"runner_exit": parsed["runner_exit"], "runner_log": runner_log}
 
 
 def classify_review_dispatch(
@@ -1148,6 +1167,11 @@ def classify_review_dispatch(
     absent) into a direct pointer.  A missing or unreadable exit record falls
     through to the liveness probe, so an unobserved outcome stays unobserved
     (``runner-absent``) rather than being silently promoted to success.
+
+    #1214 round 2: an exit record that points at a different log, or whose log
+    file is empty/missing/whitespace-only, is also treated as unobserved — the
+    exit integer alone does not prove the verdict landed (#1214 P1).  See
+    ``_read_runner_exit`` for the exact conditions.
     """
     runner_exit = record.get("runner_exit")
     observed = _read_runner_exit(record)
