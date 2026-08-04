@@ -992,15 +992,27 @@ def _citation_title(task: int, ledger: Path) -> str | None:
 def _validate_file_line_citations(core: str, checkout: Path, sha: str) -> None:
     """Refuse repo ``file:line`` citations absent at the generation SHA.
 
-    This checks only authored prose.  Fenced blocks are specimens or captured
-    output, not active citations; treating their historical coordinates as
-    current claims would refuse correct briefs.  Semantic accuracy is outside
-    this check: a line can resolve and still support the wrong conclusion.
+    This checks only authored prose.  Fenced and indented (4-space) code blocks
+    are specimens or captured output, not active citations; treating their
+    historical coordinates as current claims would refuse correct briefs — a
+    brief that quotes a refusal message cannot show the coordinate it warns
+    about (#1213).  Inline code is NOT exempt: a live citation is normally
+    written in backticks, so exempting it would disable the check outright.
+    Semantic accuracy is outside this check: a line can resolve and still
+    support the wrong conclusion.
     """
     citations: list[tuple[int, str, int, int]] = []
     in_fence = False
     fence_char = ""
     fence_len = 0
+    # An indented code block opens only after a blank line (CommonMark: it
+    # cannot interrupt a paragraph) and closes at the first non-blank line
+    # indented fewer than four spaces.  ``blank_before`` starts True so a
+    # leading indented block is recognised; a fence opener clears both states
+    # so the two block styles never overlap (a fence cannot live inside an
+    # indented block — its lines are literal).
+    in_indented = False
+    blank_before = True
     for line_no, line in enumerate(core.splitlines(), 1):
         if in_fence:
             if re.match(
@@ -1013,7 +1025,24 @@ def _validate_file_line_citations(core: str, checkout: Path, sha: str) -> None:
             in_fence = True
             fence_char = opened.group(2)[0]
             fence_len = len(opened.group(2))
+            in_indented = False
+            blank_before = False
             continue
+        leading = len(line) - len(line.lstrip(" "))
+        if in_indented:
+            if not line.strip():
+                continue
+            if leading >= 4:
+                continue
+            in_indented = False
+        elif not line.strip():
+            blank_before = True
+            continue
+        elif blank_before and leading >= 4:
+            in_indented = True
+            blank_before = False
+            continue
+        blank_before = False
         prose = re.sub(r"https?://\S+", " ", line)
         for match in _FILE_LINE_CITATION.finditer(prose):
             first = int(match.group("first"))
