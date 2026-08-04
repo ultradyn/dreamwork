@@ -3438,6 +3438,42 @@ def test_a_derived_test_the_coordinator_did_not_name_is_run_anyway(landing_repo)
     _assert_retained(root, lane)
 
 
+def test_a_lint_gated_doc_reports_lint_provenance_not_name(landing_repo):
+    """#1213 r4 P2: a derived test_lint.py from a LINT_GATED_EXECUTABLE_DOCS
+    member must report the 'lint' provenance, not the 'name' convention.
+    Selection is unchanged — the test is still run — only the reported reason
+    differs, so a future reader debugging a selection is told the right rule.
+
+    The #936 test above is the contrast: ``lint.py`` (a Python file) derives
+    test_lint.py by the name convention and reports ``name=1``.  This test
+    changes ``.dreamwork/docs/doc-map.md`` (a lint-gated doc) and must report
+    ``lint=1`` with ``name=0``."""
+    root, lane = landing_repo
+    # Precondition: doc-map.md is lint-gated and derives test_lint.py
+    assert ".dreamwork/docs/doc-map.md" in land_lane.LINT_GATED_EXECUTABLE_DOCS
+    assert land_lane._derived_test(".dreamwork/docs/doc-map.md") == "test_lint.py"
+    _write(root / "test_lint.py", "def test_lint(): assert True\n")
+    _git(root, "add", "test_lint.py")
+    _write(root / ".dreamwork" / "docs" / "doc-map.md", "# doc map\n")
+    _git(root, "add", ".dreamwork/docs/doc-map.md")
+    _git(root, "commit", "-m", "add doc-map.md and test_lint.py")
+    _git(lane, "rebase", "master")
+    _write(lane / ".dreamwork" / "docs" / "doc-map.md", "# doc map changed\n")
+    _git(lane, "add", ".dreamwork/docs/doc-map.md")
+    _git(lane, "commit", "-m", "change doc-map.md")
+    before = _git(root, "rev-parse", "--verify", "refs/heads/master")
+
+    result = _run(root, "test_lint.py")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    # The derived-tests line must show lint=1 and name=0, not name=1
+    assert "lint=1" in result.stdout, result.stdout
+    assert "[name=0" in result.stdout, result.stdout
+    assert "test_lint.py" in result.stdout
+    # A successful gate advances master and cleans up the lane worktree
+    assert _git(root, "rev-parse", "refs/heads/master") != before
+
+
 def test_zero_derived_tests_says_why_rather_than_reading_as_coverage(doc_only_repo):
     """#948's trap: "derived 0 required tests" is exactly how the defect hides."""
     root, lane = doc_only_repo
