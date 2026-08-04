@@ -1334,9 +1334,8 @@ function routeOf(loc) {
   }
   if (loc.pathname === '/question') {
     const sp = new URLSearchParams(loc.search);
-    // the key is the question's TITLE identity — the same string data-qid
-    // carries — so it survives everything the loop's churn does short of a
-    // retitle (#452)
+    // This route still takes TITLE identity from its focus link; cards carry
+    // that separately as data-qtitle while data-qid prefers persisted UUID.
     return { name: 'question', param: sp.get('qid') };
   }
   // #484 — no param: the listing of built research artifacts; ?p=<name>:
@@ -1374,6 +1373,7 @@ function routeOf(loc) {
    about one gesture spelled two ways, aimed at data instead of at motion. */
 function setData(next) {
   data = next;
+  if (typeof DraftStore !== 'undefined') DraftStore.gc();
   // WHICH PLUGINS RESOLVED IS A PROPERTY OF THE MACHINE, not of watch.py, so
   // the composer's vocabulary can change under a page that is already open
   // (#86). It compares whole and returns immediately on the ticks — nearly
@@ -1609,7 +1609,7 @@ function bindChatReplyDraft() {
      - a live box outranks storage (#118);
      - every storage call is try/catch — degrade to no-persistence, never a
        broken box;
-     - cards key on the question TITLE (data-qid), not a positional index.
+     - cards key on the persisted question UUID (data-qid), never its title.
 
    logicalId = kind + ":" + scopeKey inside data.target. New key shape:
      dw:draft:v1:<target>:<logicalId>
@@ -1617,11 +1617,15 @@ function bindChatReplyDraft() {
    orphaned by the extraction:
      card:<title>     ← dw:adraft:<target>:<title>
      composer:main    ← dw:draft:<target>
-   On save through the new API the old key is removed after the new one is
-   written (dual-read, not dual-write forever). Cross-tab (C1) and 30-day GC
-   leave seams only — not built here. #263 receipt is isDurable's future
-   body; today it prefers writeVerdict.landed when attached, else res.ok. */
+   Question title keys are retained after UUID promotion (#1183): if a mapping
+   is wrong, the old draft remains recoverable. A retained title is bound to
+   its first persisted UUID so reuse cannot disclose it to another question;
+   retained records and tombstones expire after 30 days. Cross-tab (C1) stays
+   deferred. #263 receipt is isDurable's future body; today it prefers
+   writeVerdict.landed when attached, else res.ok. */
 const DraftStore = (() => {
+  const RETAIN_MS = 30 * 24 * 60 * 60 * 1000;
+  let lastGcAt = 0;
   const tgt = () => (typeof data !== 'undefined' && data && data.target) || '';
   const id = (kind, scopeKey) => {
     if (!kind) return '';
@@ -1641,6 +1645,44 @@ const DraftStore = (() => {
     if (logicalId === 'composer:main')
       return 'dw:draft:' + t;
     return '';
+  };
+  const bindingKey = logicalId => {
+    const t = tgt();
+    return t && logicalId ? 'dw:draft:qbind:v1:' + t + ':' + logicalId : '';
+  };
+  const card = (qid, title) => {
+    const logicalId = id('card', qid);
+    const destination = v1Key(logicalId);
+    if (!destination || !title) return logicalId;
+    try {
+      const oldLogicalId = id('card', title);
+      const binding = bindingKey(oldLogicalId);
+      let bound = null;
+      try { bound = JSON.parse(localStorage.getItem(binding) || 'null'); }
+      catch (e) { bound = null; }
+      if (bound && bound.qid && bound.qid !== String(qid)) return logicalId;
+      for (const source of [v1Key(oldLogicalId), legacyKey(oldLogicalId)]) {
+        if (!source || source === destination) continue;
+        const raw = localStorage.getItem(source);
+        if (!raw) continue;
+        let copied = false;
+        if (!localStorage.getItem(destination)) {
+          localStorage.setItem(destination, raw);
+          copied = true;
+        }
+        if (localStorage.getItem(destination) !== raw && copied) continue;
+        const claim = { v: 1, qid: String(qid), at: Date.now() };
+        localStorage.setItem(binding, JSON.stringify(claim));
+        let verified = null;
+        try { verified = JSON.parse(localStorage.getItem(binding) || 'null'); }
+        catch (e) { verified = null; }
+        if (verified && verified.qid === claim.qid) return logicalId;
+        // An unverified binding could expose the retained source to the next
+        // same-title question. Undo only the copy; never delete recovery.
+        if (copied) localStorage.removeItem(destination);
+      }
+    } catch (e) { /* storage unavailable; source keys remain untouched */ }
+    return logicalId;
   };
   const parseRec = raw => {
     if (!raw) return null;
@@ -1675,7 +1717,7 @@ const DraftStore = (() => {
       _from: hit.from, _key: hit.key
     };
   }
-  function save(logicalId, text, meta) {
+  function save(logicalId, text, meta, retriedAfterGc) {
     const k1 = v1Key(logicalId); if (!k1) return false;
     try {
       if (text) {
@@ -1705,6 +1747,10 @@ const DraftStore = (() => {
     } catch (e) {
       // Storage is optional, but callers surfacing a vanished draft need to
       // distinguish "preserved" from "copy this now" rather than lie.
+      if (!retriedAfterGc) {
+        gc(Date.now());
+        return save(logicalId, text, meta, true);
+      }
       return false;
     }
   }
@@ -1721,6 +1767,15 @@ const DraftStore = (() => {
       localStorage.removeItem(k1);
       const lo = legacyKey(logicalId);
       if (lo) localStorage.removeItem(lo);
+    } catch (e) {}
+  }
+  function clearCard(logicalId) {
+    const k1 = v1Key(logicalId); if (!k1) return;
+    try {
+      // A tombstone prevents a retained title-keyed recovery copy from being
+      // promoted again after the user empties or durably sends the draft.
+      localStorage.setItem(k1, JSON.stringify({ v: 1, cleared: true,
+                                               at: Date.now() }));
     } catch (e) {}
   }
   /* receipt seam: prefer writeVerdict.landed (rejected 202 is res.ok true but
@@ -1798,32 +1853,84 @@ const DraftStore = (() => {
     el.removeEventListener('input', el.__dwDraftBound.onInput);
     delete el.__dwDraftBound;
   }
-  // seams for later increments — no-op / stubs, not built here
+  // seams for later increments
   function forget(logicalId) { clear(logicalId); }
   function forgetProject() { /* retention increment */ }
-  function gc() { /* 30-day idle GC — deferred with the store backend */ }
+  function gc(now) {
+    const explicit = Number.isFinite(now);
+    now = explicit ? now : Date.now();
+    const t = tgt();
+    try {
+      if (!t || typeof localStorage.length !== 'number' ||
+          typeof localStorage.key !== 'function') return;
+      if (!explicit && now - lastGcAt < 24 * 60 * 60 * 1000) return;
+      lastGcAt = now;
+      const keys = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i); if (key) keys.push(key);
+      }
+      const bindPrefix = 'dw:draft:qbind:v1:' + t + ':';
+      const keptSources = new Set();
+      keys.filter(key => key.indexOf(bindPrefix) === 0).forEach(key => {
+        let rec = null;
+        try { rec = JSON.parse(localStorage.getItem(key) || 'null'); }
+        catch (e) { rec = null; }
+        if (!rec || !rec.qid) { localStorage.removeItem(key); return; }
+        if (!Number.isFinite(rec.at)) {
+          rec.at = now; localStorage.setItem(key, JSON.stringify(rec));
+        }
+        const oldLogicalId = key.slice(bindPrefix.length);
+        if (now - rec.at >= RETAIN_MS) {
+          localStorage.removeItem(v1Key(oldLogicalId));
+          const old = legacyKey(oldLogicalId); if (old) localStorage.removeItem(old);
+          localStorage.removeItem(key);
+          return;
+        }
+        keptSources.add(v1Key(oldLogicalId));
+        const old = legacyKey(oldLogicalId); if (old) keptSources.add(old);
+      });
+      const prefixes = ['dw:draft:v1:' + t + ':', 'dw:adraft:' + t + ':'];
+      const composerLegacy = 'dw:draft:' + t;
+      keys.forEach(key => {
+        if (key.indexOf(bindPrefix) === 0 || keptSources.has(key)) return;
+        if (key !== composerLegacy &&
+            !prefixes.some(prefix => key.indexOf(prefix) === 0)) return;
+        let rec = null;
+        try { rec = JSON.parse(localStorage.getItem(key) || 'null'); }
+        catch (e) { return; }
+        if (!rec) return;
+        if (!Number.isFinite(rec.at)) {
+          rec.at = now; localStorage.setItem(key, JSON.stringify(rec));
+        } else if (now - rec.at >= RETAIN_MS) {
+          localStorage.removeItem(key);
+        }
+      });
+    } catch (e) { /* optional storage: GC must never break a text box */ }
+  }
   function onRemote() { /* C1 offer-to-load — needs the store; seam only */ }
   return {
-    id, bind, unbind, save, restore, clear, get, isDurable, attemptId,
+    id, card, bind, unbind, save, restore, clear, clearCard, get,
+    isDurable, attemptId,
     forget, forgetProject, gc, onRemote,
     // test/guard seams: expose key builders without re-deciding shapes
     _v1Key: v1Key, _legacyKey: legacyKey
   };
 })();
-/* thin façade: existing answer-box call sites keep dwDraft.save(title, …).
-   Routes through DraftStore so card and composer share one policy. */
+/* Answer-box façade: qid is durable identity; title is migration input only. */
 const dwDraft = {
-  save(title, value) {
-    if (!title) return false;
-    return DraftStore.save(DraftStore.id('card', title), value);
+  save(qid, title, value) {
+    if (!qid) return false;
+    const logicalId = DraftStore.card(qid, title);
+    if (!value) { DraftStore.clearCard(logicalId); return true; }
+    return DraftStore.save(logicalId, value);
   },
-  restore(title, el) {
-    if (!title) return;
-    DraftStore.restore(DraftStore.id('card', title), el);
+  restore(qid, title, el) {
+    if (!qid) return;
+    DraftStore.restore(DraftStore.card(qid, title), el);
   },
-  clear(title) {
-    if (!title) return;
-    DraftStore.clear(DraftStore.id('card', title));
+  clear(qid, title) {
+    if (!qid) return;
+    DraftStore.clearCard(DraftStore.card(qid, title));
   }
 };
 /* Put a drafted answer back into every box a render just created. Runs AFTER
@@ -1837,13 +1944,17 @@ const dwDraft = {
    needs its draft back just as much as one that reappears on a reload. */
 function restoreAnswerDrafts() {
   document.querySelectorAll('.qa[data-qid]').forEach(card => {
+    let qid = null;
     let title = null;
-    try { title = decodeURIComponent(card.dataset.qid); } catch (e) { return; }
-    if (!title) return;
+    try {
+      qid = decodeURIComponent(card.dataset.qid);
+      title = decodeURIComponent(card.dataset.qtitle || '');
+    } catch (e) { return; }
+    if (!qid) return;
     const ta = card.querySelector('textarea[id^="qi"]');
     if (!ta) return;
     const before = ta.value;
-    dwDraft.restore(title, ta);
+    dwDraft.restore(qid, title, ta);
     // #177: a draft restored into a fresh box must size that box, snapped —
     // the reload path `restoreCardState` does not reach (no in-memory snapshot
     // survived it), so without this a restored multi-line draft sits in a
@@ -2250,6 +2361,7 @@ function snapshotCardState() {
     if (!typed && !opened && !read && !modeHis) return; // he has done nothing
     m.set(card.dataset.qid, {
       open: dets, read,
+      title: card.dataset.qtitle || '',
       value: typed ? ta.value : null, mode: comp && comp.dataset.mode,
       focus: ta === act,
       start: typed ? ta.selectionStart : 0, end: typed ? ta.selectionEnd : 0,
@@ -2332,9 +2444,12 @@ function restoreCardState(saved) {
   unmatched.forEach((miss, qid) => {
     const s = miss.state;
     let title = '';
-    try { title = decodeURIComponent(qid); } catch (e) {}
+    try { title = decodeURIComponent(s.title || ''); } catch (e) {}
     const hasDraft = s.value !== null && s.value !== '';
-    const preserved = hasDraft && title ? dwDraft.save(title, s.value) : false;
+    let stableId = '';
+    try { stableId = decodeURIComponent(qid); } catch (e) {}
+    const preserved = hasDraft && stableId
+      ? dwDraft.save(stableId, title, s.value) : false;
     const host = document.getElementById('qfocus') ||
       document.getElementById('view');
     if (!host) return;
@@ -2347,7 +2462,7 @@ function restoreCardState(saved) {
       : 'the question is no longer on this page';
     if (preserved) {
       notice.textContent = 'Draft preserved in this browser because ' + absent +
-        '. It will return if this title returns.';
+        '. It remains attached to this question id (#1183).';
     } else if (hasDraft) {
       notice.textContent = 'Draft could not be restored or stored because ' +
         absent + '. Copy it now: ';
@@ -2734,8 +2849,8 @@ function regroupCards(before, toggled, list, restated) {
    clone is what ghosts: what leaves IS this card's bottom slice, which is
    exactly what that clone clipped below the new height says.
 
-   State is the question's title identity (data-qid), persisted to the
-   dw-ui IndexedDB store and pinged across tabs through the standing
+   State is the question's persisted identity (data-qid; title fallback),
+   persisted to the dw-ui IndexedDB store and pinged across tabs through the standing
    'storage'-event idiom — "persisted to IndexedDB and kept in sync like
    other ui state". rolledQids is this page's truth between the two: the
    click writes all three, the storage event and the boot read keep the
@@ -3782,7 +3897,7 @@ function clearBox(ta) {
 }
 /* save a drafted answer as he types (#269 acute). Delegated on `document`
    because the box is recreated by every re-render — a listener bound to the
-   node would die with it. Keyed by `data-qid` (the question's title identity),
+   node would die with it. Keyed by `data-qid` (persisted qid, title fallback),
    resolved against the live card so the draft never lands under the wrong
    question, and written through `dwDraft` so the composer's rules apply
    verbatim: no debounce, wrapped storage, and a value of '' removes the key
@@ -3792,9 +3907,12 @@ addEventListener('input', e => {
   if (!t || t.tagName !== 'TEXTAREA' || !/^qi[oa]\d+$/.test(t.id)) return;
   const card = t.closest('.qa[data-qid]');
   if (!card || !card.dataset.qid) return;
-  let title = null;
-  try { title = decodeURIComponent(card.dataset.qid); } catch (er) { return; }
-  if (title) dwDraft.save(title, t.value);
+  let qid = null, title = '';
+  try {
+    qid = decodeURIComponent(card.dataset.qid);
+    title = decodeURIComponent(card.dataset.qtitle || '');
+  } catch (er) { return; }
+  if (qid) dwDraft.save(qid, title, t.value);
   fitText(t, true);                           // #177: the box grows with what he typed
 });
 /* #708 — the /chat reply box grows with the same gesture as the answer box.

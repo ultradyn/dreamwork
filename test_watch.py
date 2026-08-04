@@ -4603,6 +4603,131 @@ class TestCollector(unittest.TestCase):
         self.assertIsNone(qs[0]["answer"])          # unanswered
         self.assertEqual(watch.parse_open_questions(None), [])
 
+    def test_question_ids_are_persisted_and_survive_a_retitle(self):
+        text = ("# Questions\n\n## Open\n\n"
+                "- **Old title** body\n\n## Answered\n")
+        migrated = watch.migrate_question_ids(
+            text, mint=iter(["11111111-1111-4111-8111-111111111111"]).__next__)
+        self.assertIn(
+            "** <!-- qid:11111111-1111-4111-8111-111111111111 --> body",
+            migrated)
+        before = watch.parse_open_questions(migrated)[0]
+        after = watch.parse_open_questions(
+            migrated.replace("Old title", "New title"))[0]
+        self.assertEqual(before["qid"], after["qid"])
+        self.assertEqual(after["title"], "New title")
+        self.assertNotIn("qid:", after["body"])
+
+    def test_question_id_migration_covers_wrapped_and_answered_entries(self):
+        text = ("# Questions\n\n## Open\n\n"
+                "- **A wrapped\n  title.** body\n\n"
+                "## Answered\n\n- **Done.** resolved\n")
+        ids = iter(["11111111-1111-4111-8111-111111111111",
+                    "22222222-2222-4222-8222-222222222222"])
+        migrated = watch.migrate_question_ids(text, mint=ids.__next__)
+        self.assertEqual(watch.parse_open_questions(migrated)[0]["qid"],
+                         "11111111-1111-4111-8111-111111111111")
+        self.assertEqual(watch.parse_answered(migrated)[0]["qid"],
+                         "22222222-2222-4222-8222-222222222222")
+        self.assertEqual(watch.migrate_question_ids(migrated), migrated)
+
+    def test_question_id_migration_refuses_malformed_marker_before_write(self):
+        text = ("# Questions\n\n## Open\n\n"
+                "- **Broken** <!-- qid:11111111-1111-4111-8111 --> body\n\n"
+                "## Answered\n")
+        with self.assertRaisesRegex(ValueError, "malformed question id marker"):
+            watch.migrate_question_ids(text)
+        with tempfile.TemporaryDirectory() as target:
+            dw = os.path.join(target, ".dreamwork")
+            os.makedirs(dw)
+            path = os.path.join(dw, "questions.md")
+            with open(path, "w", encoding="utf-8") as stream:
+                stream.write(text)
+            with unittest.mock.patch.object(
+                    watch, "atomic_write_text") as replacement:
+                with self.assertRaisesRegex(
+                        ValueError, "malformed question id marker"):
+                    watch.ensure_question_ids(target)
+            replacement.assert_not_called()
+            with open(path, encoding="utf-8") as stream:
+                self.assertEqual(stream.read(), text)
+
+    def test_question_id_migration_refuses_misplaced_marker(self):
+        text = ("# Questions\n\n## Open\n\n"
+                "- <!-- qid:11111111-1111-4111-8111-111111111111 --> "
+                "**Broken** body\n\n## Answered\n")
+        with self.assertRaisesRegex(ValueError, "misplaced question id marker"):
+            watch.migrate_question_ids(text)
+
+    def test_question_id_migration_refuses_duplicate_marker(self):
+        qid = "11111111-1111-4111-8111-111111111111"
+        text = ("# Questions\n\n## Open\n\n"
+                f"- **One** <!-- qid:{qid} --> body\n"
+                f"- **Two** <!-- qid:{qid} --> body\n\n## Answered\n")
+        with self.assertRaisesRegex(
+                ValueError, "duplicate question id .*11111111"):
+            watch.migrate_question_ids(text)
+
+    def test_ensure_question_ids_persists_once_in_a_fixture(self):
+        with tempfile.TemporaryDirectory() as target:
+            dw = os.path.join(target, ".dreamwork")
+            os.makedirs(dw)
+            path = os.path.join(dw, "questions.md")
+            original = "# Q\n\n## Open\n\n- **Legacy title** body\n\n## Answered\n"
+            with open(path, "w", encoding="utf-8") as stream:
+                stream.write(original)
+            self.assertEqual(watch.ensure_question_ids(target), 1)
+            with open(path, encoding="utf-8") as stream:
+                persisted = stream.read()
+            [entry] = watch.parse_open_questions(persisted)
+            self.assertRegex(entry["qid"], r"^[0-9a-f-]{36}$")
+            self.assertEqual(entry["body"].strip(), "body")
+            self.assertEqual(watch.ensure_question_ids(target), 0)
+            with open(path, encoding="utf-8") as stream:
+                self.assertEqual(stream.read(), persisted)
+
+    def test_serve_never_rewrites_questions_for_id_migration(self):
+        """Starting the server is read-only even at the old replacement seam."""
+        with tempfile.TemporaryDirectory() as target:
+            dw = os.path.join(target, ".dreamwork")
+            os.makedirs(dw)
+            path = os.path.join(dw, "questions.md")
+            original = ("# Q\n\n## Open\n\n"
+                        "- **Legacy existing** body\n\n## Answered\n")
+            with open(path, "w", encoding="utf-8") as stream:
+                stream.write(original)
+
+            class FakeServer:
+                def serve_forever(self):
+                    with open(path, "a", encoding="utf-8") as stream:
+                        stream.write("raw concurrent report\n")
+
+            def factory(_address, _handler):
+                return FakeServer()
+
+            with (unittest.mock.patch.object(
+                    watch, "server_class", return_value=factory),
+                  unittest.mock.patch.object(
+                    watch, "atomic_write_text") as replacement):
+                watch.main(["--target", target, "--port", "39888"])
+            replacement.assert_not_called()
+            with open(path, encoding="utf-8") as stream:
+                report_survived = "raw concurrent report" in stream.read()
+            self.assertTrue(report_survived, "report_survived=False")
+
+    def test_explicit_question_id_migration_exits_before_serving(self):
+        with tempfile.TemporaryDirectory() as target:
+            dw = os.path.join(target, ".dreamwork")
+            os.makedirs(dw)
+            path = os.path.join(dw, "questions.md")
+            with open(path, "w", encoding="utf-8") as stream:
+                stream.write("# Q\n\n## Open\n\n- **Legacy** body\n\n## Answered\n")
+            with unittest.mock.patch.object(watch, "server_class") as server:
+                watch.main(["--target", target, "--migrate-question-ids"])
+            server.assert_not_called()
+            with open(path, encoding="utf-8") as stream:
+                self.assertRegex(stream.read(), r"<!-- qid:[0-9a-f-]{36} -->")
+
     def test_parse_open_questions_answer_awaiting_fold(self):
         # a submitted-but-unfolded answer is lifted into `answer`, kept out of
         # `body`, and never swallows the questions that follow it (#81).
@@ -10042,7 +10167,7 @@ process.stdout.write(JSON.stringify({afterInit, afterRestore:saves, reads,
         # clear only after isDurable — the receipt seam, not bare res.ok
         self.assertIn('DraftStore.isDurable', watch.PAGE)
         # no debounce window on the answer save path (still delegated input)
-        self.assertIn('dwDraft.save(title, t.value)', watch.PAGE)
+        self.assertIn('dwDraft.save(qid, title, t.value)', watch.PAGE)
 
     def test_page_has_pip_popout_buttons(self):
         # #83: discoverable PiP-glyph buttons float a doc/review in an
@@ -15682,6 +15807,165 @@ class TestSubmissionIdempotency(unittest.TestCase):
         self.assertTrue(res['shape'],
                         f"the id must be a v4 UUID shape: {res}")
 
+    def test_question_draft_id_migration_keeps_every_old_key(self):
+        """#1183: stable-id keying plus the four migration-risk cases."""
+        import shutil, textwrap
+        if not shutil.which("node"):
+            self.skipTest("node not available — the JS gate did NOT run")
+        store = self._extract_draftstore()
+        script = textwrap.dedent("""\
+            const crypto = { randomUUID: () => 'unused' };
+            const _s = {};
+            let failOnceKey = null;
+            const localStorage = {
+              getItem: k => (k in _s ? _s[k] : null),
+              setItem: (k, v) => {
+                if (k === failOnceKey) { failOnceKey = null; return; }
+                _s[k] = String(v);
+              },
+              removeItem: k => { delete _s[k]; },
+            };
+            const data = { target: 'proj-T' };
+            %s
+            const qid = '11111111-1111-4111-8111-111111111111';
+            const oldTitle = 'Old title';
+            const newTitle = 'New title';
+            const oldKey = DraftStore._v1Key(DraftStore.id('card', oldTitle));
+            const newKey = DraftStore._v1Key(DraftStore.id('card', qid));
+            const oldRaw = JSON.stringify({t:'draft', v:1});
+
+            // old only: copy, verify, retain old; then retitle restores by id.
+            localStorage.setItem(oldKey, oldRaw);
+            const lid = DraftStore.card(qid, oldTitle);
+            const oldStored = localStorage.getItem(oldKey);
+            const newStored = localStorage.getItem(newKey);
+            const box = { value:'', dataset:{} };
+            DraftStore.restore(DraftStore.card(qid, newTitle), box);
+
+            // both: id-keyed truth wins and the old value remains recoverable.
+            const bothOldTitle = 'Both old';
+            const bothId = '22222222-2222-4222-8222-222222222222';
+            const bothOld = DraftStore._v1Key(DraftStore.id('card', bothOldTitle));
+            const bothNew = DraftStore._v1Key(DraftStore.id('card', bothId));
+            localStorage.setItem(bothOld, JSON.stringify({t:'old'}));
+            localStorage.setItem(bothNew, JSON.stringify({t:'new'}));
+            DraftStore.card(bothId, bothOldTitle);
+
+            // no draft: migration creates nothing.
+            const noneId = '33333333-3333-4333-8333-333333333333';
+            DraftStore.card(noneId, 'Nothing');
+
+            // A silent failed first write must be detected before falling
+            // through to the second legacy source.
+            const verifyTitle = 'Verify old';
+            const verifyId = '44444444-4444-4444-8444-444444444444';
+            const verifyOldV1 = DraftStore._v1Key(DraftStore.id('card', verifyTitle));
+            const verifyOldLegacy = DraftStore._legacyKey(DraftStore.id('card', verifyTitle));
+            const verifyNew = DraftStore._v1Key(DraftStore.id('card', verifyId));
+            localStorage.setItem(verifyOldV1, JSON.stringify({t:'first'}));
+            localStorage.setItem(verifyOldLegacy, JSON.stringify({t:'fallback'}));
+            failOnceKey = verifyNew;
+            DraftStore.card(verifyId, verifyTitle);
+
+            process.stdout.write(JSON.stringify({
+              oldStored, newStored, restoredValue: box.value,
+              oldOnlyOldRetained: localStorage.getItem(oldKey) === oldRaw,
+              bothNew: JSON.parse(localStorage.getItem(bothNew)).t,
+              bothOld: JSON.parse(localStorage.getItem(bothOld)).t,
+              verifiedFallback: JSON.parse(localStorage.getItem(verifyNew)).t,
+              none: localStorage.getItem(
+                DraftStore._v1Key(DraftStore.id('card', noneId)))
+            }));
+        """) % store
+        res = json.loads(_node_output(["node", "-e", script], text=True))
+        self.assertEqual(
+            res["oldStored"], res["newStored"],
+            f"stable-id migration failed to copy the title-keyed draft: {res}")
+        self.assertEqual(
+            res["restoredValue"], "draft",
+            f"retitled question did not restore by stable id: {res}")
+        self.assertTrue(res["oldOnlyOldRetained"])
+        self.assertEqual((res["bothNew"], res["bothOld"]), ("new", "old"))
+        self.assertEqual(
+            res["verifiedFallback"], "fallback",
+            f"migration did not verify the first write before fallback: {res}")
+        self.assertIsNone(res["none"])
+
+    def test_question_draft_retention_is_bound_and_expires(self):
+        """A retained title draft belongs to only its first persisted qid.
+
+        Retained recovery sources and clear tombstones both receive the same
+        bounded 30-day lifetime, so quota can recover without making a wrong
+        question eligible for private text.
+        """
+        import shutil, textwrap
+        if not shutil.which("node"):
+            self.skipTest("node not available — the JS gate did NOT run")
+        store = self._extract_draftstore()
+        script = textwrap.dedent("""\
+            let now = 1_000_000;
+            const Date = { now: () => now };
+            const crypto = { randomUUID: () => 'unused' };
+            const _s = {};
+            let quotaAt = null;
+            const localStorage = {
+              get length() { return Object.keys(_s).length; },
+              key: i => Object.keys(_s)[i] || null,
+              getItem: k => (k in _s ? _s[k] : null),
+              setItem: (k, v) => {
+                if (!(k in _s) && quotaAt !== null &&
+                    Object.keys(_s).length >= quotaAt) throw new Error('quota');
+                _s[k] = String(v);
+              },
+              removeItem: k => { delete _s[k]; },
+            };
+            const data = { target: 'proj-T' };
+            %s
+            const title = 'Reused title';
+            const first = '11111111-1111-4111-8111-111111111111';
+            const second = '22222222-2222-4222-8222-222222222222';
+            const source = DraftStore._v1Key(DraftStore.id('card', title));
+            const firstKey = DraftStore._v1Key(DraftStore.id('card', first));
+            const secondKey = DraftStore._v1Key(DraftStore.id('card', second));
+            localStorage.setItem(source, JSON.stringify({t:'old private draft'}));
+            DraftStore.card(first, title);
+            const firstGotDraft = !!localStorage.getItem(firstKey);
+            delete _s[firstKey];
+            DraftStore.card(second, title);
+
+            const tomb = DraftStore.id('card', 'tombstone-qid');
+            DraftStore.clearCard(tomb);
+            const tombKey = DraftStore._v1Key(tomb);
+            now += 29 * 24 * 60 * 60 * 1000;
+            DraftStore.gc(now);
+            const retainedAt29 = !!localStorage.getItem(source);
+            const tombAt29 = !!localStorage.getItem(tombKey);
+            now += 2 * 24 * 60 * 60 * 1000;
+            DraftStore.gc(now);
+            const stale = DraftStore._v1Key(DraftStore.id('card', 'stale'));
+            localStorage.setItem(stale, JSON.stringify({
+              t:'stale', at: now - 31 * 24 * 60 * 60 * 1000
+            }));
+            quotaAt = Object.keys(_s).length;
+            const recovered = DraftStore.save(
+              DraftStore.id('card', 'fresh'), 'fresh draft');
+            process.stdout.write(JSON.stringify({
+              firstGotDraft,
+              secondGotDraft: !!localStorage.getItem(secondKey),
+              retainedAt29, tombAt29,
+              retainedAt31: !!localStorage.getItem(source),
+              tombAt31: !!localStorage.getItem(tombKey), recovered
+            }));
+        """) % store
+        res = json.loads(_node_output(["node", "-e", script], text=True))
+        self.assertTrue(res["firstGotDraft"])
+        self.assertFalse(
+            res["secondGotDraft"],
+            f"a reused title restored another question's private draft: {res}")
+        self.assertTrue(res["retainedAt29"] and res["tombAt29"])
+        self.assertFalse(res["retainedAt31"] or res["tombAt31"])
+        self.assertTrue(res["recovered"], "expired records did not free quota")
+
     def test_covered_submit_paths_send_the_attempt_id(self):
         """#274: the boundary across submit paths, stated and checked.
 
@@ -15702,8 +15986,8 @@ class TestSubmissionIdempotency(unittest.TestCase):
         self.assertIn("'X-Client-Action-Id'", watch.PAGE)
         # each covered path mints an attempt id from its draft store
         for token in (
-            "DraftStore.attemptId(DraftStore.id('card', q.title))",   # /answer
-            "DraftStore.attemptId(DraftStore.id('card', entry.title))",  # /comment
+            "DraftStore.attemptId(DraftStore.card(q.qid || q.title, q.title))",  # /answer
+            "DraftStore.attemptId(DraftStore.card(entry.qid || entry.title, entry.title))",  # /comment
             "DraftStore.attemptId(DraftStore.id('ask', 'main'))",     # /ask
             "DraftStore.attemptId(composerLid())",                    # /command main
             "DraftStore.attemptId(popLid)",                           # /command popout

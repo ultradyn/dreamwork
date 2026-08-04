@@ -2626,19 +2626,19 @@ var DreamworkDesign = (() => {
       return `<details class="qfold"><summary class="qt">${qtHtml(q.title)}${up}` + (q.when ? `<span class="qwhen">answered ${esc(q.when)}</span>` : "") + `${focus}</summary><div class="qbody">${body}${foot}</div>${compose}</details>`;
     return `<div class="qbody"><div class="qt">${qtHtml(q.title)}${up}${roll}${focus}</div>${body}${foot}</div>${compose}`;
   };
-  var qaCard = (q, key, surface = "list") => `<div class="qa ${qaState(q, key)}" data-qkey="${key}" data-qid="${encodeURIComponent(q.title)}" data-qsurface="${surface}">${qaInner(q, key, surface)}</div>`;
+  var qaCard = (q, key, surface = "list") => `<div class="qa ${qaState(q, key)}" data-qkey="${key}" data-qid="${encodeURIComponent(q.qid || q.title)}" data-qtitle="${encodeURIComponent(q.title)}" data-qsurface="${surface}">${qaInner(q, key, surface)}</div>`;
   var qaEntry = (key, card) => {
     if (!data || !key) return null;
     const list = key[0] === "a" ? data.answered_entries : data.questions_open;
     const qid = card && card.dataset.qid;
     if (qid) {
-      let title = null;
+      let id = null;
       try {
-        title = decodeURIComponent(qid);
+        id = decodeURIComponent(qid);
       } catch (e) {
         return null;
       }
-      return (list || []).find((entry) => entry.title === title) || null;
+      return (list || []).find((entry) => (entry.qid || entry.title) === id) || null;
     }
     return (list || [])[+key.slice(1)] || null;
   };
@@ -3854,14 +3854,14 @@ var DreamworkDesign = (() => {
     const res = await postAnswer(
       q.title,
       val,
-      DraftStore.attemptId(DraftStore.id("card", q.title))
+      DraftStore.attemptId(DraftStore.card(q.qid || q.title, q.title))
     );
     const v = res && res._dwv;
     if (!res || !v || !v.landed) {
       qaFail(card, v);
       return;
     }
-    if (DraftStore.isDurable(res)) dwDraft.clear(q.title);
+    if (DraftStore.isDurable(res)) dwDraft.clear(q.qid || q.title, q.title);
     if (!card) return;
     holdRerenderUntil = Date.now() + MORPH_HOLD_MS;
     const before = snapshotCards();
@@ -3888,14 +3888,15 @@ var DreamworkDesign = (() => {
       entry.title,
       val,
       key[0] === "o" ? "Open" : "Answered",
-      DraftStore.attemptId(DraftStore.id("card", entry.title))
+      DraftStore.attemptId(DraftStore.card(entry.qid || entry.title, entry.title))
     );
     const v = res && res._dwv;
     if (!res || !v || !v.landed) {
       qaFail(card, v);
       return;
     }
-    if (DraftStore.isDurable(res)) dwDraft.clear(entry.title);
+    if (DraftStore.isDurable(res))
+      dwDraft.clear(entry.qid || entry.title, entry.title);
     holdRerenderUntil = Date.now() + MORPH_HOLD_MS;
     if (!card) {
       el.value = "";
@@ -4784,6 +4785,7 @@ var DreamworkDesign = (() => {
   }
   function setData(next) {
     data = next;
+    if (typeof DraftStore !== "undefined") DraftStore.gc();
     if (window.dwPluginCommands) window.dwPluginCommands(data.plugin_commands);
     const registry = nativeRegistry();
     if (registry && !registry.mounted) {
@@ -4956,7 +4958,9 @@ var DreamworkDesign = (() => {
     DraftStore.restore(lid, box);
     fitText(box, false);
   }
-  var DraftStore = /* @__PURE__ */ (() => {
+  var DraftStore = (() => {
+    const RETAIN_MS = 30 * 24 * 60 * 60 * 1e3;
+    let lastGcAt = 0;
     const tgt = () => typeof data !== "undefined" && data && data.target || "";
     const id = (kind, scopeKey) => {
       if (!kind) return "";
@@ -4974,6 +4978,49 @@ var DreamworkDesign = (() => {
       if (logicalId === "composer:main")
         return "dw:draft:" + t;
       return "";
+    };
+    const bindingKey = (logicalId) => {
+      const t = tgt();
+      return t && logicalId ? "dw:draft:qbind:v1:" + t + ":" + logicalId : "";
+    };
+    const card = (qid, title) => {
+      const logicalId = id("card", qid);
+      const destination = v1Key(logicalId);
+      if (!destination || !title) return logicalId;
+      try {
+        const oldLogicalId = id("card", title);
+        const binding = bindingKey(oldLogicalId);
+        let bound = null;
+        try {
+          bound = JSON.parse(localStorage.getItem(binding) || "null");
+        } catch (e) {
+          bound = null;
+        }
+        if (bound && bound.qid && bound.qid !== String(qid)) return logicalId;
+        for (const source of [v1Key(oldLogicalId), legacyKey(oldLogicalId)]) {
+          if (!source || source === destination) continue;
+          const raw = localStorage.getItem(source);
+          if (!raw) continue;
+          let copied = false;
+          if (!localStorage.getItem(destination)) {
+            localStorage.setItem(destination, raw);
+            copied = true;
+          }
+          if (localStorage.getItem(destination) !== raw && copied) continue;
+          const claim = { v: 1, qid: String(qid), at: Date.now() };
+          localStorage.setItem(binding, JSON.stringify(claim));
+          let verified = null;
+          try {
+            verified = JSON.parse(localStorage.getItem(binding) || "null");
+          } catch (e) {
+            verified = null;
+          }
+          if (verified && verified.qid === claim.qid) return logicalId;
+          if (copied) localStorage.removeItem(destination);
+        }
+      } catch (e) {
+      }
+      return logicalId;
     };
     const parseRec = (raw) => {
       if (!raw) return null;
@@ -5018,7 +5065,7 @@ var DreamworkDesign = (() => {
         _key: hit.key
       };
     }
-    function save(logicalId, text, meta) {
+    function save(logicalId, text, meta, retriedAfterGc) {
       const k1 = v1Key(logicalId);
       if (!k1) return false;
       try {
@@ -5042,6 +5089,10 @@ var DreamworkDesign = (() => {
         }
         return true;
       } catch (e) {
+        if (!retriedAfterGc) {
+          gc(Date.now());
+          return save(logicalId, text, meta, true);
+        }
         return false;
       }
     }
@@ -5059,6 +5110,18 @@ var DreamworkDesign = (() => {
         localStorage.removeItem(k1);
         const lo = legacyKey(logicalId);
         if (lo) localStorage.removeItem(lo);
+      } catch (e) {
+      }
+    }
+    function clearCard(logicalId) {
+      const k1 = v1Key(logicalId);
+      if (!k1) return;
+      try {
+        localStorage.setItem(k1, JSON.stringify({
+          v: 1,
+          cleared: true,
+          at: Date.now()
+        }));
       } catch (e) {
       }
     }
@@ -5129,17 +5192,81 @@ var DreamworkDesign = (() => {
     }
     function forgetProject() {
     }
-    function gc() {
+    function gc(now) {
+      const explicit = Number.isFinite(now);
+      now = explicit ? now : Date.now();
+      const t = tgt();
+      try {
+        if (!t || typeof localStorage.length !== "number" || typeof localStorage.key !== "function") return;
+        if (!explicit && now - lastGcAt < 24 * 60 * 60 * 1e3) return;
+        lastGcAt = now;
+        const keys = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key) keys.push(key);
+        }
+        const bindPrefix = "dw:draft:qbind:v1:" + t + ":";
+        const keptSources = /* @__PURE__ */ new Set();
+        keys.filter((key) => key.indexOf(bindPrefix) === 0).forEach((key) => {
+          let rec = null;
+          try {
+            rec = JSON.parse(localStorage.getItem(key) || "null");
+          } catch (e) {
+            rec = null;
+          }
+          if (!rec || !rec.qid) {
+            localStorage.removeItem(key);
+            return;
+          }
+          if (!Number.isFinite(rec.at)) {
+            rec.at = now;
+            localStorage.setItem(key, JSON.stringify(rec));
+          }
+          const oldLogicalId = key.slice(bindPrefix.length);
+          if (now - rec.at >= RETAIN_MS) {
+            localStorage.removeItem(v1Key(oldLogicalId));
+            const old2 = legacyKey(oldLogicalId);
+            if (old2) localStorage.removeItem(old2);
+            localStorage.removeItem(key);
+            return;
+          }
+          keptSources.add(v1Key(oldLogicalId));
+          const old = legacyKey(oldLogicalId);
+          if (old) keptSources.add(old);
+        });
+        const prefixes = ["dw:draft:v1:" + t + ":", "dw:adraft:" + t + ":"];
+        const composerLegacy = "dw:draft:" + t;
+        keys.forEach((key) => {
+          if (key.indexOf(bindPrefix) === 0 || keptSources.has(key)) return;
+          if (key !== composerLegacy && !prefixes.some((prefix) => key.indexOf(prefix) === 0)) return;
+          let rec = null;
+          try {
+            rec = JSON.parse(localStorage.getItem(key) || "null");
+          } catch (e) {
+            return;
+          }
+          if (!rec) return;
+          if (!Number.isFinite(rec.at)) {
+            rec.at = now;
+            localStorage.setItem(key, JSON.stringify(rec));
+          } else if (now - rec.at >= RETAIN_MS) {
+            localStorage.removeItem(key);
+          }
+        });
+      } catch (e) {
+      }
     }
     function onRemote() {
     }
     return {
       id,
+      card,
       bind,
       unbind,
       save,
       restore,
       clear,
+      clearCard,
       get,
       isDurable,
       attemptId,
@@ -5153,32 +5280,39 @@ var DreamworkDesign = (() => {
     };
   })();
   var dwDraft = {
-    save(title, value) {
-      if (!title) return false;
-      return DraftStore.save(DraftStore.id("card", title), value);
+    save(qid, title, value) {
+      if (!qid) return false;
+      const logicalId = DraftStore.card(qid, title);
+      if (!value) {
+        DraftStore.clearCard(logicalId);
+        return true;
+      }
+      return DraftStore.save(logicalId, value);
     },
-    restore(title, el) {
-      if (!title) return;
-      DraftStore.restore(DraftStore.id("card", title), el);
+    restore(qid, title, el) {
+      if (!qid) return;
+      DraftStore.restore(DraftStore.card(qid, title), el);
     },
-    clear(title) {
-      if (!title) return;
-      DraftStore.clear(DraftStore.id("card", title));
+    clear(qid, title) {
+      if (!qid) return;
+      DraftStore.clearCard(DraftStore.card(qid, title));
     }
   };
   function restoreAnswerDrafts() {
     document.querySelectorAll(".qa[data-qid]").forEach((card) => {
+      let qid = null;
       let title = null;
       try {
-        title = decodeURIComponent(card.dataset.qid);
+        qid = decodeURIComponent(card.dataset.qid);
+        title = decodeURIComponent(card.dataset.qtitle || "");
       } catch (e) {
         return;
       }
-      if (!title) return;
+      if (!qid) return;
       const ta = card.querySelector('textarea[id^="qi"]');
       if (!ta) return;
       const before = ta.value;
-      dwDraft.restore(title, ta);
+      dwDraft.restore(qid, title, ta);
       if (ta.value && ta.value !== before) fitText(ta, false);
     });
   }
@@ -5410,6 +5544,7 @@ var DreamworkDesign = (() => {
       m.set(card.dataset.qid, {
         open: dets,
         read,
+        title: card.dataset.qtitle || "",
         value: typed ? ta.value : null,
         mode: comp && comp.dataset.mode,
         focus: ta === act,
@@ -5470,11 +5605,16 @@ var DreamworkDesign = (() => {
       const s = miss.state;
       let title = "";
       try {
-        title = decodeURIComponent(qid);
+        title = decodeURIComponent(s.title || "");
       } catch (e) {
       }
       const hasDraft = s.value !== null && s.value !== "";
-      const preserved = hasDraft && title ? dwDraft.save(title, s.value) : false;
+      let stableId = "";
+      try {
+        stableId = decodeURIComponent(qid);
+      } catch (e) {
+      }
+      const preserved = hasDraft && stableId ? dwDraft.save(stableId, title, s.value) : false;
       const host = document.getElementById("qfocus") || document.getElementById("view");
       if (!host) return;
       const notice = document.createElement("div");
@@ -5483,7 +5623,7 @@ var DreamworkDesign = (() => {
       notice.dataset.unmatchedQid = qid;
       const absent = miss.target === "textarea" ? "its answer box is no longer available" : "the question is no longer on this page";
       if (preserved) {
-        notice.textContent = "Draft preserved in this browser because " + absent + ". It will return if this title returns.";
+        notice.textContent = "Draft preserved in this browser because " + absent + ". It remains attached to this question id (#1183).";
       } else if (hasDraft) {
         notice.textContent = "Draft could not be restored or stored because " + absent + ". Copy it now: ";
         const copy = document.createElement("textarea");
@@ -6526,13 +6666,14 @@ var DreamworkDesign = (() => {
     if (!t || t.tagName !== "TEXTAREA" || !/^qi[oa]\d+$/.test(t.id)) return;
     const card = t.closest(".qa[data-qid]");
     if (!card || !card.dataset.qid) return;
-    let title = null;
+    let qid = null, title = "";
     try {
-      title = decodeURIComponent(card.dataset.qid);
+      qid = decodeURIComponent(card.dataset.qid);
+      title = decodeURIComponent(card.dataset.qtitle || "");
     } catch (er) {
       return;
     }
-    if (title) dwDraft.save(title, t.value);
+    if (qid) dwDraft.save(qid, title, t.value);
     fitText(t, true);
   });
   addEventListener("input", (e) => {

@@ -1711,16 +1711,16 @@ addEventListener('change', e => {
   saveSetting(el, value);
 });
 /* #452 — ONE question on its own page: a surface the loop's churn cannot
-   shift under him mid-answer. The key (`qid` in the URL) is the question's
-   TITLE identity — the same string `data-qid` already carries to survive
-   regrouping — chosen for what survives it: body rewrites, priority
+   shift under him mid-answer. This route's `qid` query value remains TITLE
+   identity (cards carry it separately as `data-qtitle`), chosen for what
+   survives it: body rewrites, priority
    re-sorts and the open→answered fold all keep the title, and those three
    ARE the churn this page exists for (the loop rewrote #449's entry three
    times in fifteen minutes while he was reading it). A RETITLE breaks the
    key, and that case fails LOUD, in the .qmissing notice below — never a
    blank page and never a different question ("I could not tell" and
-   "nothing" must not render the same). #294's planned question_id can
-   later be accepted beside the title without invalidating a single link. */
+   "nothing" must not render the same). #1183 adds the persisted question id
+   used by cards and drafts; changing this route's URL contract is separate. */
 /* ── the review split (#305) ──────────────────────────────────────────────
    An INVISIBLE affordance still has to be operable by everything that
    operates a control, so the bar is a real `separator` with a value: a
@@ -2186,7 +2186,7 @@ async function sendAnswer(key) {
   const val = el.value.trim();
   const fromRect = el.getBoundingClientRect();   // the box the text lived in
   const res = await postAnswer(q.title, val,
-      DraftStore.attemptId(DraftStore.id('card', q.title)));
+      DraftStore.attemptId(DraftStore.card(q.qid || q.title, q.title)));
   // a failed write must NOT run the morph: the morph IS the confirmation, and
   // confirming a write that did not happen is the one thing worse than the
   // 409 itself (#136). A rejected 202 (res.ok true, body rejected:true — E5)
@@ -2197,7 +2197,7 @@ async function sendAnswer(key) {
   // answer landed, so its draft must not survive to reappear as a thought he
   // already sent. A failed send returns above and keeps it. isDurable is the
   // module's receipt seam (writeVerdict.landed today; #263 later).
-  if (DraftStore.isDurable(res)) dwDraft.clear(q.title);
+  if (DraftStore.isDurable(res)) dwDraft.clear(q.qid || q.title, q.title);
   if (!card) return;
   holdRerenderUntil = Date.now() + MORPH_HOLD_MS;   // see ROUTER_JS
   // the morph IS the confirmation: the box reshapes into the answered state,
@@ -2240,7 +2240,7 @@ async function sendComment(key) {
   const fromRect = el.getBoundingClientRect();
   const res = await postComment(entry.title, val,
                                 key[0] === 'o' ? 'Open' : 'Answered',
-      DraftStore.attemptId(DraftStore.id('card', entry.title)));
+      DraftStore.attemptId(DraftStore.card(entry.qid || entry.title, entry.title)));
   const v = res && res._dwv;
   // a rejected 202 (res.ok true, body rejected — E5) clears the draft below,
   // which was the only copy of the note, so the verdict `landed` decides —
@@ -2249,7 +2249,8 @@ async function sendComment(key) {
   // a note is a successful send too, and the box clears for the next one — so
   // its draft clears with it, or the next re-render would restore the just-sent
   // note into the empty box he meant to clear (#269, #163's rule).
-  if (DraftStore.isDurable(res)) dwDraft.clear(entry.title);
+  if (DraftStore.isDurable(res))
+    dwDraft.clear(entry.qid || entry.title, entry.title);
   holdRerenderUntil = Date.now() + MORPH_HOLD_MS;
   if (!card) { el.value = ''; return; }
   // #191, the same as an answer: the note lands INSIDE the card, so the card
