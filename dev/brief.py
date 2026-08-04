@@ -1038,7 +1038,10 @@ def _expanded_indent(line: str) -> int:
 # past the item's content column), so a block nested inside a list item still
 # opens and closes (#1213 r2: list-fence gap).  ``_FENCE_OPEN`` (capped at three
 # absolute spaces) stays the rule for the top-level-only walkers that share it.
-_FENCE_OPEN_ANY = re.compile(r"^(?P<lead> *)(?P<fence>`{3,}|~{3,})")
+# Tabs are valid leading whitespace (#1213 r4: a TAB-led closer is at the right
+# CommonMark column but failed the spaces-only regex, leaving the fence open
+# and silently exempting every later line from citation checking).
+_FENCE_OPEN_ANY = re.compile(r"^(?P<lead>[ \t]*)(?P<fence>`{3,}|~{3,})")
 
 
 def _citation_prose_lines(core: str):
@@ -1082,7 +1085,7 @@ def _citation_prose_lines(core: str):
                     and close.group("fence")[0] == fence_char
                     and len(close.group("fence")) >= fence_len
                     and fence_col <= lead <= fence_col + 3
-                    and not line[lead + len(close.group("fence")):].strip()):
+                    and not line[close.end():].strip()):
                 in_fence = False
             continue
 
