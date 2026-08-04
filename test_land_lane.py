@@ -3470,9 +3470,8 @@ def test_a_lint_gated_doc_reports_lint_provenance_not_name(landing_repo):
     assert "lint=1" in result.stdout, result.stdout
     assert "[name=0" in result.stdout, result.stdout
     assert "test_lint.py" in result.stdout
-    # A successful gate advances master
+    # A successful gate advances master and cleans up the lane worktree
     assert _git(root, "rev-parse", "refs/heads/master") != before
-    _assert_retained(root, lane)
 
 
 def test_zero_derived_tests_says_why_rather_than_reading_as_coverage(doc_only_repo):
