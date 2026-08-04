@@ -2615,3 +2615,80 @@ def test_write_runner_exit_emits_diagnostic_on_persistence_failure(tmp_path, cap
     assert str(exit_path) in captured.err, captured.err
     assert runner_log in captured.err, captured.err
 
+
+# --- #1214 round 6 --------------------------------------------------------
+#
+# Round 5 proved the rejection reason survives into classify_review_dispatch's
+# RETURNED detail, but called that function directly — it never exercised
+# --review-status, the CLI surface a coordinator actually reads.  This is the
+# committed CLI-level regression: run the real --review-status verb against a
+# dispatch whose reviewer was signalled (SIGKILL, exit -9) and assert the
+# reason lands in the COMMAND OUTPUT, not a return value.  "runner exit never
+# observed" and "observed and rejected because the reviewer was killed" send a
+# coordinator down completely different paths, and only the CLI test can tell
+# them apart at the surface that has a human on the other end.
+
+def test_review_status_cli_shows_signalled_rejection_reason_in_output(tmp_path):
+    """#1214 round 6: --review-status on a dispatch whose runner exited -9
+    (SIGKILL) must print the rejection reason in the COMMAND OUTPUT —
+    'capture rejected: runner exited -9 ...' — not the bare 'runner exit never
+    observed' a coordinator would misread as a clean death.  The reason reaches
+    classify_review_dispatch's detail (round 5 / P2); this test proves it
+    survives the final print a human reads.  Isolated tmp_path; no live
+    review-dispatches touched."""
+    cli, root = _sandbox_review_cli(tmp_path)
+    dispatches = root / ".dreamwork" / "review-dispatches"
+    dispatches.mkdir(parents=True, exist_ok=True)
+    # A partial capture from a SIGKILLed reviewer: one genuine line, then death.
+    log_bytes = b"P1: first genuine finding only\n"
+    runner_log = dispatches / "cx-review-r1-deadbeef.runner.log"
+    exit_path = dispatches / "cx-review-r1-deadbeef.runner.exit.json"
+    runner_log.write_bytes(log_bytes)
+    token = "cli-status-token-aabbccdd"
+    exit_path.write_text(json.dumps({
+        "runner_exit": -9,  # SIGKILL — signalled, an incomplete delivery
+        "runner_log": str(runner_log),
+        "runner_token": token,
+        "runner_log_sha256": hashlib.sha256(log_bytes).hexdigest(),
+    }) + "\n", encoding="utf-8")
+    (dispatches / "cx-review-r1-deadbeef.prompt.md").write_text(
+        "prompt\n", encoding="utf-8")
+    (dispatches / "cx-review-r1-deadbeef.launch.json").write_text(json.dumps({
+        "attempt_id": "cx-review-r1-deadbeef",
+        "branch": "cx-review", "round": 1,
+        "review_lane": "cx-review-review-r1",
+        "pinned_sha": "abc123", "prompt_sha256": "f" * 64, "prompt_bytes": 7,
+        "prompt": str(dispatches / "cx-review-r1-deadbeef.prompt.md"),
+        "worktree": str(root.parent / ".worktrees" / "cx-review-review-r1"),
+        "permission_mode": "plan",
+        "state": "spawned: reviewer present in review worktree (cwd-containment); "
+                 "runner exit not observed",
+        "runner_exit": None, "runner_log": str(runner_log),
+        "runner_token": token, "runs": 1,
+    }) + "\n", encoding="utf-8")
+    # The real /proc liveness probe sees the runner gone (worktree absent),
+    # so classify falls through to runner-absent — prefixed with the rejection.
+    env = {**os.environ, "DREAMWORK_ALLOW_PIPED_STDOUT": "1"}
+    result = subprocess.run(
+        [sys.executable, str(cli), "--review-status"],
+        capture_output=True, text=True, env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "classified 1 dispatch" in result.stdout, result.stdout
+    line = next(l for l in result.stdout.splitlines() if "deadbeef" in l)
+    # The classification is runner-absent (terminal-safety trade: a signalled
+    # reviewer is incomplete, never terminal) — this is the behaviour, unchanged.
+    assert "runner-absent" in line, (
+        f"a signalled reviewer's dispatch did not classify runner-absent; "
+        f"line={line!r}")
+    # THE P2 DELIVERABLE AT THE CLI SURFACE: the rejection reason a coordinator
+    # reads.  Under the round-4 bare-None regression this disappears and the
+    # line reads only 'runner_exit never observed' — the misread that cost an
+    # hour.  Pin the wording that ships.
+    assert "capture rejected" in line, (
+        f"the rejection reason was lost before the CLI output a coordinator "
+        f"reads; line={line!r}")
+    assert "runner exited -9" in line, (
+        f"the signalled-exit reason did not reach the status output; "
+        f"line={line!r}")
+
