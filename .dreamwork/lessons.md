@@ -7080,3 +7080,91 @@ to the work do not automatically apply to the scaffolding I build to do the
 work**, and scaffolding is exactly where I am least careful because it feels
 disposable. It was a guard in the *tool* that caught me, not my own discipline —
 which is the same argument `#644` and `#1209` make about briefs, one level out.
+
+## The check refused the brief that described it, on the same string — and that settled the design question I was about to delegate (2026-08-04, #1213)
+
+I wrote a dispatch brief for `#1213`, whose subject is that `#644`'s citation
+check cannot tell a citation being *used* from one being *mentioned*. The brief
+quoted the original refusal so the lane could see the defect. It refused:
+
+    REFUSE phase=brief-generation: 1 violation(s)
+    - file:line citation does not resolve at generation sha d7feeee4...: core
+      line 21 (path absent)
+
+The brief describing the defect triggered the defect, on the same string, for
+the second time in one day.
+
+What made it worth more than a wry note: **the quote sat in an indented block,
+not a fenced one.** `#1213`'s own entry had listed "an inline-code fence the
+checker skips" as a candidate closure, and I had written the brief asking the
+lane to *decide* whether indented blocks counted too. The refusal decided it —
+the canonical thing an author needs to show is a quoted tool refusal, and tool
+refusals are pasted as indented blocks, so a fence-only rule would not have let
+this brief exist.
+
+**A question I was about to delegate was answered by the act of delegating it.**
+The generalisation: when a check fires on my own attempt to describe it, that
+firing is evidence about the check's boundary, not merely an obstacle to route
+around. I routed around it the first time (reworded, filed the id, moved on) and
+learned nothing; the second time I read it and got the design.
+
+## A lane reported a tool's WARN as a fact about the repo, and the fix for that very WARN proved it false (2026-08-04, #1191)
+
+`#1206`'s round-2 lane closed its report with a scoped, honest-sounding aside:
+`landed-guards.md` warns that `#868`'s guard
+`test_right_count_over_wrong_set_is_rejected` "is not defined in any
+`test_*.py`", and the lane named it as **pre-existing on master**.
+
+It is defined. It is in `test_tick_line.py`, on master and on the branch. I
+grepped it because I needed to know whether a stored `--expect-warn-remove`
+declaration was still valid, and the grep found it immediately.
+
+The WARN was a false positive from lint's corpus scan root — which is precisely
+what `#1191` fixes ("scope landed guard exclusions to scan root", landed
+`d7feeee4`). The gate then confirmed it from the other side:
+`declared_removed=1 observed_removed=1 matched_removed=1`.
+
+The lane said something true — lint does emit that row — and it read as a
+stronger claim: that the guard is missing from the repo. **A tool's output is
+evidence about the tool as well as about the subject**, and one grep separates
+the two. This is the same shape as `#1210`'s indeterminate-vs-failed distinction
+and `#1207`'s `runner-absent`: the honest reading of an alarm is "something is
+unobserved here", never "the thing is proven absent".
+
+## Where a declaration is validated bounds what it costs to be wrong about it (2026-08-04, #1040/#1191)
+
+I had a stored `--expect-warn-remove` row for `cx-1191corpus`, captured hours
+and several row-set changes earlier, and I did not trust it. So I spent a run of
+probes establishing whether the row still fired before committing to a
+~14-minute wide-fan-in gate.
+
+The probes were not wasted — they produced the finding above — but the
+scheduling reasoning behind them was wrong. `--expect-warn-remove` is validated
+at **`lint-baseline`, before the merge and before the tests**. A wrong
+declaration costs about ninety seconds, not fourteen minutes. The expensive
+thing I was protecting was never at risk.
+
+**Before paying to verify an input, find out where the tool checks it.** A gate
+with named phases tells you exactly how far a bad input travels before it is
+caught, and that distance — not the total runtime — is the cost of guessing.
+
+## The verdict was in the review worktree's own inbox, because the reviewer used a relative path (2026-08-04, #1214)
+
+A review finished and left nothing in `.dreamwork/inbox.md`. Its launch record
+said `runner_exit = None` and `state = spawned … runner exit not observed`, with
+no log path stored — indistinguishable, from the outside, from a review that
+died on startup.
+
+It had not died. It had written a complete verdict to
+`.worktrees/<review-lane>/.dreamwork/inbox.md` — the **worktree's own copy** of
+a gitignored file. My review head gave the absolute path; the reviewer resolved
+it relative to its cwd anyway, and the worktree copy is a real, writable file
+that no one reads.
+
+Two things follow. First, `#1214` is not only "verdicts land in stdout" — a
+verdict can land on disk, under the right heading, and still be invisible.
+Second, **an instruction to use an absolute path is not a mechanism**; the only
+reason this verdict survived is that I went looking for a corpse and found a
+letter. Every brief since names the absolute path *and* names the worktree copy
+as the wrong one, which is still prose — the mechanism would be for the lane
+tooling to reject the relative write.
