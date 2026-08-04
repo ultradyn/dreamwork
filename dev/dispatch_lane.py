@@ -1099,11 +1099,16 @@ def _read_runner_exit(record: dict) -> dict | None:
     the liveness probe, keeping ``runner-absent`` as the alarm):
 
     * the exit record exists and parses as a dict carrying an integer
-      ``runner_exit``;
+      ``runner_exit`` of EXACT type ``int`` (#1214 round 3 / P1(a) — a JSON
+      ``true`` is a Python ``bool``, and ``bool`` subclasses ``int``, so a
+      plain ``isinstance`` check accepted it; a bool is not an exit code);
     * the exit record's ``runner_log`` is the SAME path the launch recorded (a
       divergent path is a lying or stale witness);
     * that log file EXISTS on disk with non-blank content (#1214 round 2 — an
       empty, missing, or whitespace-only capture is NOT a delivered verdict).
+      "Non-blank" is a TEXT judgment (#1214 round 3 / P2(a)): the log is
+      decoded as UTF-8 (lenient) and ``str.strip`` — Unicode-aware, unlike
+      ``bytes.strip`` — decides, so a capture of only U+2003 is blank.
     """
     runner_log = record.get("runner_log")
     if not isinstance(runner_log, str) or not runner_log:
@@ -1114,7 +1119,13 @@ def _read_runner_exit(record: dict) -> dict | None:
     except (OSError, UnicodeError, json.JSONDecodeError):
         return None
     if (not isinstance(parsed, dict)
-            or not isinstance(parsed.get("runner_exit"), int)):
+            # #1214 round 3 / P1(a): a JSON ``true`` is a Python ``bool``, and
+            # ``bool`` IS an ``int`` subclass — so ``isinstance(..., int)``
+            # accepted ``{"runner_exit": true}`` as a terminal witness. A bool
+            # is not an exit code; require the EXACT type so a lying or corrupt
+            # record falls through to runner-absent rather than reading as a
+            # delivered verdict.
+            or type(parsed.get("runner_exit")) is not int):
         return None
     # The exit record must name the SAME log the launch recorded — a divergent
     # path is a lying or stale witness, treated as unobserved (#1214 round 2).
@@ -1127,11 +1138,18 @@ def _read_runner_exit(record: dict) -> dict | None:
     # rebuilds the incident this branch exists to fix (a present-but-empty
     # capture reads as success on a total loss). Require non-blank content and
     # fall through to the liveness probe when it is absent.
+    #
+    # #1214 round 3 / P2(a): "non-blank" is a TEXT judgment, not an ASCII-byte
+    # one. ``bytes.strip()`` only strips ASCII whitespace, so a capture holding
+    # only U+2003 (em space) read as non-blank and classified terminal. The log
+    # is a verdict a human reads, decoded as UTF-8; decode leniently
+    # (``errors="replace"`` so non-UTF-8 bytes become U+FFFD, which is content,
+    # not silence) and let ``str.strip`` — which IS Unicode-aware — decide.
     try:
-        log_bytes = Path(runner_log).read_bytes()
+        log_text = Path(runner_log).read_text(encoding="utf-8", errors="replace")
     except OSError:
         return None
-    if not log_bytes.strip():
+    if not log_text.strip():
         return None
     return {"runner_exit": parsed["runner_exit"], "runner_log": runner_log}
 

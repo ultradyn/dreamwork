@@ -1722,15 +1722,16 @@ def test_classify_review_is_unknown_without_review_lane():
 def _classify_with_exit_record(
         tmp_path: Path, *, log_bytes: bytes | None = b"",
         exit_runner_log: str | None = None,
-        exit_runner_exit: int = 0, **liveness) -> tuple[str, str]:
+        exit_runner_exit: object = 0, **liveness) -> tuple[str, str]:
     """Build a launch record + sibling ``.runner.log``/``.runner.exit.json`` in
     ``tmp_path`` and classify it.
 
     ``log_bytes`` is written to ``.runner.log`` (``None`` deletes it so the
     missing-file case is testable); ``exit_runner_log`` defaults to the launch
     record's ``runner_log`` path (pass a different string to test a path
-    mismatch).  The liveness kwargs are forwarded so the fall-through path can
-    be driven deterministically.
+    mismatch).  ``exit_runner_exit`` defaults to ``0``; pass a non-int
+    (e.g. ``True``) to test a lying exit record.  The liveness kwargs are
+    forwarded so the fall-through path can be driven deterministically.
     """
     dl = _import_dispatch_lane()
     runner_log = tmp_path / "cx-review-review-r1-deadbeef.runner.log"
@@ -1812,6 +1813,34 @@ def test_nonempty_runner_log_with_exit_record_classifies_as_terminal(tmp_path):
         tmp_path, log_bytes=b"VERDICT: ANOTHER ROUND, one P1\n")
     assert category == "terminal", detail
     assert "verdict recoverable" in detail, detail
+
+
+def test_bool_runner_exit_does_not_classify_as_terminal(tmp_path):
+    """#1214 round 3 / P1(a): a JSON ``true`` is a Python ``bool``, and ``bool``
+    IS an ``int`` subclass, so ``isinstance(..., int)`` accepted it. A
+    path-matching record with a non-blank log but ``runner_exit: true`` must
+    fall through to runner-absent — a bool is not an exit code, and a lying or
+    corrupt record is not a delivered verdict."""
+    category, detail = _classify_with_exit_record(
+        tmp_path, log_bytes=b"VERDICT\n", exit_runner_exit=True,
+        **_FALLTHROUGH_LIVENESS)
+    assert category == "runner-absent", (
+        f"a JSON true runner_exit classified as {category!r}; detail={detail!r}")
+    assert "verdict recoverable" not in detail, detail
+
+
+def test_unicode_whitespace_only_runner_log_does_not_classify_as_terminal(tmp_path):
+    """#1214 round 3 / P2(a): ``bytes.strip()`` only strips ASCII whitespace, so
+    a capture holding only U+2003 (em space, three non-ASCII bytes) read as
+    non-blank. "Non-blank" is a TEXT judgment: a log of only Unicode whitespace
+    is blank, falls through to runner-absent."""
+    em_space = "\u2003".encode("utf-8")  # three bytes, no ASCII whitespace
+    assert em_space.strip(), "precondition: bytes.strip sees content here"
+    category, detail = _classify_with_exit_record(
+        tmp_path, log_bytes=em_space, **_FALLTHROUGH_LIVENESS)
+    assert category == "runner-absent", (
+        f"a U+2003-only capture classified as {category!r}; detail={detail!r}")
+    assert "verdict recoverable" not in detail, detail
 
 
 def test_review_status_cli_reports_runner_absent_dispatch(tmp_path):
