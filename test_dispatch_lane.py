@@ -1331,8 +1331,103 @@ def test_launch_review_creates_attached_branch_worktree_and_records_cwd(tmp_path
     ).stdout.strip() == attempt["pinned_sha"]
     assert attempt["state"] == (
         "spawned: reviewer present in review worktree (cwd-containment); "
-        "runner exit not observed"
+        "runner exit observed on completion via .runner.exit.json"
     )
+    # #1214: a launch record must name where the runner's output is captured,
+    # so a completed review's verdict is recoverable from the record alone.
+    assert "runner_log" in attempt, (
+        "launch record has no runner_log field; the captured output has no "
+        "discoverable path (#1214)"
+    )
+    runner_log = Path(attempt["runner_log"])
+    assert runner_log.name.endswith(".runner.log"), attempt["runner_log"]
+    assert runner_log.parent == Path(attempt["prompt"]).parent
+
+
+def test_launch_review_captures_runner_log_and_records_it(tmp_path):
+    """#1214: a completed review's outcome is recoverable from the record alone.
+
+    A reviewer that prints its verdict to stdout and exits 0 must leave that
+    verdict in a file whose path the launch record names, and an exit witness
+    beside it — so the coordinator finds the verdict without having redirected
+    the launcher, and --review-status reads the dispatch as terminal (not
+    runner-absent). This is the property the two incidents violated: a finished
+    review was indistinguishable from a dead one because nothing captured or
+    recorded where the output went.
+    """
+    branch = "cx-revcap"
+    cli, root = _sandbox_review_cli(tmp_path, branch)
+    prompt = _review_prompt(tmp_path, root, branch)
+    verdict_text = "VERDICT-MARKER-1214: ANOTHER ROUND, one P1 finding"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_ccc = fake_bin / "ccc"
+    # The reviewer prints its verdict to stdout and exits 0 — a successful
+    # review whose output would be lost without the capture mechanism.
+    fake_ccc.write_text(
+        "#!/usr/bin/env python3\n"
+        "import sys\n"
+        f"sys.stdout.write({verdict_text!r} + chr(10))\n"
+        "sys.stdout.flush()\n",
+        encoding="utf-8",
+    )
+    fake_ccc.chmod(0o755)
+    env = {
+        **os.environ,
+        "DREAMWORK_ALLOW_PIPED_STDOUT": "1",
+        "PATH": f"{fake_bin}{os.pathsep}{os.environ.get('PATH', '')}",
+        "REVIEW_RUNNER_SETTLE": "0.05",
+    }
+    result = subprocess.run(
+        [
+            sys.executable, str(cli), "--launch-review", str(prompt),
+            "--review-branch", branch, "--review-round", "1", "--",
+            "ccc", "--permission-mode", "plan", "@cx-reviewer",
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    attempts = sorted((root / ".dreamwork" / "review-dispatches").glob("*.launch.json"))
+    assert len(attempts) == 1
+    attempt = json.loads(attempts[0].read_text(encoding="utf-8"))
+    runner_log = Path(attempt["runner_log"])
+    exit_path = runner_log.with_name(
+        runner_log.name[:-len(".runner.log")] + ".runner.exit.json")
+    # The supervisor runs detached; poll for the capture + exit record to land.
+    for _ in range(500):
+        if runner_log.is_file() and exit_path.is_file():
+            break
+        time.sleep(0.02)
+    else:
+        raise AssertionError(
+            f"runner capture did not land: log={runner_log.is_file()} "
+            f"exit={exit_path.is_file()}")
+    # (1) The verdict is recoverable from the recorded path.
+    captured = runner_log.read_text(encoding="utf-8")
+    assert verdict_text in captured, (
+        f"verdict text missing from captured runner log; got={captured!r}")
+    # (2) The exit was observed and recorded beside the log.
+    exit_record = json.loads(exit_path.read_text(encoding="utf-8"))
+    assert exit_record["runner_exit"] == 0, exit_record
+    assert exit_record["runner_log"] == str(runner_log), exit_record
+    # (3) --review-status reads the dispatch as terminal naming the log, NOT
+    # runner-absent — a finished review no longer reads as a corpse.
+    status = subprocess.run(
+        [sys.executable, str(cli), "--review-status"],
+        capture_output=True, text=True,
+        env={**os.environ, "DREAMWORK_ALLOW_PIPED_STDOUT": "1"},
+    )
+    assert status.returncode == 0, status.stderr
+    assert "classified 1 dispatch" in status.stdout, status.stdout
+    line = next(l for l in status.stdout.splitlines() if "cx-revcap" in l)
+    assert "terminal" in line, (
+        f"a completed review (exit observed) did not classify terminal; "
+        f"line={line!r}")
+    assert "runner-absent" not in line, line
+    assert str(runner_log) in line, (
+        f"status line did not name the recoverable verdict path; line={line!r}")
 
 
 @pytest.mark.parametrize("write_controls", [

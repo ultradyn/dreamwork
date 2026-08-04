@@ -450,10 +450,114 @@ def _write_exclusive(path: Path, content: str) -> None:
         raise DispatchFault(f"could not write {path}: {exc}") from exc
 
 
+def _supervise_review_runner(
+        runner: list[str], prompt: str, runner_log: Path, report_fd: int) -> None:
+    """Fork the reviewer, tee its output to ``runner_log``, and record its exit.
+
+    Runs in the detached child (session leader, lane lock held, cwd at the
+    review worktree). It forks the reviewer as a grandchild whose stdout and
+    stderr are replaced by a pipe the supervisor reads; the supervisor tees the
+    pipe to ``runner_log`` and inherits its own stdout/stderr so a coordinator
+    that redirected the launcher still sees the runner's stream live. When the
+    grandchild exits the supervisor writes
+    ``runner_exit_path_for(runner_log)`` — an atomic JSON object recording the
+    integer ``runner_exit`` and the log path — and then itself exits with the
+    same code. From the dispatcher's vantage nothing changes: exit 0 still means
+    the launch confirmed, not that the review finished (#876 invariant intact).
+    """
+    read_fd, write_fd = os.pipe()
+    grandchild = os.fork()
+    if grandchild == 0:
+        # Grandchild: replace stdout/stderr with the pipe, then exec the reviewer.
+        os.close(read_fd)
+        os.close(report_fd)
+        os.dup2(write_fd, 1)
+        os.dup2(write_fd, 2)
+        os.close(write_fd)
+        try:
+            os.execvp(runner[0], [*runner, prompt])
+        except OSError as exc:
+            sys.stderr.write(f"exec {runner[0]!r}: {exc}\n")
+            os._exit(127)
+        os._exit(127)  # unreachable
+    # Supervisor: tee the grandchild's output to runner_log AND this process's
+    # own stdout/stderr (so a coordinator-redirected launcher streams it too).
+    os.close(write_fd)
+    runner_log.parent.mkdir(parents=True, exist_ok=True)
+    out_paths = [fd for fd in (1, 2) if _fd_ok(fd)]
+    try:
+        with runner_log.open("wb", buffering=0) as log:
+            while True:
+                try:
+                    chunk = os.read(read_fd, 65536)
+                except OSError:
+                    break
+                if not chunk:
+                    break
+                log.write(chunk)
+                for fd in out_paths:
+                    try:
+                        os.write(fd, chunk)
+                    except OSError:
+                        pass
+    except OSError as exc:
+        _pipe_write(report_fd, f"runner_log {runner_log}: {exc}\n")
+    os.close(read_fd)
+    _, status = os.waitpid(grandchild, 0)
+    runner_exit = os.waitstatus_to_exitcode(status)
+    exit_path = _runner_exit_path_for(runner_log)
+    _write_runner_exit(exit_path, runner_exit, str(runner_log))
+    os._exit(runner_exit)
+
+
+def _runner_exit_path_for(runner_log: Path) -> Path:
+    """Derive the ``.runner.exit.json`` path beside a ``.runner.log`` (#1214)."""
+    return runner_log.with_name(runner_log.name[:-len(".runner.log")] + ".runner.exit.json")
+
+
+def _write_runner_exit(exit_path: Path, runner_exit: int, runner_log: str) -> None:
+    """Atomically record the supervisor's observation of the runner's exit.
+
+    Mirrors ``_write_json_atomic``'s rename pattern but is called from the
+    supervisor after the fork, so it avoids the fsync-then-tempfile helper
+    (which assumes a long-lived parent) and writes the temp file beside the
+    target then renames. The integer ``runner_exit`` is the only field a
+    consumer needs to decide terminal-vs-unobserved; ``runner_log`` repeats the
+    log path so the verdict is recoverable from this record alone.
+    """
+    try:
+        exit_path.parent.mkdir(parents=True, exist_ok=True)
+        temp = exit_path.with_name(f".{exit_path.name}.{os.getpid()}.tmp")
+        with temp.open("x", encoding="utf-8") as handle:
+            json.dump(
+                {"runner_exit": runner_exit, "runner_log": runner_log},
+                handle, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp, exit_path)
+    except OSError:
+        # The review ran and its exit was observed; a failure to persist the
+        # witness must not invert that. The log file itself is the fallback
+        # record, and review_status names both. Drop silently rather than
+        # masking the real exit with a different one.
+        pass
+
+
+def _fd_ok(fd: int) -> bool:
+    """True when ``fd`` is open and not a pipe/socket (tee target safety)."""
+    try:
+        mode = os.fstat(fd).st_mode
+    except OSError:
+        return False
+    return not (stat.S_ISFIFO(mode) or stat.S_ISSOCK(mode))
+
+
 def _launch_detached(
         worktree: Path, task: int, lane: str, prompt_path: Path,
         runner: list[str], prompt: str, *, cwd: Path | None = None,
-        child_env: dict[str, str] | None = None) -> int:
+        child_env: dict[str, str] | None = None,
+        runner_log: Path | None = None) -> int:
     """Fork, setsid, acquire the lane lock, and exec the runner (#876).
 
     All validation has already run in the parent; this is the LAST step. The
@@ -468,6 +572,14 @@ def _launch_detached(
     a dead pid would let a second dispatch through (#869, #876). A close-on-exec
     pipe confirms every child-side step succeeded before the parent exits 0:
     without it, a lock refusal or exec failure would read as a silent launch.
+
+    When ``runner_log`` is given (the review path, #1214) the child does not
+    exec directly: it becomes a SUPERVISOR (``_supervise_review_runner``) that
+    forks the runner as a grandchild, captures its stdout+stderr to
+    ``runner_log``, and observes its exit. The lock therefore records the
+    supervisor's pid, which is live exactly while the review runs; the #876
+    detach invariant is unchanged (the grandchild survives the dispatcher's
+    exit inside the supervisor's session).
     """
     read_fd, write_fd = os.pipe()
     os.set_inheritable(read_fd, False)
@@ -494,6 +606,15 @@ def _launch_detached(
         except DispatchFault as exc:
             _pipe_write(write_fd, f"{exc}\n")
             os._exit(2)
+        if runner_log is not None:
+            # Review path (#1214): capture the runner rather than exec'ing it
+            # directly. The supervisor forks the real reviewer as a grandchild,
+            # tees its stdout+stderr to runner_log, waits, and writes the exit
+            # to runner_exit_path before itself exiting. The dispatcher never
+            # observes a byte of this; the launcher exit is still 0 at the
+            # parent-close, so #876's detach invariant is unchanged.
+            _supervise_review_runner(runner, prompt, runner_log, write_fd)
+            os._exit(0)  # unreachable; _supervise… exits
         try:
             os.execvp(runner[0], [*runner, prompt])
         except OSError as exc:
@@ -621,6 +742,13 @@ def launch_review(prompt_path: Path, branch: str, round_num: int,
         attempt_path = persisted.with_name(
             persisted.name[:-len(".prompt.md")] + ".launch.json"
         )
+        # #1214: the runner's output is captured beside the dispatch artifacts
+        # so a completed review's verdict is recoverable from the record alone.
+        # The supervisor (_supervise_review_runner) tees to this path; the
+        # sibling .runner.exit.json carries the observed exit.
+        runner_log = persisted.with_name(
+            persisted.name[:-len(".prompt.md")] + ".runner.log"
+        )
         record: dict[str, object] = {
             "attempt_id": attempt_id,
             "branch": branch,
@@ -634,6 +762,7 @@ def launch_review(prompt_path: Path, branch: str, round_num: int,
             "permission_mode": "plan",
             "state": "prepared; reviewer not attempted",
             "runner_exit": None,
+            "runner_log": str(runner_log.resolve()),
             "runs": 0,
         }
         _write_json_atomic(attempt_path, record, create=True)
@@ -658,6 +787,7 @@ def launch_review(prompt_path: Path, branch: str, round_num: int,
             worktree, 0, review_lane, persisted, runner, prompt,
             cwd=worktree,
             child_env={LANE_ROLE_ENV: "reviewer", LANE_ID_ENV: secrets.token_hex(16)},
+            runner_log=runner_log.resolve(),
         )
         if result == 0:
             settle = float(os.environ.get("REVIEW_RUNNER_SETTLE", "0.3"))
@@ -685,7 +815,8 @@ def launch_review(prompt_path: Path, branch: str, round_num: int,
                 f"review launched: branch={branch}; review_lane={review_lane}; "
                 f"worktree={worktree.resolve()}; attempt={attempt_id}; "
                 f"permission_mode=plan; cwd-containment examined={examined}; "
-                "runner exit not observed"
+                f"runner_log={runner_log.resolve()}; "
+                "runner exit observed on completion via .runner.exit.json"
             )
         else:
             record["state"] = f"launch refused: dispatcher exited {result}"
@@ -941,6 +1072,33 @@ _REVIEW_CATEGORY_UNKNOWN = "unknown"
 _REVIEW_CATEGORY_TERMINAL = "terminal"
 
 
+def _read_runner_exit(record: dict) -> dict | None:
+    """Read the supervisor's ``.runner.exit.json`` for a review dispatch (#1214).
+
+    Returns the parsed ``{"runner_exit", "runner_log"}`` object when the file
+    exists and parses as a dict carrying an integer ``runner_exit``; otherwise
+    ``None``. A missing or unreadable record is the honest "not observed" case
+    — it must NOT be promoted to a success, so this helper returns None and the
+    caller falls through to the liveness probe (which keeps ``runner-absent``
+    as the unobserved alarm).
+    """
+    runner_log = record.get("runner_log")
+    if not isinstance(runner_log, str) or not runner_log:
+        return None
+    exit_path = _runner_exit_path_for(Path(runner_log))
+    try:
+        parsed = json.loads(exit_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    if (not isinstance(parsed, dict)
+            or not isinstance(parsed.get("runner_exit"), int)):
+        return None
+    log = parsed.get("runner_log")
+    if not isinstance(log, str) or not log:
+        log = runner_log
+    return {"runner_exit": parsed["runner_exit"], "runner_log": log}
+
+
 def classify_review_dispatch(
         record: dict, coordinator_root: Path, *,
         process_entries: list[str] | None = None,
@@ -963,8 +1121,23 @@ def classify_review_dispatch(
     null is honest (#1177); this consumes it rather than corrupting it.
     Resolves ``/proc/<pid>/cwd`` (never argv) via ``_review_lane_live``, so the
     #729 self-match trap does not apply.
+
+    #1214: before the liveness probe, it first reads the supervisor's
+    ``.runner.exit.json`` (whose path is the launch record's ``runner_log``
+    with its suffix swapped).  A present, well-formed exit record is an
+    OBSERVED outcome and returns ``terminal`` naming the runner log the verdict
+    is recoverable from — converting incident A (a finished review read as
+    absent) into a direct pointer.  A missing or unreadable exit record falls
+    through to the liveness probe, so an unobserved outcome stays unobserved
+    (``runner-absent``) rather than being silently promoted to success.
     """
     runner_exit = record.get("runner_exit")
+    observed = _read_runner_exit(record)
+    if observed is not None:
+        return (_REVIEW_CATEGORY_TERMINAL,
+                f"runner exit observed ({observed['runner_exit']}) via "
+                f".runner.exit.json; verdict recoverable from "
+                f"{observed['runner_log']}")
     if runner_exit is not None:
         return (_REVIEW_CATEGORY_TERMINAL,
                 f"runner_exit observed ({runner_exit}); state: {record.get('state', '?')}")
