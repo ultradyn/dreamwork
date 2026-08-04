@@ -28,6 +28,20 @@
       pre-migration drafts.
   - I would rather ask than assume, because the two answers differ in what gets built next, not just
     in how the current code is described.
+  - **UPDATE 2026-08-04 — the reason I gave you for accepting the collision has been REFUTED, and I am
+    now fixing it rather than accepting it.** The review of round 3 checked the claim that a
+    disambiguated draft key is not client-reconstructible, and it is false: the rendered order is
+    stable (file order then a stable priority sort), the renderers retain the index, and more
+    decisively `/question` **already** reconstructs the index and passes it to the card. The route
+    stays exact-title-only and its URL never needs a draft discriminator — this was a client
+    implementation seam misread as a route constraint.
+  - So the honest position has changed. The fork below mattered because option 2 looked expensive; it
+    is not, so a known cross-contamination bug should simply be fixed. Round 4 is dispatched to do that
+    (using a content hash rather than a bare index, since an index alone does not survive one question
+    vanishing and the other shifting into its slot).
+  - **Your answer is still worth having, but it now decides less**: only whether the title fallback
+    should eventually be deleted outright once ids are universal, rather than whether we tolerate
+    contamination in the meantime. Even lower priority than when I posted it.
 
 - **P1 · 2026-08-03 — there is a real Syncthing conflict copy inside `.git/` and something reads it.
   May I delete it, or do you want to look first? (#1167; #1166 and #1162 have since landed)**
