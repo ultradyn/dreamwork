@@ -2,6 +2,33 @@
 
 ## Open
 
+- **P2 · 2026-08-04 — how long is the id-less question draft fallback expected to live? (#1231)**
+  Not blocking — `#1231` round 3 has landed a defensible answer and stated the fork honestly rather
+  than guessing. This decides whether that answer stays right.
+  - **Confirmed, end-to-end through the browser.** Two questions with no stable id that share a title
+    cross-contaminate their drafts: both resolve to the same `data-qid` through the `q.qid || q.title`
+    fallback, so they read and write one draft slot. Type into one, reload, and it appears in the
+    other. The migration-realistic case is worse — where one question has an id and one does not, the
+    id-less question's title-keyed draft is copied into the id-keyed question's slot, so a box is
+    pre-filled with a different question's text.
+  - **What the lane chose, and why it is reasonable.** Best-effort: collision accepted, no
+    shipped-behaviour change. The draft is misplaced rather than destroyed — visible in the wrong box
+    and recoverable — and the affected population shrinks monotonically as ids are backfilled.
+    Disambiguating the key would need a content hash or positional index that the `/question` route
+    cannot reconstruct on reload, since it matches on exact title equality; and suppressing draft
+    persistence for id-less questions would break the tested title-path recovery that protects every
+    pre-id question.
+  - **The question.** That reasoning holds only if the fallback is genuinely transitional.
+    - **Transitional** — ids get backfilled and the fallback is deleted. Then round 3's answer is
+      correct as it stands, and the remaining work is the backfill itself.
+    - **Indefinite** — some questions never carry an id. Then a known cross-contamination bug is being
+      accepted permanently on a shrinking-but-never-empty population, and it needs a real fix: either
+      disambiguate the title key (which drags in the route's exact-title matching, currently out of
+      scope), or stop persisting drafts for id-less questions and let the fallback only READ
+      pre-migration drafts.
+  - I would rather ask than assume, because the two answers differ in what gets built next, not just
+    in how the current code is described.
+
 - **P1 · 2026-08-03 — there is a real Syncthing conflict copy inside `.git/` and something reads it.
   May I delete it, or do you want to look first? (#1167; #1166 and #1162 have since landed)**
   **UPDATE 2026-08-04 — this no longer blocks a landing, and the cost of NOT deleting it is now
