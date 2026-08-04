@@ -222,7 +222,16 @@
     goals* are different questions and only the second one found #10. I am filing that as a
     follow-up.
 
+
 ## Answered
+
+- **ANSWERED 2026-08-04 (by instruction: "kill the ripgrep searchings") — pi's ripgreps were pinning the load average and blocking the React browser guards.**
+  - **Note (human, via session, 2026-08-04):** "kill the ripgrep searchings."
+  - **Done.** Killed all three by explicit pid (24478 at 6h31m, 2998085 and 2998102 at 1h54m), not by pattern, so nothing else could be caught; `pi` itself was left running. All three exited on SIGTERM alone.
+  - **Measured the result**, since the whole question turned on a number I had been reading wrong. With six lanes live throughout: 61.34 → 53.63 → 46.58 → 41.49 → 35.98 → 33.13 over 100s. The load was genuinely pinned by those processes and decays normally now.
+  - **Both positions I held today were overstated.** The drain plan really was unreachable while they ran — that correction stands. But "draining accomplishes nothing" was true of that regime, not of this machine; with the foreign load gone, shedding lanes reaches the threshold exactly as the gate assumes. I stated a conclusion about a condition as though it were one about the system.
+  - **The second half needs no ruling from you now.** I asked whether to change `guard_preflight`'s predicate; it is unblocked, so I dropped `#1255` from P1 to P2 and left it on its own merits — raw load average cannot distinguish "your fleet is too big" (actionable) from "this box is busy with someone else's work" (not), and today that took a human to tell apart. Not urgent, and I did not re-tune a safety gate while it was blocking me.
+
 
 - **P1 · 2026-08-03 — Syncthing is replicating `.dreamwork/` and `../.worktrees/`, and it made a
   conflict copy of the LIVE LEDGER. Do you want those paths excluded from the share? (#1162)**
